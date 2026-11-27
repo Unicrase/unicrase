@@ -17,7 +17,7 @@ class HelpCoverage(unittest.TestCase):
         )
         ui = source.split("local function buildAim", 1)[1]
         titles = set(re.findall(r'\b(?:slider|vslider|aSlider|cycle|cycleKeep|cyc|tog)\("([^"\n]+)"', ui))
-        titles.update(re.findall(r'\b(?:cycleCard|sliderCard)\(\w+,\s*"([^"\n]+)"', ui))
+        titles.update(re.findall(r'\b(?:cycleCard|sliderCard|toggleCard)\(\w+,\s*"([^"\n]+)"', ui))
         # Lists passed to chips/makeChips; exclude unrelated tables and the custom player-detail rows.
         config = source.split("local CFG =", 1)[1].split("-- ===== v4.0: общие данные", 1)[0]
         for title, key in re.findall(r'\{"([^"\n]+)",\s*"([A-Za-z][A-Za-z0-9]*)"', ui):
