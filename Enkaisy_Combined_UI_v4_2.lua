@@ -358,7 +358,7 @@ local CFG = {
 	TeamCheck = false, HideDead = true, Rainbow = false, Disp = false,
 	Fill = 0.45, Outline = 1, NameSize = 16, NameLen = 14,
 	Dist = false, HPColor = false, Limit = true, LimitN = 30, MaxDist = DIST_MAX,
-	FriendMode = "Off", NpcFilter = "Off", NpcText = "", HideNative = true,
+	FriendMode = "Off", NpcFilter = "Off", NpcText = "", ModelNames = "", HideNative = true,
 	TeamColors = true, DistScale = true, Anim = true, ShowStats = true,
 	FpsUnlock = false, FpsCap = 0, EspHz = 60,
 	-- v4.1 Team Colors: включатели сторон, "всё цветом Team", трассы / скелет, имена пресетов
@@ -908,8 +908,8 @@ end
 
 -- Переключатель ON / OFF (под палец): ON = дорожка акцентного цвета, бегунок справа; OFF = тёмная дорожка, бегунок слева
 local function makeSwitch(parent)
-	local track = new("Frame", {Size = O(52, 28), BackgroundColor3 = C.Input, Active = false}, parent)
-	round(track, 14)
+	local track = new("Frame", {Size = O(44, 24), BackgroundColor3 = C.Hi, Active = false}, parent)
+	round(track, 12)
 	local st = stroke(track, PURE, 0.55, 1)
 	local lOn = new("TextLabel", {
 		Size = O(27, 28), BackgroundTransparency = 1, Text = "", Font = GB, TextSize = 10,
@@ -920,15 +920,15 @@ local function makeSwitch(parent)
 		TextColor3 = C.Mut, Active = false,
 	}, track)
 	local knob = new("Frame", {
-		Size = O(22, 22), AnchorPoint = V2(0, 0.5), Position = U(0, 3, 0.5, 0),
+		Size = O(18, 18), AnchorPoint = V2(0, 0.5), Position = U(0, 3, 0.5, 0),
 		BackgroundColor3 = C.Mut, Active = false, ZIndex = 2,
 	}, track)
-	round(knob, 11)
+	round(knob, 9)
 	local function paint(o, anim)
 		o = o and true or false
 		lOn.TextColor3 = C.AccTx
-		put(track, {BackgroundColor3 = o and C.Acc or C.Input}, anim)
-		put(knob, {Position = o and U(1, -25, 0.5, 0) or U(0, 3, 0.5, 0), BackgroundColor3 = o and C.AccTx or C.Mut}, anim)
+		put(track, {BackgroundColor3 = o and C.Acc or C.Hi}, anim)
+		put(knob, {Position = o and U(1, -21, 0.5, 0) or U(0, 3, 0.5, 0), BackgroundColor3 = o and C.AccTx or C.Mut}, anim)
 		put(st, {Transparency = o and 0.1 or 0.55}, anim)
 		put(lOn, {TextTransparency = o and 0 or 1}, anim)
 		put(lOff, {TextTransparency = o and 1 or 0}, anim)
@@ -1120,8 +1120,54 @@ local function matchNpc(name)
 	return false
 end
 
+-- Нестандартные риги: Humanoid, явно отмеченные AimTarget или похожие на персонажа модели.
+-- При выборе имён разрешены также другие модели с деталями; без фильтра декорации не сканируются как цели.
+local RIG = {}
+function RIG.matches(m)
+    if CFG.ModelNames:match("^%s*$") then return true end
+    local name, path = string.lower(m.Name), string.lower(m:GetFullName())
+    for word in CFG.ModelNames:gmatch("[^,]+") do
+        word = string.lower(word:match("^%s*(.-)%s*$"))
+        if word ~= "" and (word == name or word == path) then return true end
+    end
+    return false
+end
+function RIG.part(m, name)
+    local p = m:FindFirstChild(name, true)
+    return p and p:IsA("BasePart") and p or nil
+end
+function RIG.root(m)
+    if not m or not m:IsA("Model") then return nil end
+    return RIG.part(m, "HumanoidRootPart") or m.PrimaryPart or RIG.part(m, "Torso")
+        or RIG.part(m, "UpperTorso") or RIG.part(m, "Head") or m:FindFirstChildWhichIsA("BasePart", true)
+end
+function RIG.characterLike(m)
+    if not m or not m:IsA("Model") then return false end
+    if m:FindFirstChildOfClass("Humanoid") or game:GetService("CollectionService"):HasTag(m, "AimTarget") then return true end
+    if not CFG.ModelNames:match("^%s*$") and RIG.matches(m) then return RIG.root(m) ~= nil end
+    -- Только прямые части: иначе модель карты с вложенным персонажем станет целью.
+    local head = m:FindFirstChild("Head")
+    local body = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Torso") or m:FindFirstChild("UpperTorso")
+    return head ~= nil and head:IsA("BasePart") and body ~= nil and body:IsA("BasePart")
+end
+function RIG.alive(m)
+    local hum = m:FindFirstChildOfClass("Humanoid")
+    if hum then return hum.Health > 0 end
+    local health = m:GetAttribute("Health")
+    return type(health) ~= "number" or health > 0
+end
+function RIG.fromPart(inst)
+    local m = inst
+    while m and m ~= Workspace do
+        if m:IsA("Model") and (npcs[m] or Players:GetPlayerFromCharacter(m)) then return m end
+        m = m.Parent
+    end
+    return nil
+end
+
 local function allowed(plr, char)
 	if not CFG.On then return false end
+    if char and not RIG.matches(char) then return false end
 	if plr then
 		if plr == LP or CFG.Mode == "NPC" then return false end
 		if marks[plr.UserId] == "Hide" then return false end
@@ -1213,9 +1259,9 @@ local function dohl(char, plr)
 	tween(o.h, TweenInfo.new(0.25), {FillTransparency = ft, OutlineTransparency = ot})
 	local function setup()
 		local hum = char:FindFirstChildOfClass("Humanoid")
-		local root = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-		local head = char:FindFirstChild("Head") or root
-		if not (hum and head and root) then return false end
+		local root = RIG.root(char)
+		local head = RIG.part(char, "Head") or root
+		if not (head and root) then return false end
 		o.hum = hum
 		o.root = root
 		o.nb = new("BillboardGui", {
@@ -1237,9 +1283,9 @@ local function dohl(char, plr)
 			TextScaled = true, Font = GB, TextXAlignment = XL,
 			TextStrokeTransparency = 0.3,
 		}, o.hb)
-		hum.Died:Once(function()
+		if hum then hum.Died:Once(function()
 			if CFG.HideDead and esp[char] == o then unhl(char, true) end
-		end)
+		end) end
 		return true
 	end
 	task.spawn(function()
@@ -1286,7 +1332,11 @@ end
 local function track(p)
 	if p == LP then return end
 	pconn[p] = {
-		p.CharacterAdded:Connect(function(c) npcs[c] = nil; dohl(c, p) end),
+		p.CharacterAdded:Connect(function(c)
+            npcs[c] = nil
+            if npcConn[c] then npcConn[c]:Disconnect(); npcConn[c] = nil end
+            dohl(c, p)
+        end),
 		p.CharacterRemoving:Connect(function(c) unhl(c) end),
 		p:GetPropertyChangedSignal("Team"):Connect(function()
 			upd(p.Character, p)
@@ -1295,7 +1345,11 @@ local function track(p)
 		end),
 	}
 	if CFG.FriendMode ~= "Off" then checkFriend(p) end
-	if p.Character then dohl(p.Character, p) end
+	if p.Character then
+        npcs[p.Character] = nil
+        if npcConn[p.Character] then npcConn[p.Character]:Disconnect(); npcConn[p.Character] = nil end
+        dohl(p.Character, p)
+    end
 end
 
 local function untrack(p)
@@ -1304,21 +1358,43 @@ local function untrack(p)
 	pconn[p] = nil
 end
 
-local function addNpc(hum)
-	task.defer(function()
-		local m = hum.Parent
-		if not m or npcs[m] or not m:IsA("Model") then return end
-		if Players:GetPlayerFromCharacter(m) or m == LP.Character then return end
-		npcs[m] = true
-		npcConn[m] = m.AncestryChanged:Connect(function()
-			if not m:IsDescendantOf(Workspace) then
-				unhl(m)
-				npcs[m] = nil
-				if npcConn[m] then npcConn[m]:Disconnect(); npcConn[m] = nil end
-			end
-		end)
-		upd(m, nil)
-	end)
+local function addNpc(inst)
+    task.defer(function()
+        local m = inst:IsA("Model") and inst or inst:FindFirstAncestorOfClass("Model")
+        if not m or npcs[m] or not m:IsDescendantOf(Workspace) or not RIG.characterLike(m) then return end
+        if Players:GetPlayerFromCharacter(m) or (LP.Character and (m == LP.Character or m:IsDescendantOf(LP.Character))) then return end
+        npcs[m] = true
+        npcConn[m] = m.AncestryChanged:Connect(function()
+            if not m:IsDescendantOf(Workspace) then
+                unhl(m)
+                npcs[m] = nil
+                if npcConn[m] then npcConn[m]:Disconnect(); npcConn[m] = nil end
+            end
+        end)
+        upd(m, nil)
+    end)
+end
+-- Убираем модели, которые больше не соответствуют явному фильтру или автоматически распознаваемым ригам.
+local function pruneModels()
+    for m in npcs do
+        if not m:IsDescendantOf(Workspace) or not RIG.characterLike(m) or Players:GetPlayerFromCharacter(m) then
+            unhl(m)
+            npcs[m] = nil
+            if npcConn[m] then npcConn[m]:Disconnect(); npcConn[m] = nil end
+        end
+    end
+end
+-- Явный фильтр имён позволяет зарегистрировать любой Model с BasePart, даже без Humanoid.
+local function scanModels()
+    task.spawn(function()
+        local count = 0
+        for _, d in Workspace:GetDescendants() do
+            if not alive then return end
+            if d:IsA("Model") then addNpc(d) end
+            count += 1
+            if count % 400 == 0 then task.wait() end
+        end
+    end)
 end
 
 local lastRank, lastChk, lastLbl, lastWork = 0, 0, 0, 0
@@ -1348,7 +1424,7 @@ local function frame()
 		local far = CFG.MaxDist < DIST_MAX and dist > CFG.MaxDist
 		if list and not far then table.insert(list, o) end
 		local limited = CFG.Limit and (o.rank or 0) > CFG.LimitN
-		local vis = not far and not limited
+		local vis = not far and not limited and (not CFG.HideDead or RIG.alive(char))
 		setp(o.h, "Enabled", pv(o.plr, "Hl", CFG.Hl) and vis)
 		local hum = o.hum
 		local f = hum and math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1) or 1
@@ -1375,7 +1451,7 @@ local function frame()
 				restoreNative(o)
 			end
 		end
-		if hum and o.nl then
+		if o.nl then
 			local showN, showD = pv(o.plr, "Name", CFG.Names), pv(o.plr, "Dist", CFG.Dist)
 			local showName = (showN or showD) and vis
 			setp(o.nb, "Enabled", showName)
@@ -1397,7 +1473,7 @@ local function frame()
 				setp(o.nb, "Size", O(200, sz + 10))
 			end
 			local hpOn = pv(o.plr, "HP", CFG.HP)
-			local showHB = (hpOn or CFG.Pct) and vis
+			local showHB = hum ~= nil and (hpOn or CFG.Pct) and vis
 			setp(o.hb, "Enabled", showHB)
 			if showHB and doLbl then
 				local c = Color3.fromHSV(f * 0.33, 0.85, 0.95)
@@ -1684,7 +1760,7 @@ local function toggleCard(parent, text, order, getv, setv, desc)
         Size = U(1, 0, 0, 54), BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, LayoutOrder = order or 0,
     }, parent)
     rr(b, 9)
-    hoverable(b, outline(b, 0.93), {base = 0.93, bg = C.Card, bgHover = C.Sel})
+    hoverable(b, outline(b, 0.88), {base = 0.88, bg = C.Card, bgHover = C.Sel})
     local label = new("TextLabel", {
         Size = U(1, -76, 0, 20), Position = O(12, 7), BackgroundTransparency = 1, Text = text,
         TextColor3 = C.W, Font = GB, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
@@ -1710,7 +1786,7 @@ local function cycleCard(parent, text, order, getv, nextv, isOn)
 		Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, LayoutOrder = order or 0,
 	}, parent)
 	rr(b, 8)
-	hoverable(b, outline(b, 0.93), {base = 0.93, bg = C.Card, bgHover = C.Sel})
+	hoverable(b, outline(b, 0.88), {base = 0.88, bg = C.Card, bgHover = C.Sel})
 	local label = new("TextLabel", {
 		Size = U(1, -140, 0, 20), Position = O(12, 10), BackgroundTransparency = 1, Text = text, TextTruncate = Enum.TextTruncate.AtEnd,
 		TextColor3 = C.W, Font = GM, TextSize = 12, TextXAlignment = XL, Active = false,
@@ -2895,12 +2971,14 @@ local function buildAim(page, api)
 	local function eachTarget(fn)
 		if A.TargetPlayers then
 			for _, plr in Players:GetPlayers() do
-				if plr ~= LP and not isTeammate(plr) and plr.Character then fn(plr.Character) end
+				if plr ~= LP and not isTeammate(plr) and plr.Character and RIG.matches(plr.Character) then fn(plr.Character) end
 			end
 		end
 		if A.TargetNPCs then
-			for m in npcs do fn(m) end
-			for m in tagged do if not npcs[m] then fn(m) end end
+			for m in npcs do if m.Parent and RIG.matches(m) then fn(m) end end
+			for m in tagged do
+                if m:IsA("Model") and m:IsDescendantOf(Workspace) and not npcs[m] and m ~= LP.Character and RIG.matches(m) then fn(m) end
+            end
 		end
 	end
 
@@ -2911,9 +2989,8 @@ local function buildAim(page, api)
 		local best = math.max(A.DynMin, A.DynMax) * 0.01 * math.min(SP.vp.X, SP.vp.Y)
 		local camPos = camera.CFrame.Position
 		eachTarget(function(model)
-			local hum = model:FindFirstChildOfClass("Humanoid")
-			local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-			if not hum or hum.Health <= 0 or not root or model == LP.Character then return end
+			local root = RIG.root(model)
+			if not RIG.alive(model) or not root or model == LP.Character then return end
 			local d = (root.Position - camPos).Magnitude
 			if d > A.MaxDistance then return end
 			local sp, vis = camera:WorldToViewportPoint(root.Position)
@@ -2961,13 +3038,18 @@ local function buildAim(page, api)
 
 	-- (раньше пропускался случай, когда луч попадал во вложенную Model внутри персонажа — триггер считал это «не humanoid»)
 	local function humModel(inst)
-		return inst and humanoidModel(inst)
+		return inst and RIG.fromPart(inst)
 	end
 
 	local function getTargetPart(model)
 		if not model or not model:IsA("Model") or model == LP.Character then return nil end
-		local hum = model:FindFirstChildOfClass("Humanoid")
-		if not hum or hum.Health <= 0 then return nil end
+		if not RIG.matches(model) or not RIG.alive(model) then return nil end
+        local player = Players:GetPlayerFromCharacter(model)
+        if player then
+            if player == LP or not A.TargetPlayers or isTeammate(player) then return nil end
+        elseif not A.TargetNPCs then
+            return nil
+        end
 		local part = NX.resolve(model) -- v4.0 Body Part Priority: основная часть, затем запасные по очереди
 		if not part or not passChecks(model, part) then return nil end
 		return part
@@ -3029,8 +3111,8 @@ local function buildAim(page, api)
 	local partState = setmetatable({}, {__mode = "k"})
 	local function slotPart(model, slot)
 		for _, n in ipairs(V4.ALIAS[slot]) do
-			local p = model:FindFirstChild(n)
-			if p and p:IsA("BasePart") then return p end
+			local p = RIG.part(model, n)
+			if p then return p end
 		end
 		return nil
 	end
@@ -3063,7 +3145,7 @@ local function buildAim(page, api)
 			end
 		end
 		if not chosen then chosen, chosenRank = first, firstRank end -- ничего не доступно: основная существующая часть (дальше отсеет проверка видимости)
-		if not chosen then chosen, chosenRank = model:FindFirstChild("HumanoidRootPart"), 99 end
+		if not chosen then chosen, chosenRank = RIG.root(model), 99 end
 		local prev = st and st.part and st.part.Parent and st or nil
 		if prev and chosen ~= prev.part then
 			if fb and chosenRank < prev.rank then
@@ -3322,8 +3404,7 @@ local function buildAim(page, api)
 		if b <= 0 and h <= 0 then return nil end
 		local bestM, bestT = nil, range
 		eachTarget(function(model)
-			local hum = model:FindFirstChildOfClass("Humanoid")
-			if not hum or hum.Health <= 0 then return end
+			if not RIG.alive(model) then return end
 			local t = rayModelHitbox(origin, dir, bestT, model, b, h)
 			if t and t <= bestT then bestM, bestT = model, t end
 		end)
@@ -3347,9 +3428,8 @@ local function buildAim(page, api)
 	-- расстояние до цели, если она жива и в пределах лимита; иначе nil
 	hbVis.dist = function(m, camPos, limit)
 		if not m or not m.Parent or m == LP.Character then return nil end
-		local hum = m:FindFirstChildOfClass("Humanoid")
-		local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
-		if not hum or hum.Health <= 0 or not root then return nil end
+		local root = RIG.root(m)
+		if not RIG.alive(m) or not root then return nil end
 		local d = (root.Position - camPos).Magnitude
 		if d > limit then return nil end
 		return d
@@ -3443,7 +3523,7 @@ local function buildAim(page, api)
 		local moveP, moveC = {}, {}
 
 		for m, s in V.m do
-			local root = m.Parent and (m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart)
+			local root = m.Parent and RIG.root(m)
 			if not root then
 				V.drop(m, s) -- модель удалена: сразу убираем
 			else
@@ -3557,7 +3637,7 @@ local function buildAim(page, api)
 	local fireTool -- присваивается ниже (= shoot)
 	local silentTarget -- определена ниже (нужна triggerbot'у)
 	local function trigValid(model)
-		if not model or not model:FindFirstChildOfClass("Humanoid") then return false, "no humanoid" end
+		if not model or not model:IsA("Model") or not RIG.matches(model) then return false, "model filtered" end
 		if not getTargetPart(model) then return false, "target filtered (dead/checks)" end
 		local plr = Players:GetPlayerFromCharacter(model)
 		if plr then
@@ -3977,7 +4057,7 @@ local stop
 local function startMain()
 	local PW, PH = 480, 392
 	local HDR, FTR = 46, 40
-	local SBW, TABH, TGAP = 130, 38, 4
+	local SBW, TABH, TGAP = 130, 34, 2
 	local CX, CY = SBW + 12, HDR + 46
 	-- размер области страниц считается от окна: растягивается вместе с ним
 	local PAGE_SIZE = U(1, -(CX + 10), 1, -(CY + FTR + 6))
@@ -4018,7 +4098,7 @@ local function startMain()
 		Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Win, Visible = false, Active = true,
 	}, gui)
 	rr(panel, 12)
-	local panelStroke = outline(panel, 0.78)
+	local panelStroke = outline(panel, 0.88)
 	table.insert(bgFrames, panel)
 	local scale = new("UIScale", {}, panel)
 	-- фон-картинка: лежит под всем содержимым (ZIndex 0), обрезается скруглением окна
@@ -4060,7 +4140,7 @@ local function startMain()
 		end
 		return c, dot
 	end
-	headChip("v3.4", -56)
+	headChip("v4.2", -56)
 	local _, aimDot = headChip("AIM", -110, true)
 	local _, espDot = headChip("ESP", -168, true)
 	local close = new("TextButton", {
@@ -4289,7 +4369,7 @@ local function startMain()
 		Size = U(1, -6, 0, TABH), Position = O(2, tabPos.Main), BackgroundColor3 = C.Sel, Active = false, ZIndex = 1,
 	}, tabsHolder)
 	rr(pill, 8)
-	accent(outline(pill, OUT.Active), "Color")
+	outline(pill, 0.83)
 
 	-- заголовок страницы
 	local pTitle = new("TextLabel", {
@@ -4562,7 +4642,53 @@ local function startMain()
 		TextYAlignment = Enum.TextYAlignment.Top, LayoutOrder = 5,
 	}, pe)
 
-	local resetBtn = button(pe, "Reset settings", {Size = U(1, 0, 0, 40), LayoutOrder = 6}, {danger = true})
+	sectionLabel(pe, "TARGET MODELS / МОДЕЛИ ДЛЯ AIM И ESP", 6)
+    local modelBox = new("TextBox", {
+        Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = 7,
+        Text = CFG.ModelNames, PlaceholderText = "Все модели / имена через запятую", TextColor3 = C.W,
+        PlaceholderColor3 = C.Mut, Font = GM, TextSize = 12, ClearTextOnFocus = false,
+    }, pe)
+    rr(modelBox, 8)
+    outline(modelBox)
+    new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, modelBox)
+    on(modelBox.FocusLost, function()
+        CFG.ModelNames = modelBox.Text
+        pruneModels()
+        scanModels()
+        updAll()
+    end)
+    table.insert(repaints, function() if not modelBox:IsFocused() then modelBox.Text = CFG.ModelNames end end)
+    local modelPick = button(pe, "Выбрать модель: все", {Size = U(1, 0, 0, 40), LayoutOrder = 8})
+    modelPick.TextTruncate = Enum.TextTruncate.AtEnd
+    local function paintModelPick()
+        modelPick.Text = CFG.ModelNames:match("^%s*$") and "Выбрать модель: все" or ("Модель: " .. CFG.ModelNames)
+    end
+    on(modelPick.Activated, function()
+        local paths, seen = {}, {}
+        local function add(m)
+            if m and m:IsDescendantOf(Workspace) and not seen[m] then
+                seen[m] = true
+                table.insert(paths, m:GetFullName())
+            end
+        end
+        for _, player in Players:GetPlayers() do if player ~= LP then add(player.Character) end end
+        for m in npcs do add(m) end
+        table.sort(paths)
+        local current = table.find(paths, CFG.ModelNames) or 0
+        CFG.ModelNames = current < #paths and paths[current + 1] or ""
+        modelBox.Text = CFG.ModelNames
+        pruneModels()
+        scanModels()
+        updAll()
+        paintModelPick()
+    end)
+    paintModelPick()
+    table.insert(repaints, paintModelPick)
+    on(modelBox.FocusLost, paintModelPick)
+    new("TextLabel", {Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 9,
+        Text = "Кнопка перебирает найденные модели. Или введи имена/полный путь через запятую; пусто — все. Включи NPC отдельно в Aim и ESP.",
+        TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, pe)
+    local resetBtn = button(pe, "Reset settings", {Size = U(1, 0, 0, 40), LayoutOrder = 10}, {danger = true})
 	local rArmed = false
 	local function disarmReset()
 		rArmed = false
@@ -4590,6 +4716,8 @@ local function startMain()
 		CFG.On = true
 		cur = "Fill"
 		parseWords()
+        pruneModels()
+        scanModels()
 		statsCard.Visible = CFG.ShowStats
 		if closeDetail then closeDetail() end
 		for _, fn in repaints do fn() end
@@ -5324,7 +5452,12 @@ local function startMain()
 	on(RS.Heartbeat, frame)
 	on(Players.PlayerAdded, track)
 	on(Players.PlayerRemoving, untrack)
-	on(Workspace.DescendantAdded, function(d) if d:IsA("Humanoid") then addNpc(d) end end)
+	on(Workspace.DescendantAdded, function(d)
+        if d:IsA("Model") or d:IsA("Humanoid") or d:IsA("BasePart") then addNpc(d) end
+    end)
+    local modelTags = game:GetService("CollectionService")
+    on(modelTags:GetInstanceAddedSignal("AimTarget"), function(d) if d:IsA("Model") then addNpc(d) end end)
+    on(modelTags:GetInstanceRemovedSignal("AimTarget"), pruneModels)
 
 	paintToggle(false)
 	paintSeg(false)
@@ -5339,7 +5472,7 @@ local function startMain()
 		local n = 0
 		for _, d in Workspace:GetDescendants() do
 			if not alive then return end
-			if d:IsA("Humanoid") then addNpc(d) end
+			if d:IsA("Model") then addNpc(d) end
 			n += 1
 			if n % 400 == 0 then task.wait() end
 		end
