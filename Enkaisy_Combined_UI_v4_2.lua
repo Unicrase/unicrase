@@ -938,28 +938,367 @@ local gui = new("ScreenGui", {
 }, LP:WaitForChild("PlayerGui"))
 pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 
--- Серебряная складчатая монограмма E. Только нативные элементы: знак остаётся
--- резким при изменении масштаба, в том числе до ввода ключа, без загрузки ассета.
-local function logo(size, parent)
-	local f = new("Frame", {Name = "BrandMark", Size = O(size, size), BackgroundColor3 = C.B, Active = false}, parent)
-	rr(f, 7, 9)
-	local st = outline(f, OUT.Window)
-	local silver = ColorSequence.new({ColorSequenceKeypoint.new(0, PURE),
-		ColorSequenceKeypoint.new(0.48, Color3.fromRGB(195, 197, 202)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 102, 109))})
-	local function fold(x1, y1, x2, y2, width, light)
-		local dx, dy = x2 - x1, y2 - y1
-		local band = new("Frame", {AnchorPoint = V2(0.5, 0.5), Position = S((x1 + x2) / 64, (y1 + y2) / 64),
-			Size = S(math.sqrt(dx * dx + dy * dy) / 32, width / 32), Rotation = math.deg(math.atan2(dy, dx)),
-			BackgroundColor3 = PURE, Active = false}, f)
-		new("UIGradient", {Color = silver, Rotation = light}, band)
+-- Один рисунок для кнопки запуска и обеих шапок. Источник: assets/unicrase-crown.png.
+-- Данные вшиты tools/embed_crown.py, чтобы для установки по-прежнему хватало одного Script.
+local Brand = {}
+-- BEGIN UNICRASE ICON DATA
+Brand.side = 144
+Brand.rgb = "fefefef4f4f5e3e3e4d0cfd1bebcbeacaaac9d9b9d918f918685877d7b7d7473746a696a6160615857595150514a4a4a4443443d3c3d3737373131312c2c2c2827282423232020201c1c1c1a1a191717171515151313131111110f0f0f0e0d0d0c0c0c0b0b0b0a0a0a090909080808080707070707060606060505050505050404040504040404040403040303030304030303030302020302030202020203020202020201020101010201010102010101010100010000000100000001000000"
+Brand.pixels = [=[
+rqooooppoooopoprqpttttttmhhfacz~zyy{yyy{{yyyyyzyyyzykfh]\aceda`[Y]XXajhkkkottyyyyyl]ahtyyy~t]_~zyyttttoophb^\YVYQHS~YHOatUGLPN^y~~~~~~~~~~~~~~}l
+tpoootrttrooprppptttrtttooskkhm||yy{zyy{zyyyyyyyyytqha[TW`eebbbb^ZUWaeefefgotvvyyseZ`oyr~~^[c~yzyytttroohc_[YWSSLTkaXTcedPOOOf~{~~~~~~~~~~~~~oeg
+tpoorronollkkooolmmkkkiokotokiktyzyyyyyyyvuuttututkca\TRY`cfcbfc`\Z\Z]`c_^chltrvkjioktt~eW[t~yyyyvvtopogb^]ZUEDMSbfW`o~]\f\Y~~y~~{~~~~~~~~~u]_l~
+tvhhrokkkkliihhfhir~~~~~~tttoooopt|yyyyyvutrookkkeb^_^XYZ^htohlhf`abYZ^XPV`bfimiffhkh~~TQ\~~yvyyyvppoohb`]WWFAJVejt][^j[]~y~tzz|~{~~{~{y~~a[^x~~
+ttkfmkkhfhmt~~~~~oc[VRPLT~kyztoppoyyvvyutqokhffec^]_ac_hc`ehokkfhfe``]\PERY]`efddfkl~^OQk~txyyytutptnfb^^OP[GOPZqkt~ocu\ezttyy{{{{z{{~~~hWXk~~~~
+rtogjhi~~~f^XSPNLJIHHHHHP~kv{|uloqrtwupookfeba_][\`ciptkdfefhfebbba^]YUMBMUY\^^`efpzUNW~yrvuytttrppne_^\UOYTSeSScs~fc~Y^~uyyyzzy~{||~~t\X]~~{~{{
+ttofjfrUMJIHGFFGGHHHIIKJO~mtzzzytoonlpkhfc`^`ZVW[ekoqoihhhgb`_^]\][[XTMOADQUVY\_ckeTSh~otttutoopooke_\QS\W]PR~yW[yaWVLRryyyyyyyy{|{~~eY[y~{~~~{{
+ttrhke~PGGGGGHHHIJJJJKKKNytwz{y|ytlhgeeb`]ZUOQVaooomihecb`][ZYZYYWYZXOHOA@HPSX[]`ZU\~khroprroooomkea]XRYXXlYV~`__obSIOyytyyyyyyyyy~t^\s~~~~~~~z|
+ttthhhyVJJIGHIIJJKKKKLLKNkyy{~yyytiec][[ZYVPP^oohhffc`]]\][YUROLLKMOPGFNB@AIOTY_b`~~fcbehkkkkjkkheb_[Wb][abkbUVf~bUKR~tvyywyvyyyyytcf~~y~~~~{zyz
+uttkfho]LLKKKKKKKKKKLLLMM^~t{{yyojfe]WSRY_`e~fceea^]^_\VQLIFDDCDFIKMNFLMFB?ELOOLLORV^~~~vb`abbbbac_[W]hPSav\PPSZaLKl~otvvyutryyyvtr|~{{~~|z~ywy~
+tttofikfNLLLLLMMNNQPMMMNLV~oyyulhea``XRTflhe_`_]]^_ZSMIGFGIKNQTW[]ZWQJGNJC?FQUVUTPLIGGHMW~~c\[^_c\OPV\Z[VcUMQ[YZ\Xhkhytyvttootvtty{{{{{~~|yytt~~
+yttohok}PLMMMMYbo~~oNMNNMT~oytlkfca_cceka]a^\Z[ZUNIHHKNSX^ba_][ZYXVTMGAOID@DPTY^g{~~[RKFCDHQ[ZSROHJQSU]~bMJS_afklyeetttvttomkrtqyyzzz~~~~yuqho~~
+yuuthok~SMNMNOk~{yytPNOONR~otkhkfehklicaZSWWXTMHFGKR[fja^^]]^^^][YWQNC@EDHCBQTY\^`acn~~~[NFCDEBBBDLNPVkVGGV`_bfhhgfkopttqmkhhrtvyyyyy{{{yyofbl~~
+yyyykol~WMNNNM[~y~y~SNOONPttpkgihoqkfc_]XTQKFDEKS\c`^_bceeccba_][XUPK@@ACIIBLUX\^befhfb^d~~VB???BMLQQSUKITa_cfikkhhkltttokhcaorttyyyyzyyuofcat}y
+zyyyoom~\NNNONXytyt~UNOOOOaylrplolhb`]YXVNEACLW^]]^cffhhhhfeca_]ZWSPD??BEILFGVV[]`cgkogyZKLHB@BFHCFUTQSSRVabehkkmhityuooojk\Wtitttvyyyywkhe__yyy
+{yyyoorvePOOONU~~~~~WNOOOMY~hoohhea^ZWWPGDGMQWY\`cfhhkkkjifeb_^[YWRNA??BGINLFRVY[^bfkhtYFBBCEFM^UJLOOWYTQZ`bchkkppwyturoohoVQtenorvyyywkkf_Y_~vo
+~{{zoltryQOPPOQXWUTQOOOOOMV~ffffb_[XXQHDIRXYYZ]aehjkpttlohea`^]ZXUTG???AIKNQIMWUX\_efo]MGHHIMN_^R]~YQTQSV\^aehkottwytvhfhekRMhbhkrtxyylkj^Z[whht
+{~~{tlto~TPPPPOMONOOOPPPPNS~ceea]YXSIDGRYY[]_a`cehlorttoof`a_][YWTRB?@?@JMPSOIUTWY[_b^SNLNLMOKS^SRUVQSFFV`\_ehkopovutohhf`cOIb^ehkoptokkcaaycb|~
+~~z{ykto~WPQQQQRQQQQQQQPPORqbb`[XUMDEOYXY^bcdfhhlikkttoooea^[[ZWUTK?@A?AKOSTSIPVVSSY^TPOPRMMNKJQZWTPRWVMGM_a_efkkotrokhe`\^KE[[befhkkhheebe_h~~~
+~y{~yfto~\QRRRRQQQRRRRQQQOQc`^[WSFCKYZYX]bdfhnroecachqoohcb][ZYWRRD?B@?AMQSXVLKSQLMRROTQUSQSQPSWMTUOZ[Y]UMKUh_chklpojfc`\X^GBXZ\`bekkffh^]_t~{~~
+~~~~yott~eRRSSRRRRRRQQQPQQQ^]XYMCER[Y\^WYacfkoto__^`afhffca^[YWVPM@AB??ANST[[SISPOPQQPSUWUYYUTXWUbbe]YYVYcTKRfaeggkhfea]XRMB?IQV]ac`afv]]f~{y~~~
+{~~{ztqytoTSSSSRSSSTUVY[]``]XUKCHW[[^_`VU^_cgmkgc__cbcdefca][YWQOF?DA??AOSXZ^YJLLORVUPRVXZ^YVUST`deb][VQSW__OPecbeeb\SPKFC????AEIMQVboX]~~tuy~{z
+{~~~zuryt~WTVWX[^bjt~~uoga]WVHDP[Y^abb_YJS`^bckfb`acccefec`^\WYIHBDD?@?AQUXZaXJGMORUVUWY[a^]XUWX_aha[YQGMV\`wTP]cbeea^[WSNHA?EMRVY^ccW]~hoyyyz~{
+~~z|{}wyy{fel~~fj~vrokhea]WVGFVZZ^bffe^_IFUaWZc``acffcehhb_^]YSEEBFBA@@BRXX[ZRNGKPTUXZYX]abaZ\]ZY[\[ZYHAOY]a`~WQ]ebeeeca_Y_GBVZ]acff^ky`gvvyyy~~
+~~z|~{yyyty~~XRXkttpokhc^ZPEIZ[]`cghhf`]NBHRTTUZ]acfhhkhgea^[`MFCCDBB@BCR[YZZLQLHOUUV[Z\c]elbheYVUWOPPBBT[`bbc~[R\cbeecb_[_KD[Z^aeeh~][kytvyyy|~
+~~~~~{ytr~~VLMYyvtttoie_[UEI][^bcgikhf`]PAGPLLQW[`cfjklkkec^]YGC@CABBCFDWa\WVMNSMGPUY\^]]^kttkeaSPPHIK@DY[_cdhey]R[ebfeea^cNHc]acekeRVtsptttvu|~
+~~~~zyx~~XMIR~~vyyytlhb]WGL_[_bcfklkkf`]ODCUUKMU[\_eikookhcc]KA?@@@CEFHG[a[UPGKUPCG^Y^c]Wajtooh^RNKKWG@G\\cfeekfw\Q\eceec`eRLe^abebRVthhmsstttyy
+~~{z~~~[JIQ~~y|~~{wojc]\HMc\`_bfkkookh][OM@FqZNPWX\acekolhhZNF?@BDBCGIIJ^k[VNMXXPJBLa[a]Zackq][_QKO~OAEL^]bhkffket]R]aaccafUOc^beb^`tcfffhkottxy
+~y~~tZMLNY~yt{zzz{toh__KNh]baZbe\b^fkf[[OYDAI~`ONX[`bceoohhQPNENIGGCGIIHZa[ZW_f[`pVKW^`beb]^^RSSMR~TBBMMUZeehkhhkekZT``abbcWS`a\U_``_`bbccfhooty
+~~o]SLLX~~vzy{yyywokacPPl^cc`ce_UVUZkbbNK~IABIudOP[]`ehloo_[fXMT[HLIFIFG[XU]]hZc~aet\^ahfc]\WSNJS~SDAIULPPT_khhh_a_eZT_^``_[Y^VOS][[[\]^^`acfksy
+`XRRROT~mt||zyyyytldbURlaee]bdb[STUV]WSML~O@ACJb~SPY_cefhhe^fcSVlMMLFIEKTRUchc`~hUa]]]bjhca\VKFPfRDCAQWJNPU`pZ[TNXhfWJM[\]]][TPRVVVVVVWXY\]_bekq
+SRNMST_yryzzzzyutofcZSfefh`ab`a[WWVXWUMMMeYA@BCG]oYW]^acfffdkvSY~PJJGIMPUW[cr``~a[~ecacf`]a[OFIWLDDBD`XKOSW^ybYPJKRTPMKQ`\WRPPSRQRQQRTUWWWWZ]afl
+SQNOS[yyy~{yyztttne`Tahfh]b`f_\[YTSWSRPPM[kDADDPe`~~]\^`bkhfyhQ]~OHHIKPCV[]`h]_~_V~kecee^^[TWUXUCCCBG~UMQRVXU]SKMJMQTTNIKMPONMJGEDCCDDEGKOUXX]bh
+OQQZi~~}{~yyyyttmfhY]ohka_a^PX]VWSQTTTTSNV~IDFL~b_yk_^^_kYWo~TSlcJHGKTBBYX\^b^Y~hRi~mffcfWRY~~orWFDDM~TPTTQNNOMLQPQTSOJIGHGDB@????@@ABB@?ACJUY]c
+NWk~~|~~|yyyyvtohk\[yhke_`]`QDJSSRRUUVVWLQ~NEGNyeh~mfdZUSRb~ZPa~SFHHOI?DUX\[^bUf~WT~yobfUS`eh{khoLGFTbURVTSPPNOPRSSQQNKFBA@BDGJMPPPMHGIHECA?DTY^
+h~~y{~|zyyyyytoiffYhkoh[\\^\fMBDHRSRUWWZMV~QGJJbtYY~~yc[W~~[R`fhGGHLO@AUSVRZZ^US~zSW~zfUScbl~]\t[MLG_VQRWVUSPPQQLPSNHCABEJPW]^]][\]\[LGIJIEA?EXZ
+~{~~~~z{|yyyytthfaepkk^\^_`^Z\LEGEOQSXYZc`tUIMHM~ZRS]k~~~t_Xf~~JHKGQB@M~_PTSWVYRZ~tW[y~k~t~tWR^~PLMKu^PTZWUQPOKFIOFCCGOW`^\[ZZ[[[[[YYSHHJLGD?@P[
+~~{z~~zz|yyxthb]Xaokoeadccb_]XZGIPEQXVZ\hiyXLOMGJeTPPT]`__^t~]JIJHQG@H~c~UGMSRV^QX~~effyrcWSR\~QFNSN~gWWYTPPLFECFCFO\o`\[[\]^^^]]\[Y\OFHKLKGA?N\
+~{{~~{zzyyytr`XUSa`fojjeffc`^[XWDJUPaf^^ya`VMRMIAFOMPTVX]f~`OHIIFKhLDG[t[INR]ZWXXOSh~~oeb_WQQWLCJUTQ~acWURULFKCELTmc]\]^^^^]_^]]\ZXWXGFIKLLHDAS\
+~~|zzyz{yyuttt~c\~lolokghfeb_^YYUBI\Wl~t~WcRNSLIC?AEKNOQQMIEEFFEKMQ~HEM~HJU]~^VUVWRORZt~~_WRLCBHOVVTcZ~[Ze^RSEL^^\[]____^^_]\^]\YWUXIEHHJNLHDF[]
+~~~~{yyyvvuvtolcbrpomonkhghca_[W_L@I^b[y^S~MSSPHE????@AA@@ABCBDGJLP\[LGGLSWzfWVTTRRSNMKLNKJHGDEMR[[TaTy~~h\TEIbXZ]`a_`a`_^^^[[[YWSPHEHHILQJFGX[b
+{~~~{yyyyyyyttokktnmomokghieda^[WtDAJYaXS_TM\UTGE@????????@@ACFLPV`a~TCCTU~~y_YUQPOOMIEGGJMPNHFOX\bS^UYeX_RGF[[]Y^ecbbb`^^[]\XXVSGCDHGHMOOIHYc^f
+{~~z{yyyyyvtttotttooojkkffhfeea^X[T@DLUh^]KZ]WSIC@?????????@BDINORRUY~JCWd`ZY[\YTRNIGCFJLPQNMIKR```XSbOUaRIDQb[`]_cfecba^]XUXTSTI?CFGGKOMKK[m`ck
+~~~{{yzwuuotytottqookqhheceffeb_^R~F?MPRVKSf^YRLD@????????ACEINPQSTV\hhK_~]VRPNKJHFDBBKMNPONOLNYab_eRYYhQLDHpW_beaafeba^\YVNPQQJCBDEGJMKINcoeefo
+~~{z{yzttrtlffmttooij]ef^bceffcbhTVWACWSPOW]^ZSOF@??@?@ADJPUTTSRRT[^b]|~vgpth`YRNIECAACEJNRSSPP^cfb_XMQNQHBT\[feceacb`^\YVTMHJECCBBDIKJIToya]fho
+~zzzyyytttk`[Xfoolkhf\acU\bceeccc\RtFAJYUMT[a`SLFDFECCDFEEFEEHJMQSUWZQQ[T]_bcfhtqpbZRMHECBDINMP~he`^QIGOPBGfYcfhec`_^][YVSPHB@@A@@DIHGN[~~WT`kot
+{yyyyyytvtffe^ejokjece^]OV^`ccdecgY]PFDPTCJWVPKMQRMEBA@???@BEILPSUWWUXMIWccovto_XWWUSWWQQNJIHGLT]o_YJCI]GBQ]]khfea^[ZXWTRQHA??@?@CEFJTf~[NRcfkry
+~~~~~yyythfeYafeohfdb`^^JTa`bbcffffbVMJDWIESSRTQKFA????????BEFIKLNOONMKLUTXYXXWWYVTUWULJLKORRPPPRVVPCCVQEIX]ckifc^[YVTRPMFA?????BDGQ]eaNIRkchoy{
+UNU__~vvkcPHHO[khk_V\VPIAFORYacheffb_KWDFSXhc_PKGDB?????@BDHKOQTX]_`a`^^bbb]YTROLJJJGBGJJNLKQ]T[[WVI@OTONH]afhge`]YUROJFB???@??@EOZZ[OEI\obiot{{
+PJJHPhy~~ZPEHT]oh`^Y][UQDKUW\abcefkehNMKG~TWb[JLGBB??@DKRYh~~~~~~~~~~~~~~~~~~~~~f\WPKFFFILLORTSXaa]aMUGTHLhbfec`]YTRKCA???@A@?BLX[]QDBMzabhmrw{~
+OSPLM]hYYWOGHOU]~QQe]^^fMV`^__afoa^ca[HHTOLa^VPJEEHIEIRY]^`ccfhotvvz{{{~|~||yvtt~~~~~~`WOKILJOZQeoXS~OBNE[^ccb_[WTQHA???@AAADKOV`REAEWh]cimquy{~
+NSTJFQRMKPGFJNOUQLLUZZ^\RW[[]cbZUW]a^uKBLDJ^^RMLSa[URTVZ^ek{~~~~~~~~~~{y|~z{~~{yyvtpkhv~~~`RKKTWkkjRTTGINe_b`^ZVUOE@??@AABGOWY[QFBDMf^^chortvy|~
+\YQFHLPHDFJMPLHIJPOQV[\YUW[]XTSU[cb]]]XHEDIUTU\~r_][]cuye`^]]^][[[^eu~}y~~{{zytttttwzyytloo~~YRSYk_VONGGa]`_[YYTJB??@@@CHQ[`[QGCGSd_[]ehkorvyy~~
+^SOOOVRHHMNPTOMKMRRWWXVVWWROPU^fc]]YUXfKDAET]~lb`[XTPMKJJKNOPSTUWY]fuz{yy{{yurroikor{{z}~~yfbv~cVTTPKMIRb^\[]UKC@???@CKT]bZQIHKN_^[]_Uehkptwxy~~
+TOOPUWYQMUVWWSRQNNPTVRSQLJNWkob][[TNQW[QDBO~pjchaYVUTTUX[_g~~~~~~~~{ywwywtutolkepthovyz~~{~ofiet~bPEIJK~Z^^ULDA@??AEMX^^YRLLR^\OXaaacefhkoooxy{~
+`XSRTVRRPOW[ZZURQQOLJGEFMY~~c]ZWVUOCEXW\DO~ceitlmtifpt~ytoggklotttttutrptttoofefSSmiowy{zzz~~yymfe~OFFRbaVKECBA@BHR^^\XTQRYhb[\YWabccbccdfioty|~
+tebZPNKMRTY][^WSRQPHAAHVlphXWUVURPCAFYY[M^eyb^bcb_]W^^_ffeoihrtttrqlkihjrpojee^QMQbhotwyyytmuphefc_~NFtVMGGECBDM[h`[XUUW`ja]^^^XV```__`___bjpx|~
+~|fRQJLMNRUWRSRTQKIIKKL[[ZNOUXXTJF@DKb]\[^a\fc`_]_OO[U]hceUYokottomgcbtkfhcef\TOP[[hgmotwrqol^]c__aZSMPKIHEDKTyy_[\WTXjkcaba_]YUR[`^ZWUSTXX^tv{~
+~~_SZRSNOQTQPSOMMR^_QB@Rz_QPX[YRBBDBEQ^_]_aZV[b^ZRCDPP`a`WQRuhkjhhc`h]RQ^e~\URLHJVXkfckklrrfc^`ZVX\eQPMHHIO_~o^^`bZTV]cefea_\\XNTTUTUSQMJGM`otz~
+~~bXZYYVVVUUSQQXZPHD@??CQtcUWU]HCCBBEUWa^hhcWT]_QCACGQ[[]LLP_hhfeba]OIPS^]OOQHEGHMKQWccefffh]RIKPT~KPQSOVu~h``ah`UTV~~fdfffa^VHDLOPOKHDA@FW]kw{~
+fhZTX[\ZYXYZW]~cPE??@???E~`\UWWCBACBM~oX_fjxtb\^LBCCDHN~NBNTTtdec`VPLJZfWNPOKJKJIHGNTT]ccf`XQNNQ[iQARWb~~hffbbcWSUHRQLSa[XSQSDCFJIFDCA@@CQ]ekyy~
+ZaY[^`^]\\[[XV\hZyC@B??@R[mcU]J@@ABB\^Mb\akkof_[HBBBCQ[L@AM~Wf_`YTSOJF^lXOIGKKIFDCBAFRW\c]XWXX[\~GA?JS[kdcfef\SQNCACBFY~VYRLIFJMIFDDCBACQ~yfoty~
+]^[bbba^^^][Y]VWtLAC@??F\[kbWUC@@A?G~OAW\^Zfhe[QBA@@DXF??BBMW]cUTOFDGFRVJFEGHGFCABA@?BLbUVY]`fh~M??ACM`XcbiaVOHDA?AADEMVYKFFHJIGEDEEDEDEOckfpxy{
+\bfcbcb^^[[eVQU^`CCBABASWoea[K@??@BQyE@FSWZ`cbUI?@@ALQ??@?BRUTYVKBDJNIMkXHGOKDIGC@?????Kk[otpk]UA?@BACPX\cZTNB???@ADDEDEURFDHFEDBDEHKPYo~hhotyyy
+`ephfe^]\XWONWchLCDBDCG]]tf`WD??@?CfRBAAALf]_]RC??@ATtE?@DT~akVHHJKKJIHVYSfSECG]VIC?????K[]ee_WE?@@@?CMW\XSSB????@?CCAG]~WIEDDEHMU]\avlfcekotyy|
+toohhc_]pQKQhy[RDEDCDDS[rlgaO@????HWFAA@@MXc]ZP@???C_xHDR~~c~YECEJJGGIIK~~OBCCAOkTSJA???AU\^cWI@AB@@?BLT[][C?????AHKEKc~t^eFCDEP~~hep{ffcefkvxz~
+oomfb^a]ML^~`YRHCFDFEIbbyob|G????@QMA??@BMVkZkH????Hu_UREVly[EEDDJLJEGF]t~F@CCDXtbceB?@?D_Y`XKAAAB@??AMTpXFA@@??EVWNSahxt~RBBCDT~~~~bWbbachquxz~
+mhd`[lUIP~pb]QIBCBEIGQ~ttrh\B?@??CPD??@ACGT^^cC???@QeUG@?FfcEACFGKjNDDN~fYB@BBGYg~YC???@KQ^aKAABBCC??@MUTEAA@@AO~k[ykpytk~I@A@F~VOKGEOc`cfortyyz
+jc^ZWMHU~ffc^PB@BCFIJhtyyi~M?@A@?HE????ABBRa~R@@@?CbL@???J~HA@CEIYyVBF]z^M@@AAM~lMB????CHVzVD@ABBNF?@?JXQDA@@ACHMVXYcfffe`C?AADFDCCAIk^^cfhkowyy
+faZYFGa~fkefXKAABEHIQ~tyyh~E@DB@BMA?@AAAA@K{~IAAA@H~F?@?@ZO@@ABFW]ySFO]nZF?@@ChRE@?@??CBIo[PC@AAD~H?A?IW~N@BCCBBBBDINW\e~Q@?@A@BCDCH_oe^bffkoky~
+e\[FH~fehkeaWIBDCGIJ_t|yr~VBBCBAGNBBBBB@A?D~fDBAAAPYA???FcB?ABBQ^u~ROW~aVB?@?DHBA@A?@GFF[cVI@AAAOyKAA@F~t\NGDCCBBA?@AEY[HA@@A@ABDFIPhc\^_acffho|
+^oHH~`cfhec^\EDEEJJO~t~~h~JBCCECJLBCDCDA@AAXTCCABC^K?@@AQH?@@?Hhf~~f`~tkP???@A@@AABCMQNXl[SBAA@F~~NDBADJIN[bNFBAA@AA@?CPA?@BCDHNSWpt\X[\]^^_ekty
+~MH~_ekkf`][PDFFGKJ[~y~ytcDCDDFDPHCDDDPF@AAMLCCCBG~D?A@BRA?A@AWf~yyy~qa~G?@@AAABBDLWW[ca]`H?AAAJKGFDCCCCCEPtYSPLGA?AAA?AEBCBDQ~~yfc[UUSRSV_bghpy
+QItfkkkf`_TXGFFGJJO~t~~o~PCFFFGIYFDDEE]LBCCFHEDEDOUBBA?ENAAC@H~k{oz~h~~TB?@ABABCI~~^oitkUP@?ABCCBCDDDDDDGOXyt`YW^\MBBA?BLCDDETtfltoUQQQRSSNNYtep
+J`thkkfc]WPPCHFGJHT~u~voyGFGGHGNUFFEHH~UDDDDGHFEEoJABBBKIBBCBS~tzkb\eWG@@ABBBBCFGKcyo~]KC@?AABCBCDEEEFEN_fkyot~hf~KBBA?BGEFFJa~~~tYPONJHDAES`[bh
+a~oomie`\NSHDGEFHHbo~{h~VGIHIJIVMGHKIM~cIFGGGHHFJ~DBCCCPGDDDEfuweZQLHBBE@CEEEDEDFFJ^ZQHA@ABBBCCEGKHGGHFP~t~ky~X^XHCBAB@IFFJHQoYQMJHHGFDDBEP~SQ[e
+~tyvohc^UJUDDDEGFN~k~{~fEILJLML[JJJLJW~aNIJGFGIHSYCDEDESFFGFIy~~YLECCEVGBCFGXIFEFIIHYcNDCDCDFOV_h~NGIJJNhyt~[QROGFEBCAGQHILJLKHJKLKKFCEDDLUky[Zf
+wyvtke^`LLLCCCFFEWvpoaYHFMLMOKNUIJLLKh~^RJJIHJJHkNDFGEJSJIHJL~ePIHGEEQQDEGGK~_IFHGFEFZVQEEEEJ~~~ktOELLKLZkhVOKIJIFEFEFaLLKNNKLLOMJJFGGFJZ~~~^Y_f
+ywtoke^YLUEBACCBDbffZPGIMMLMOJTOJJLHO~~_RKLKJKIJ~JHFJFQQJIJMJOKIKKHDFWMGGKHOyycIFFDDCDZKFEGFWtt~y~VFLKMKXfWPGHKLHHIFF`YJLLKKKJIIHJJHLJGGJSyv[[`c
+yytokc_TWTA@@ABCFc~XLGINLKLMLJ]JJIJEY~|kRLKLLLGP`HJGJFfNHKLMMLLLJGEIb`HJJLHY~t~{KDEDA@CHIGFL~p~~{ycFIJJI_kWFEIKKKKII[~PILKKFFFGFFIIIILPTYb~h\]`e
+yxtohc]W_J???AFIGJJFHIKHHLLLKOWGIGHIytw~UIJLJKGbPFHIFH~QIMKLMMKJGELy~QGKMJIyy~yr~HBEDCCBGKG[yyyott~JGFGFjXDDFGJMKKQYcvHGMLECDEFINPRSX`h~~~h]^bht
+yvtoie]XaI???@DFIGEGHHFFIJJMH^NDGHEP~ty~\NEIJHI~GEGHCM~\ILKKKJIFGRoc~KIIIEP~ty~{h~HCFDCDCNWvv~optt~PDBIVPCACEKJIOV_k~WGJGBBELR]~~_]bhpy~~gY^eeju
+yytoke]aTKA@@ABCDHEEEEDFEFLHM~GDEDE`y~vufWIEHESfFECGEX~~RILJJFDJ\oo~_GHEIHY~|~{g_^~HDGEFGEX~keoyuy~\EDMSABECEFIWhk~o~KBCCJV~~~~yo~~~~|e[aZW\ehoU
+wwtpjfoHEOHCBBABCCDDCCCBCIHIo[EBCCJ~o{fp~_WFEI~YGGFPJoyy~SKJFFR^`yy~WFEDT\w{f[[\^_buJHIEGHCV~ckuzst~EFKDJTG@DP~~y~yuaDEPo~~yotywy~~~~y^V[bbh`]hS
+uttooaKHTlUCBDBBBCBBA@@BEEG_~UDADC[yyfb|yh~NAM~UFHRcQ~t~y~ZTT^ce~~t~SFEM~vy~WRV_bw~yvJHHFFCCXdty~ae~IGQ\~PBFX~ty~~~~[S~~lhtysy~~~f^]`eyypohfRROI
+yvtytUQXW_tHACBBAAA@??@BGMWfyQDEFH~k~]fkloyXBR~NFNoh`lvp~ffohamz~~t~JDL~tru`PTf{kYbyoeKGOECDHVZ~{^]~LL~~SEN~~oy~~kf~~~kmkfh{~~]UTTWaotuho^j[PIEE
+yy~c[YYUY]oZCCBBA@@???BMUX_k~OCKIQyyh[_\wt~|IZ~JJY~zbiphore^^ct~feohEOpyy~kbe~~y~eV]kocHM]FGGMRW~bX~SQ~TFS~tt~~a^^b~toibftfXQMPT^o~~yty`TR[QJFDC
+|y_XVUV[`_c~SCBAB????ERWYoyo~KG^J`~~\[koyckv]k^HZzorh]bk``b]ci^UUVsPG~uy~VPt~tzzy~fTVuv^GWfNFFPRX~WyfcXHV~oz~cTWe_cvifl\OJGKQ[~~~xvyyv~]LMQPOMGG
+{~`[UV^jc`_f~TFAABEGDLU\lkt~oHNbQ~rzekytv]Vfh~PK~ehtZRe_befXRNNORW~HRywz^X[ywz~|~vyhPU~~VIf~SFH[R]~t~aP]~o~z[RY~t^\~~`PGDJUy~~ootvyyy~h\QRUTPOHI
+~~ojX\yfea\^d]bOO]XQQU^bfxpyVG[h^citwtoog~RTbtLUkf^XQS`^\UQJJKLOWmXN~~mT^~~y~~{~~}yukRV~~QQy~ZIHeWky~ak~u~h\[o~ty`bbQKKRc~~jotuyzlttv~kb_X\WPPKG
+yyrcckjjfb^Z^hTRWVXXZ\aeoh]tOK~z_`rkkmkkfo[Qe[P]^YTV\XRNKIEDJOWht^[a~hRY~otz~~{{~{~yvyQU~~Vbt~mJIyky~~~~~k`h~tott_TPQ[~~eemtyt~t][rot~~~fSbYNJFJ
+zygfgkkfb`_[Y`nQNWXZ]][aWW\~KT~w`_fhhhefc``VX[SUVQTSMHFFFBCMYqyt`^~~kQW~t~y{~~{{z~z~zt~SU~~v~vz~KJ~t~~~out~~tokot[We~ofkoptyyy~~^etky|v~[MYSGGGN
+occfkkfb_\[]\R]fPRW[\USUYX[]IftyhTcfeca_^\ZWURNONLFCCCCDFJXfbeitkp~kRW~o~~z{~~{~z~~{~}v~UX~~~|~t~ML~ztkotyvttkkkht~okotttttttt~YXyos||zjPORLHKIK
+`acffca^[X[SHSoe^NPOMOSWX[hSO~huWTkaa^\ZYWUSPFCDBA??@CIQ[e^`fmrtyutTX~t~~{{{~{{~~{~{{~~y~Y]~ttout~NQh_tzutvpoa`ijooptttttrtpop}JP~ft~~~ZSVPJPTKK
+_bbbbb^[WSKBL~kluXPORNP[^thRYyhb^a_^\ZXUTQMGC?????@DMY`^]`fjmtwyyy\\~oy~~~zz~{{~~{~~{{~{y~bh{ygf~v~SVlytttrhqXWkhlotuttttrolhzTLRZ]o~o~YRVURPTOM
+a`bbca[WSE?L~ek~kYOPPLTqof]Wck_`a^\YWVTPIDA?????AFP\^[]`chkoruyzykk~tyy{~~zz|~~~{{{~~z~~~y~ff{~yht~thyqtookepTShfhmtyopyolkhckQSKO_][WWOR\]YPQPO
+^`bcb^YTE?H~aky[QPKLOWyfhc^cb^[^[YWVSKEC@?????AGQZYY[_behjmtttyyttvouutvytyyyzyz{{z~~yyz~~yyoyy~t^bhh~hokgfakOOh`ckompprhhhftbSTLHOQXRLRW\cYRUTT
+^`aa`ZYL?BhbekfPMOKKhkaee^_^^X[[ZVPIDBA@????AEOVWWY]_behikoppoooikmltooohkotvtuxwty~yyyz|~~yy|~|yt[ebofgfc`[`KJ^[_chjkkkeefkfQRQLFEIVUQY][]Y[^[Y
+^ac`[YPA@L~^c`WROKUyk^]_][]]_a\RKECCDDA???BFMTVVX[\^bcfhhkkjihhhhhhknfpQTkeroooosotxuryyyyyyytWhyyykachfhhc][DD_\_cffgffa^c~SJSOHKILU^][[]_ea\][
+aca]YSB@DTb]^VUPQVkca^XZY[^ZRLIFDEFGC@?@CIOTVVYYY\^`bceeeecba`__^`afceTMPYbeheecceefghkpqxyy|t[o~yy~f^he[UOIC??CIOTX`ce_Z]^^MSTLLSQU\_[X]flh`ehc
+eb_Y[D?EDOkXWSPMY\[^ae]SNMLHDEFEHKHB?ADKRVWWWYST]^ckot|~~~~~~~~~~~~ht^IKMLeoq~b^~~~~~~~~~~~~~y~~ytttofkf]WRMHA@GMRUY`f`[U\fNIVSKSZX_bhd^fkehkkfe
+ea[]I?CHDEQWWRPU[[\VPLKHGIGGFEFKJFDEJNRVVWXYY[STa]ZWWVTRQPNMLJIIGHKTUIFWYHKWTNMLLMOPQSUWY\^achtpmlkolklkfcb^fFE^[a_]^^YWT^WEJQLL[]^^ftz{{lhtrfff
+b^[RADJGEA@CFFHHFECCEGJMKHGECFHHIMTYWWWXXXZ[\]_`^]WTSSRPONMKIHFEBCFRODFufFDPQGIFDEFHIKLOQRTUX]fkkkkklkloec_\^KKa[^_]Z[WUX`GDSFFPc`bf~|yu{~|yyhbc
+a[ZFDPLFD@????????AFKONJHFBBDHLT_a[YYYXY[[]^^^^`acky~~~~~~~~~~~~by~h|S@IH@Rth~[V~~~~~~~~~~~{tlikkfftkokpkfc_cNNc^`_]VUSUYMCIIDIX_]`~y~~{~zywlee^
+^\ODOVNHC@?@@???@DHKMMJFDABIP]ze]]\[[ZY]]^^^_^__beeeffhffeccbaa_bcbf^~M@@N~_ecefcb`_eefhfeeeffedk~~]hhkkqkf`_QSc`b_\SPRURBBDCFVYa`f~{{z{~ythba\N
+\[FHWVTE@?????@BFLOPLHEFFM]~~f__`]YXZ]\]_`_```^]ehhklooooookmmolkookf]~CD~^imorotmhkokkhfffecez~bRJFXtfholk]\UT^a_YSQLT^FADCBM^Y`hhcy~~~yoh`_YPJ
+\WINWVULEAACDGJNRONLJJOW~~hbdeab_\YU\]]\`aaaa^\[]hhmooroqsooottttttokbyNPydmtuuzykkhhhffheck~yVMGEEDL~bfhph^aZY]^ZVOINYJACBBG^\_hhcftyuttob][RNP
+[]TM^XNJEBDIJLJLLLNQZy~yef^^`bbba]YY]]]^`caca][WZkkoorrookooqttuuvvtqookkoptwz~uhhgffhfdf~~]PIFEEFEEF_ffhkeca]Z\[VSHJWM@BB?C[`acohhyyqY^lb\\WQIJ
+`_hOLLGDBCFFGHKPT`|~yfkkac[Vhfgcc][WW\]^ab`ba^]Zekkpplookhoosttyyyvtwvroryuy{{keffhfeem~mTKFEEFFFEEEDP~befhfb[Y[UVKGROABAAANb_dhrytohb[Z^][[YKDL
+ieebNLIHILMOV^w~~ofoyf^U[ekWU~ehe`\UVY[_]aa``\akhfhkjhhlkoottttvyytyyvzyyyy{~offhgefy~^PIEEFGGFFFFFEDGhbbbhc_ZWUQHDMOB?B@?JY[`eoyyvtc__^`[W[XHHZ
+olho^W_etltytfecfty\WZ[[aefo]Ztjfe\VTU^YY`\\ZX]bdcfie^^bkpttowrpttstzyz|y{~~rfgffm~oWMHFFGGGGGGGGGFDDCSo__bb[ZRNGAJPB?A??E]\`cjltttme_teOLPVPGPj
+wtpjt[VY[]_accbecWRRYcffcahk~TT~chcWSPRMU\XXV\Y[ce^[Z[`akotoowklturtzyy{}~~offfehaSKHFGHHHGGGHHHHGFEDCI~]]\_]VPE?ENC?@??BRY^cfikpthbf~VFACQVKFSV
+zyuwotfa`aba]^`VPPXilfihfb`kryWW~efYPOMPUXVPMUW[`aWVSU`\^koghutvyy{{y{~~~~tffheihLIIIHHHHHIIIHHIJHFEDCDY^\Y]WSI@CMC?@??BPV[achhkphckoMB??GaWIGUJ
+|yytwtttog`bfULMWkvhkookkkf^io~RRt]\ONPPOSSRIJTQYSOSOW^a^[b\_vyxyyy{z~~~~thhfiko~PKLJJJJJJJIIKO[XHFEDCBLeYXUYKBCMC????BPXZ`behjkkj~WF@?@H^~WMNSF
+yyyuwutmhf~RFGOc}hjoooqtokkbZkoyPMYYYMMPLOOOJHFGONGEN[d[WUY]]qytzzy~{{~~tfhhhkyo~\LLLKKKKKKNUf~~zKGEDCBD[XTRNFJIB????APYY^befikhupPC??AK]fu\TW[R
+yyyyypo~wUJDI]~hhmotrrprtoffeXftyNGKXPHMGGLQMHABHFBBITSNQXVYytyyzz{~~{~ohfhhhyyww~PLMLLLKQ^~~yro~SHGEDCALTPLLPLB????AMYY^acfhkko]KA?@DP^_c|k\atp
+yyyyo~~TJFIX~kehlortttoorofopcR[|yQBCNLDDEIPJDDHDAACIHHGKX_^tisyyyz{~~rhfkhky{vyt~XMNMMMLR~lq~{uvbIFEDCAESLKaMA????BOWY]`cegkhoZIAACHT]]ct~~eatz
+yyyk~VHEKX~uckj`ootvttqoook`khXNWovUB?DDBCEFGH`K@AADLLHBIU]atmrt~~y|kkhihhtv~~vuyykONNMMMNc~yeetk~NFFECBAMPQI@????BNXY]_bejkko^ODFKNV[]e~~~{yhfc
+{ut~NBFU~~ejpqlotttvvttpu~[eSYhXKQoc_F?AA@ADT[bD@ADIPPJMOWejmpo|ickthwkfhh~~^h~yyt~UNONNNMW~k^aektYHGEDBAHQC?????ERVY]_behkkkaTLLRTWY^k~~{~{|~yo
+w~~JDO~~imtttoktttuttto{tWar\c]UWKMa^`K@?@CS~]VAA@CJVJDMOSbfekocPS~uRMRVkwyVQk}yyu~bPPPPOOQtteehu~~MFEEDCCB?@@?@GZWY]`beekgeg[PFKWXY`y~~~~~~~z~~
+~]KJi~ootttttqutttttto~kQZte^_bf]SMJU]^QCI[[Y~J?@BBDFKLDO~ffcocWQJJNIEOZXbaRYm~yyyw~UQQPPPO[yoy~tYRLHHIGB???@?BNWZ]^acehufcf_[LCM]\ay~~~~~~~{~~z
+_QU~~iuttttttqtttttur~fOWyf`X[Z^]W\LGQ[Y^fWR~K@@AABA?CIKNRPNZhwZHHJLPMKS`qXb~y~~~yt~]QRRQQPT~~eWQNMLMLFA??@??EU[Z^`bdefcUbbc`^NLY^eheim~~{~~~zu~
+cy~mxyutvvttttttttyt~dNV~ek`[\WYZZRNOIM^^b^cM??@@@AABABJKHFGWUPJBEQTRLEMPQYXp~v|zyyytTSSRRQR]UQQONPQKB?AA??ADT[X]`cefghc[bfl]TJNV]~zha]k~{~~tego
+~~v{yywyyywtttttttt~`NW~flfefccVROLPRRVhheebND???@?BDCCNOIKLKOGCFNMMJECEKPVWSY~~{xyt~[SSSSSRQQQQQRLD@?AA?@DKJM][\`hhhhecfiYPJC@BK]etb[[\k~yec`\f
+{{{zwyyyyyxytuywyt~`OY~folhfhcmVKIKNPTzof`l^[[MD???ABCFNUPLRJNMIMPPLHMKDITX]MUkZoyyyyiUTTSSRQQSTMDA@?A@?BLSPLMZ^^^elfccflQDABA@CM\]ovaa[_ta]]VZP
+~{vvyyyyyyyyyvyyu~bR]~cophkhfa]QMQQRakok]hLMV\^\OEA@ABCHPLLQKIKONOQOOSOKFL\fVRMTh~yth~ZUUSQRTRKC@BC@??BIRSRSSWY]_aeocck[IA??EJNSX[]h~pe_^fb[UVKC
+{{{{yyyyvyyyyyyvzhWa~_eyptoohkYSPV]pzt{^\TPMKMU^ffRHCBCDFGIGGILMKPTRTSQMKNV~[LKQ]Y\eeybUXWSNGB@CGD??BISUTWYWZ[]^]^]]``OD??@HT]eccfdfyZRV\h`XWLCI
+zy{yyyyzyyyxyyt|r^k~]a~tttookca\WY`eik~UZXY_PKMMR[eoYNHEDDEEFGHKKPUTUTRONIHMKOY^[Y\w~~~YNHDA@CIHB?CJSWVYYZ[]^^``^]ZZSGA??BL[a`ckv~yt~MELX^\]QJOz
+zzy{yyywwyyyhSoyhp~][~uvttptkobPZ~efh~VTkc`[Te\PLLQV`~y[PJGEEGHJLRONTTSRQLHKOU^b`~~e[RNIDDCEHIEBDMVXWZ^\[]`aabb`__YOD??@ES^YYZ]w~{ytVECLX]\TQX~~
+~{yyyyyzyvr~VO~mr~\V{ttttttm~bOWechyhRPba^[cyh`bfWQNNRYe~~^TOLJJMONNRTUONQOOLPVNLMMOPRTOEEGIHFIPYZY]_^^`abccbbbbeXMD@ABJ[YVX[XSV~~mVKGKV_SMQ`~y~
+~~{{yyy{{vryMN~k~aUovwttuypt^LTyhkyy[Ta^]VT]bogdaff\UQPQW[f~~~f[TRTRQPQROQNNMLOOTUVYcPLJIJLMQV\[\^bbabccddeeekleXPHFFGPYWWYbk[QS]aZQMOX\LEL^~vz~
+{~{yyyyyyq~YLT~ycVh~tyutxvr~KVyrot`bbyea`aW]kmoffobcoh\URSTV[b~~~~~~~xy~~~~~~~~]SNJGIJPXYTY[\]_eeccffghghkttttrZTQPRPUWUX^iy~f[\RNNNRZVIBH^~y~~~
+~~{yyyywut{XQS~mR]~ryyuuyo~OLb[ryfa]bfffegchfkolfX^fca]ZX[OOPORQQRVXW][XTRONIFEDGGJJPa~t~c\`fjfefhhhikooyyzytyeXSQY[WVV[boyzz{mfVPPSVRKFKc~v~~~~
+~~{~yyvt~~tWNS~\`~tyyyukt~NIS~]qf`[]tkkkgfhkgkk~VR_fha[W[WOVUSQHCEJLJJHHHIIKIKNRZX^~~~tytoookkkllkkkry~{yzzytyaWJKW[VW^puvyzyy~hY\_ZUQPV~~wzz~~~
+|{vutvt~aYSPNVZZ~tyuvt~~yPLceTYhXY]yooonkkookkpkXfhkc^[UWOMQQUVMHJQQLMMQYZj~ytw_ckyvpvy{~uomtrtpooyyzzz~yt{~thbOEK]\Yayyyyzy{~oRSht_^at~{y~~~~~~
+{{yttt~]PSQOOR]ytywwp~\NQP~~MLY[T]~oqtoookooki{Y^ohhbc_X]SS[SUY]WNONNOQUWXWVX^_al{yy{yy{fytqttwtv{yyyzzvy~t\Y[\MHTk]^t}yyzyyylUILhvft~~y|~~{~~~~
+~yyvo~cTUYSTSW~tvywr~YQPYffKKXPS]~tttrqtttrokyaVthjfcfe^bhaaYXWWYORRTZ[_fbZW]ci~~yz~~zyU[~vvyy{{y{yyyyt~~XMNVZULOfh^a_`o~{~yc[SOV~ffy{~~{{~z~{z~
+~trt}fW[]^TZ`{yyyyr~TM[eh_HJe~~~~txyvttttttts~T^thfhgfhktofeteXTRMTUW]_^_fahuu~{~~~~z~]Y~yy~{z{{{zzyvy~^OICGWeRHP{ff^TRYl~vaYWW_~fet~{~~{~~~|z~~
+wpo~hXZ[Y[UXbpyyyt~WNWc[WJKe~lrrouwyyttyuttt~ZU~fhgihffoolkothcPJMV]`_ccbkkw~~z{{~{~~tb~ywyzzzz~~{yy~qTHCEKTfbPIQ~iwXNPV]k_XVY^a^ak~~||~~~~~zz~~
+okykZZZWRVUX\tytt~[Q]c~oQO^]yptvtyvvyttyyyvyyUekhhhhjijoosrtum[PNTY_bcehkt~~~~zz{~y|e]ttttzzz~~~zy~~^NEBDOe~^ULLToz~lWXYWXWVY^]Z^t~~{yz~{~~{{z~~
+othZ][ZVSVYXYtyxqyVYb~y~~jW`~uvvtyttuvvvyyt~Y[yffhkkloptttvwy`WTVXX^acfky~~~~~~{{{tt^avry{z{z}~{{~oWJDCHSh`]ZYQQYb~{~yhZTUX[^\[`w~~~~~{y~{~{~{z~
+xr[Y][UVTV[W_ytyt~\MQY}oVW[yuuyvttyuuuvyyyycShfhfkkktptutuyytb^c_b_b`fky~~~~~~~~~ttktyoy|{yzyyyzy`TMGGN\bYX^gycZ`k~~{odVRVbc][b~~~~~{~~yz~~~~zz~
+m\]][XTYYX\_|vvv~bMMbZ]VTYtyvyyyvvwyyyyy{~~[^tfhkokouvx{y~yyohehlh_ack|~~~~~~~~~wtpotoy~~yzzyz~t\ROONTe\WYax~~yffdba_hZOPW_^_h~|~~~~{~~{{~~~~{~~
+^\^e[Y[Y[\]t~vv{]KPV`oTTXwyvyyyyvvvyyyyyy~cZpffhknootuy~~ytyy~wrohcek{z|~~~~~~~tptputy~~~~{~|~{`RNQV]eYUXh~~~~~~l^ZX[XLIRYZ`l~}{~~~~~~~{~~~~~{~~
+]=]
+Brand.bands = [=[
+?~A~BvCkFkG~J~KkLpM~U~VkWWX\YkZc[_\Y]_^~
+?~@kB~DcE~F~GcI~L~NcPPQRRZSTT_UNVSW~]~^k
+?~@kA~G~HcI_J~K~LvM~S~UcV_WWX_YkZk\_]_^Y
+?U@kCkD~E\FZGkH~L~NWOGPNQ~RcS~T_V~[~]c^~
+?~AkB\CTENFMHJILJkK~P~RcS\T\UcW~Xk[~]c^N
+?G@\BgCkDWEWFkG~I~KkNROTQ~SWTkU~Y~[_]~^~
+?~A~CGEGFIGIILJcK~M~Q\RSTkV~WkYV[O\Q]P^J
+?BAWC\DkE~G~IkJ~K_LVNcOZP_Q\RPT~X~Zh[~^~
+?~A~CLDLGPHMIMJZK~NcPVQcS~TcWNYKZK\Q]L^K
+?D@DATBRDPEPFRG\H~I~JUKUL_NUOSP\QUR_S~^~
+?~A~BZCMDNEYF~GkHOINK~PkQ\SMTLUNWWZk\\^C
+?F@EAWBcD\FPGKHFIDJHKQLYMMNROkQ~T~VkW~^~
+?~BcCODNEYG~HQINK~OkPTQJRFTYUkW~Z_\V]D^?
+?H@IB_D~E~FPHBIFJIKRLTMQNkQkT~V\W~[~]c^~
+?~B~CQDPFTIOJQK~LcMpNWOKPJR\SkW~[Z\P]@^@
+?K@OANBYD~EUFHGHI_JVKTLNMRNkT~VQW~Z~\_^~
+?~B~CUDQGPHQJPKcLkMNNHP\QpUeW~ZY[Z\F]?^A
+?N@WANBRCQDTEQFSHOJULUMONROcT~VIW~Xc\c^~
+?~B~DSEUIWK\LKMINWO~PWR~U_WkY_ZY[O\C]@^@
+?P@_BLCQFZHVKkLWOSP_RcSWTNUCV@WJXSY\\~^~
+?~C~E\FkI~J\KKLNMkOpPUQJRWTcYcZW[E\D]A^A
+?S@_BICSDYGcIZKYLHMLN~PVRkT_ULVFWZYk[r^~
+?~BpDRF~I_JLKQL~OkPZQDRNSPTZVkYkZI[@\A^F
+?Z@WAMBNCIDZH~JNKNLCMQN~PkQWT~VQW~YZ[~^~
+?~@~BPDkHkIPK~L_O~P[QIRFSZTRVkX~YWZG\D^I
+?\ATBZCMEkGcHZIRJVKJLFMWNcQ~RYTkVWW\Zc^~
+?ZAPB_C~GvHWJ~LcMVO\POQTRATWUUWkYc[Y]G^J
+?UA~D_G_HLJMKCLQMNNZO~PURYSPTcUjWUXY\k^q
+?P@QAcF~H\I~KZL_OTPOQYRESDTZUvV\Y~[\\J^I
+?T@kC\D~F_IQJCKGLYMPOUQMRUTKUKVGXD[F]\^k
+?Y@~E~G_H~JcKULHMNOWQWRLSKT~V~WZZ_\H]H^C
+?XB_DkFWGcI~JJKMLWOPQRSFTDWLYMZG[E\B]D^Z
+?~D~F\GkJ_KkMGNPOYQ~SJUVVYW~Y~ZV[I\L]C^V
+?W@OAWDkF~HZJMKVLYNRPFRJTYUkY~ZM[J\K]A^M
+?~D~F]G~LcMLNKO~Q_SPTCUCVIWMXLZE[H\S]K^P
+?NA\CSEZGPHGIHJVLcNVOHQYR~X[YPZG[K\L]E^U
+?~H~IkKkL_M\NEOMPkQURTSTTDU?Y?ZD[M\V]_^E
+?R@~CPEGFLGNHGJcKWMkNLONP~U[WZXHYE[M\K^~
+?~F~JcMcNNODPVQQRbSYTEU@V@WAXCYHZM[R]c^Y
+?c@_BPDCEEFLGPHOJ~LTNGO_RcT\UTWHXBZJ\Z^k
+?~C~EcHkIZJZKkN\OGPLQLRUSRTLVBXBYD[P\U^P
+?Y@kB_DSFHHLJkKMMHNMO~S\TWVAW?XBZR[W\W^~
+?SA~B~DMEbH_IJJKK_N~PIRYSSTIUAV?W@ZO\W^U
+?\@_CPEHFLJZKHLMMKNWO~RVSKU?WAXMYSZM\_^~
+?P@KASBWDHEVGTHbIRJSKcNcOWPIR\TIVHWUX~^~
+?~CkGNHOIZJkKZLIMLNcPkQTRDS?T?WPXMYG[~^~
+?V@LAOBICJDPEKFMH_JUOcQCRTTkWSXSZZ[Z]~^~
+?~F~HYJYLJMVN~OZPJQAR?SCTLUUVQWJXNY\Zk^~
+?V@SAUBPD\GNHJILK\M_NKOPPQQJR~S~WWYc[~^~
+?~A~C\D~I~J\KILNMcNMOCP@QDROSZUSWWXk[~^~
+?~AMDVGMHEITJ\KSLYMKNBOMP_TcUPW~Y\Z~]k^\
+?kAYBNCZD~G~I\JkNFOJPVQ~SZV~WYYj[T\U]~^~
+?~BUEUFPHAIDJ_LUMCNBP~ScTPUBWkXNZk\k]P^R
+?ZAJBIE~GcHQJWKNMSNkP~RSS_UcWHXN[C\P]~^~
+?\E_FSGAH?IDJ~KkM@OSQ~S~U@VHWGXAYQ[Z]H^W
+?M@HAJCADCEQFkI_JCKCL\NvOVQCRCTVVHZB\~^~
+?cDSEcGCHCJ~KXLBM?OJPAQQSUTAU@VOWBZ[\G^N
+?RAEBKD?EAFPH~J?K@MkNVOCQ?SFTWVEWFYR[k^~
+?pBRDcFDGDIkJ~L?M@NKP?R~T?UBVkWJY~[D\M^M
+?~@CABBYC~DDE?G~IAK?MZO?PBQNT~VAWNX~YW^~
+?~AMD\ECFBHVJ~L@NCO?QER~T?VJW?XIZ@\`]F^Z
+?O@?BZD?E@FNGYHAJHK?MTN@OAQPT~V?WDYEZY^~
+?\@KC~EDFEH~JVKCMGNCQARTTAUNVAXJY@ZB[Y^~
+?F@?ACC?FcGKH?JYKAMQNMPAR@SITHU@WDYVZc^~
+?OA~C_EEGUI~KDMLNDPJQARHSDULV@WDXDY@[~^V
+?B@@BCCQE~FRGAHAJELCMFN]O_QJS@TDUCW~\P^~
+?\@~B\DFFIG_I\JIMMNGPWQFSGTMVBWHYDZ\[~^D
+?B@EBEDcELFAJILIMcP_QMRBSBTHUHWTZG[C]Z^\
+?~AkBUDCECG~IKLPNJPcQLSITQVFWMYJZV[O\E^L
+?EAWBGCEEPFEGEHVJYKIMYNcOLRDSNVLYHZE\~^_
+?~B_D?FKGPHILPNIO_PkQLSKTPUHWQXJYM\I]Y^K
+?IA~BVCEDBGNH~JcKILHMVOGQKRTSUTJVEXL\k^c
+?~BVD@FFGEJHLMMDO~P~RFSNTLUDWgXLZG\k]V^F
+?J@cB~CSDFEDFGG_J~KIMINBPPR~SGTFWkZ~\\^~
+?~@~BMCQDBGCIBK_MBNVO~Q~RGSRTKVZX_YP\~^G
+?kAVC~DWEIGEH_J~KOLMMQNGOSP~R_SPT~X_\~^M
+?~AVC~EAG?HAILJ_KkLHMLN~Q~RUTNU~Z~\_]L^_
+?k@\B~C\DcEUGIHJI\JcLYMPNcP_S~URX_Z~\T^E
+?~AZDkEJFFHNI~J~LOMcP~RcSTUkWkYOZM[T]V^k
+?Z@kC~DWE`FVG_HNINJkLYN~OZQcRZTMVkZ~]Q^J
+?~DcFVGgI\JcKQM~NcPkRYTZUTWIXFYJZW[e\k^Y
+?~D~EYF\H~IQJSK~M~NkP~RWT~W~XcY~Z~\V]K^I
+?cBcDNE_GQHQJ_KSL~MZOjQ[SFUAVCWJY~[~]Z^~
+?~E~F_GkI~JUKYL~N~PcQ~T~UkV~WTY~Z~\P]M^M
+?cAkBRCDDTE~GMHPIcK\MkOTPKR@S?TCULV\W~^~
+?~F~GkH~J~KbL~N~OYP\Q~T~VkWQXNYZZU[T\\^Q
+?_A_BCD~EWFMGQHkKkLZMPODP?Q?RCSMT\Uk]~^_
+?_@~G~HkLkMcNcOKPNQcSkTcU~WPXHYMZV\_]\^\
+?c@~AFBBCZDkESG~IRJQLGMFOBPEQORYWc[X]_^N
+?Q@_BZC_G~J~LkM_NQOCPDQTR\ScUWVOWOYZZk^j
+?~ADBGCCDFGGHKIKJEKCMMNNP\T]WUZL[H\M]N^J
+?J@NAPBJDPFWHcJ~N~OOPQQkSWTZUKVHWMXk]~^k
+?Y@IASC?E?FBGIHKIGJEKMLZNcPZQ_TcV~\~]k^F
+?F@kE~I~JWKWL~NkOVQkRTSTTNUCVEWVXj\~]c^T
+?V@OAWBFCBDEEIFPGQHPJ~LkNYQcS\T\U~Yk]~^Y
+?Z@~DkF~G_JEKIL~O\QZRLSPTCUAVNW~Zc\k]V^L
+?~@WALBHCJDPF_H~KZLkMdNYOYPbRcS_V~XkY~^~
+?~BkD~EYGGHEJFKELUM~O_PXQJRLSCT?V~[k\\^K
+?~@~A\CpE~FZGYJkLZM~N\OQPSQZRVTkUcVZX~^~
+?~BkEGFFIHKDLJM~O[PFRDS?TCU\Y~ZW[D\N]L^P
+?~CkDQEPGkI~LcMUN\OQPOQSSLTSUOVRWkX\Z~^~
+?~B~DIGKIVKDLDMWNYPER?SCTVUcX~YLZ@[E\_^N
+?~A~CMDNE_F~J~M\NKPIQIRMSDTEUBVJWMY_Z~^~
+?kB~DMFNGcI~KELBNROMPCQ?RBSUTdWcXGYA[~^k
+?~@ZAJC\D~I~LYMRNYPAQARISUTBUCVNWGXSY~^c
+?pCkDPFNGcI~J\KGLCMDNKOAP?QDRUScVkXIZ~^~
+?\@OB~H~IZL_NPOYPJQFR_SMT@VHWIXUZ~[R]M^Q
+?~@YB~C~EPFPH~JWKLLGMBN?O@Q_TbV~WKXVY~^~
+?c@~G~IYJ~MXOLP_Q~RVS@U@VBWIYLZR[F\K]L^G
+?RApDcESGRHWJOKHLAM?NAP~Q_U~WGXZY~Z_\~^~
+?~F~HYI~L_MMNOOZPkSPTEUAVAWHXOZK[L\P]M^I
+?L@_AQC~GUIJK?LANQOQP\S~TQUCVCWFXWY~]Z^M
+?~E~GcI~K~MUNcO~QWRPSQTWUSVJWFXFYE\Q]V^Q
+?K@PAPBWD~E\GFJBLSM_QcRYT@V\W~Y~ZM\~]P^L
+?~C~DWF~G_I~K~LUN~OYPYRcTUUTWZXUYOZM\P^R
+?O@LASDUFEILK~M_PkQVRDSBTMUkWVX~ZI[R\P^~
+?~C~DQE_F_H~J~KRLZM~O_PkQ\R`S~UcWVZ\[Z^Y
+?VAOCLDMESI~KcO~P_QQRNTcVkXRYPZS[I\R]~^~
+?~B~DQE\FkIkJTKRL_N_O~S~TZVkXRYPZR[I\L^M
+?OAPBRDcE~JkK~O~PQQNRdS_T~V~WZXWY_ZT\~^~
+?~A~CSDREcG~ITJWKPM\N~R~T_U~XZZZ[V\P]Q^W
+?c@_A~D~FcG~L~McNPOZPNRkS_T~U~VcWPXZY~^~
+?~@~A\CWE~F~HUI_JOKWL~R~SZTkY~Zc[O\S]c^k
+?kA~D~EcF~K~LPMFNLOZPLQcRcSRT]U_VYXkY~^~
+?~BUCVE~F~GUHcIcJYK~Q~R_S_TkV~Y~Z_[V\\^k
+?~C~DkE~I~JkLFMPN~OZPSQkR~SdTVUYV\WbX~^~
+?_@^AYC\DkE~FYGQH\IWK~Q~R_SkU~Y~Zk[~\c^~
+?~H~IbJQKPLZMcNcO~P~QcRcSUTPU_VkW~\~]~^~
+]=]
+-- END UNICRASE ICON DATA
+
+-- Готовим одну общую текстуру. Запрет Image API или нехватка памяти не должны мешать окну ключа.
+function Brand.release()
+	if Brand.image then Brand.image:Destroy() end
+	Brand.image, Brand.content, Brand.sequences = nil, nil, nil
+end
+
+function Brand.texture()
+	if Brand.tried then return Brand.content end
+	Brand.tried = true
+	local ok, content = pcall(function()
+		local dims = V2(Brand.side, Brand.side)
+		Brand.image = game:GetService("AssetService"):CreateEditableImage({Size = dims})
+		if not Brand.image then return nil end
+		local rgba = {}
+		for hex in Brand.rgb:gmatch("......") do
+			local r, g, b = tonumber(hex:sub(1, 2), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(5, 6), 16)
+			table.insert(rgba, 0xff000000 + b * 65536 + g * 256 + r)
+		end
+		local pixels, offset = buffer.create(Brand.side * Brand.side * 4), 0
+		for row in Brand.pixels:gmatch("%S+") do
+			for x = 1, #row do
+				buffer.writeu32(pixels, offset, rgba[row:byte(x) - 62])
+				offset += 4
+			end
+		end
+		Brand.image:WritePixelsBuffer(V2(0, 0), dims, pixels)
+		return Content.fromObject(Brand.image)
+	end)
+	if ok then Brand.content = content else Brand.release() end
+	return Brand.content
+end
+
+-- В обычных опубликованных играх Image API может быть выключен. Тогда показываем
+-- уменьшенную копию того же PNG статическими полосами, без HTTP и без ассета-заглушки.
+function Brand.paintBands(mark)
+	if not Brand.sequences then
+		local palette = {}
+		for hex in Brand.rgb:gmatch("......") do table.insert(palette, Color3.fromHex(hex)) end
+		Brand.sequences = {}
+		for band in Brand.bands:gmatch("%S+") do
+			local keys = {}
+			for i = 1, #band, 2 do
+				local x, index = band:byte(i, i + 1)
+				table.insert(keys, ColorSequenceKeypoint.new((x - 63) / 31, palette[index - 62]))
+			end
+			table.insert(Brand.sequences, ColorSequence.new(keys))
+		end
 	end
-	fold(7, 8, 26, 8, 4, 78)
-	fold(25, 8, 17, 15, 4, 18)
-	fold(5, 15, 20, 15, 4, 72)
-	fold(7, 16, 16, 25, 4, 0)
-	fold(15, 25, 26, 25, 4, 82)
-	return f, st
+	local height = #Brand.sequences / 2
+	for i, sequence in ipairs(Brand.sequences) do
+		local row, half = math.floor((i - 1) / 2), (i - 1) % 2
+		-- Нижний край перекрыт следующей строкой: на дробном UIScale не появляются щели.
+		local strip = new("Frame", {Position = S(half / 2, row / height), Size = U(0.5, 0, 1 / height, 1),
+			BackgroundColor3 = PURE, ZIndex = row + 1, Active = false}, mark)
+		new("UIGradient", {Color = sequence}, strip)
+	end
+end
+
+local function logo(size, parent)
+	local props = {Name = "BrandMark", Size = O(size, size), BackgroundColor3 = C.B, Active = false}
+	local mark
+	local content = Brand.texture()
+	if content then
+		local image = new("ImageLabel", props)
+		if pcall(function() image.ImageContent = content end) then
+			image.ScaleType, image.Parent = Enum.ScaleType.Fit, parent
+			mark = image
+		else
+			image:Destroy()
+		end
+	end
+	if not mark then
+		mark = new("CanvasGroup", props, parent) -- скругление обрезает весь рисунок, а не только подложку
+		Brand.paintBands(mark)
+	end
+	rr(mark, 7, 9)
+	return mark, outline(mark, OUT.Window)
 end
 
 -- Штриховые пиктограммы в единой сетке 16×16. path = ломаные, rings = {x,y,диаметр}.
@@ -5600,6 +5939,7 @@ stop = function()
 	if blur then blur:Destroy() end
 	if TC.gui then TC.gui:Destroy() end
 	gui:Destroy()
+	Brand.release()
 end
 _G.TH_Stop = stop
 if script then script.Destroying:Connect(stop) end

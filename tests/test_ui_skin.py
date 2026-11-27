@@ -1,7 +1,9 @@
 """Skin invariants and an optional headless test of the real Luau widget factories."""
+import importlib.util
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,18 +55,29 @@ class SkinTests(unittest.TestCase):
         styled = set(re.findall(r'Skin\.field\((\w+)\)', SOURCE.split("local function row(", 1)[1]))
         self.assertFalse(fields - styled, fields - styled)
 
+    def run_factory_test(self, fixture_name, factories):
+        fixture = (HERE / fixture_name).read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "test.luau"
+            script.write_text(fixture.replace("-- INSERT_FACTORIES", factories), encoding="utf-8")
+            result = subprocess.run([shutil.which("luau"), str(script)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow not installed")
+    def test_embedded_crown_matches_png(self):
+        subprocess.run([sys.executable, str(HERE.parent / "tools" / "embed_crown.py"), "--check"], check=True)
+
+    @unittest.skipUnless(shutil.which("luau"), "Luau CLI not on PATH")
+    def test_brand_texture_and_offline_fallback(self):
+        self.run_factory_test("brand_smoke.luau", between("local Brand = {}", "-- Штриховые пиктограммы"))
+
     @unittest.skipUnless(shutil.which("luau"), "Luau CLI not on PATH")
     def test_widget_states_and_slider_drag(self):
         # Run only UI factories. No game services, authentication, network or renderer required.
         factories = "\n".join((between("local function makeSwitch(", "local gui ="),
                                between("local function toggleCard(", "local function cycleCard("),
                                between("local lockedSF\n", "-- вкладка выбора цвета")))
-        fixture = (HERE / "widget_smoke.luau").read_text(encoding="utf-8")
-        with tempfile.TemporaryDirectory() as folder:
-            script = Path(folder) / "widgets.luau"
-            script.write_text(fixture.replace("-- INSERT_FACTORIES", factories), encoding="utf-8")
-            result = subprocess.run([shutil.which("luau"), str(script)], capture_output=True, text=True, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        self.run_factory_test("widget_smoke.luau", factories)
 
 
 if __name__ == "__main__":
