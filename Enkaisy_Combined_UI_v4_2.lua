@@ -5,11 +5,8 @@
 --
 -- ОРУЖИЕ: любой Tool с атрибутом Damage (number). Необязательно: Range (500), Cooldown (0.15).
 -- NPC для Aim: любые модели с Humanoid (их находит ESP) или с тегом AimTarget.
--- КЛЮЧ ДОСТУПА: проверяется на СЕРВЕРЕ (RemoteFunction EnkaisyAuth, в клиенте нет ни ключа, ни его хеша).
--- Пока игрок не ввёл ключ, сервер отбрасывает его выстрелы ("not activated"), поэтому обойти окно
--- ключа правкой локальной копии клиента можно, а пользоваться aim/triggerbot/silent aim — нет.
--- Сменить ключ: пересчитать djb2(AUTH_SALT .. новый ключ в нижнем регистре без пробелов) и подставить в AUTH_HASH.
--- Попытки ввода ограничены: 5 в минуту на игрока.
+-- КЛЮЧ ДОСТУПА: проверяется в клиенте по хешу (KEY_HASH), сервер ключ не знает и не проверяет.
+-- Сменить ключ: пересчитать djb2(ключ без пробелов) и подставить число в KEY_HASH (клиентская часть).
 --
 -- Интерфейс: только Android / сенсорное управление. Вид (тема, акцент, прозрачность, масштаб) — папка Appearance.
 -- Окно: − свернуть в логотип, □ развернуть / вернуть размер, × открыть подтверждение выгрузки.
@@ -29,7 +26,7 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
--- v4.3: Ключ доступа проверяется на сервере (клиент его больше не знает), выстрелы без авторизации сервер не обрабатывает.
+-- v4.3: Ключ доступа снова проверяется в клиенте по хешу (KEY_HASH), серверной авторизации нет.
 --       Кулдаун выстрела и триггера — на каждое оружие отдельно (смена пушки больше не съедает выстрел).
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
 --       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
@@ -108,13 +105,9 @@ local function humanoidModel(inst)
 	return nil
 end
 
--- ===== Ключ доступа (проверка ТОЛЬКО на сервере) =====
--- В клиенте нет ни ключа, ни хеша: он просто спрашивает сервер "пустишь?".
--- Пока сервер не подтвердил ключ, он не принимает выстрелы этого игрока (reject "not activated"),
--- поэтому правка локальной копии клиента не даёт ни наводки, ни триггера, ни silent aim.
-local AUTH_NAME = "EnkaisyAuth"
-local AUTH_SALT = "enkaisy.v4.2:" -- соль: хеш ключа не совпадает с хешем самого ключа
-local AUTH_HASH = 4229176949 -- djb2(AUTH_SALT .. ключ в нижнем регистре без пробелов); сменить ключ = пересчитать это число
+-- ===== Ключ доступа (проверка в клиенте по хешу) =====
+-- В файле лежит только хеш ключа, самого ключа нет. Сравнение — djb2 от введённого текста без пробелов.
+local KEY_HASH = 200016687 -- djb2(ключ без пробелов); сменить ключ = пересчитать это число
 local function hashKey(s)
 	local h = 5381
 	for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967296 end
@@ -147,37 +140,6 @@ if RS:IsServer() then
     remote:SetAttribute("HitboxMaxBody", HITBOX_ALLOWED and HITBOX_MAX_BODY or 0) -- клиент ограничивает ползунки хитбоксов
     remote:SetAttribute("HitboxMaxHead", HITBOX_ALLOWED and HITBOX_MAX_HEAD or 0)
     remote.Parent = ReplicatedStorage
-
-    -- ===== Авторизация по ключу (на сервере, а не в клиенте) =====
-    -- Клиент присылает только то, что ввёл игрок. Хитрость в том, что без успешной авторизации
-    -- сервер вообще не обрабатывает выстрелы этого игрока — обойти окно ключа в своей копии
-    -- клиента можно, а наносить урон (aim / triggerbot / silent aim / hitbox) нельзя.
-    local authorized, authTries = {}, {}
-    local AUTH_MAX_TRIES, AUTH_WINDOW = 5, 60 -- 5 попыток в минуту: перебор ключа по сети исключён
-    local authRemote = Instance.new("RemoteFunction")
-    authRemote.Name = AUTH_NAME
-    authRemote.Parent = ReplicatedStorage
-    authRemote.OnServerInvoke = function(plr, key)
-        if authorized[plr] then return true end
-        local now = os.clock()
-        local st = authTries[plr]
-        if not st or now - st.t > AUTH_WINDOW then
-            st = {n = 0, t = now}
-            authTries[plr] = st
-        end
-        if st.n >= AUTH_MAX_TRIES then
-            return false, "wait", math.max(1, math.ceil(AUTH_WINDOW - (now - st.t)))
-        end
-        st.n += 1
-        if type(key) ~= "string" or #key < 1 or #key > 64 then return false, "bad" end
-        local norm = (key:lower():gsub("%s+", ""))
-        if hashKey(AUTH_SALT .. norm) == AUTH_HASH then
-            authorized[plr] = true
-            plr:SetAttribute("EnkaisyAccess", true)
-            return true
-        end
-        return false, "wrong"
-    end
 
     -- Client Scripts не запускаются из ReplicatedStorage: выдаём копию каждому PlayerScripts.
     local function installClient(plr)
@@ -258,8 +220,6 @@ if RS:IsServer() then
 
     -- обработка выстрела; возвращает короткий код результата (клиент показывает его в HUD)
     local function handleShot(plr, tool, origin, direction, aimDir, hbB, hbH)
-        -- 0. Ключ: без успешной авторизации сервер не обрабатывает выстрелы вовсе
-        if not authorized[plr] then return "not activated" end
         -- 1. Типы данных
         if typeof(tool) ~= "Instance" or not tool:IsA("Tool") then return "bad data" end
         if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then return "bad data" end
@@ -395,11 +355,6 @@ if RS:IsServer() then
             code = "server error"
         end
         pcall(function() remote:FireClient(plr, code) end)
-    end)
-
-    Players.PlayerRemoving:Connect(function(plr)
-        authorized[plr], authTries[plr] = nil, nil
-        plr:SetAttribute("EnkaisyAccess", nil)
     end)
 
     return
@@ -6035,23 +5990,11 @@ local function keyScreen(done)
 	end)
 
 	local busy, tries = false, 0
-	-- ключ проверяет СЕРВЕР: в клиенте нет ни ключа, ни его хеша, поэтому правка этого окна
-	-- ничего не даёт — без авторизации сервер отбрасывает выстрелы ("not activated").
-	local function getAuth()
-		return ReplicatedStorage:FindFirstChild(AUTH_NAME) or ReplicatedStorage:WaitForChild(AUTH_NAME, 5)
-	end
-	local function askServer(key)
-		local rf = getAuth()
-		if not rf then return false, "no server" end
-		local ok, a, b, c = pcall(function() return rf:InvokeServer(key) end)
-		if not ok then return false, "error" end
-		return a == true, b, c
-	end
+	-- ключ проверяется здесь, в клиенте: сравниваем djb2 введённого текста без пробелов с KEY_HASH
 	local function submit()
 		if busy then return end
 		busy = true
-		local granted, err, waitSec = askServer(box.Text)
-		if granted then
+		if hashKey((box.Text:gsub("%s", ""))) == KEY_HASH then
 			status.TextColor3, status.Text = C.W, "Ключ принят"
 			task.wait(0.4)
 			if closed then return end
@@ -6065,19 +6008,8 @@ local function keyScreen(done)
 			done()
 			return
 		end
-		if err == "wait" then -- сервер включил паузу за перебор
-			status.TextColor3, status.Text = C.Danger, "Слишком много попыток, подождите " .. tostring(waitSec or 60) .. " c"
-			box.Text, busy = "", false
-			return
-		end
 		tries += 1
-		local msg = "Неверный ключ"
-		if err == "no server" then
-			msg = "Сервер Enkaisy не найден"
-		elseif err == "error" or err == "bad" then
-			msg = "Ошибка связи, попробуй ещё"
-		end
-		status.TextColor3, status.Text = C.Danger, msg
+		status.TextColor3, status.Text = C.Danger, "Неверный ключ"
 		if CFG.Anim then
 			for _, dx in {-12, 12, -8, 8, -4, 4, 0} do
 				if closed then return end
