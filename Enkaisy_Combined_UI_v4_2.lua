@@ -1522,6 +1522,84 @@ local function chipGrid(parent, order)
 	return g
 end
 
+-- Справка общих карточек; окно создаётся главным меню. Реестр также служит поиску.
+local helpUI = {items = {}}
+helpUI.info = {
+ ["Aim on"] = {"Включает помощь в наведении.", "Enables aim assistance."},
+ ["Auto predict"] = {"Автоматически рассчитывает упреждение движущейся цели.", "Automatically predicts a moving target's position."},
+ ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
+ ["Target lock"] = {"Удерживает выбранную цель.", "Keeps the selected target locked."},
+ ["Silent aim"] = {"Направляет выстрел в цель без движения камеры; сервер ограничивает угол.", "Directs shots toward the target without moving the camera; the server limits the angle."},
+ ["Highlight"] = {"Подсвечивает цели.", "Highlights targets."},
+ ["Names"] = {"Показывает имена целей.", "Shows target names."},
+ ["HP bar"] = {"Показывает полосу здоровья.", "Shows the health bar."},
+ ["HP %"] = {"Показывает здоровье в процентах.", "Shows health as a percentage."},
+ ["Team check"] = {"Исключает игроков своей команды.", "Excludes players on your team."},
+ ["Hide dead"] = {"Скрывает погибшие цели.", "Hides dead targets."},
+ ["Rainbow"] = {"Меняет цвет подсветки по радуге.", "Cycles highlight colors through the rainbow."},
+ ["Display name"] = {"Показывает отображаемое имя игрока.", "Shows the player's display name."},
+ ["Distance"] = {"Показывает расстояние до цели.", "Shows the distance to the target."},
+ ["HP color"] = {"Меняет цвет по уровню здоровья.", "Changes color based on health."},
+ ["Limit nearest"] = {"Ограничивает отображение ближайшими целями.", "Limits display to the nearest targets."},
+ ["Hide native"] = {"Скрывает стандартные метки Roblox.", "Hides Roblox's native labels."},
+ ["Friends"] = {"Выбирает, как отображать друзей.", "Chooses how friends are displayed."},
+ ["Fill strength"] = {"Настраивает силу заливки подсветки.", "Adjusts highlight fill strength."},
+ ["Outline opacity"] = {"Настраивает непрозрачность контура.", "Adjusts outline opacity."},
+ ["Name size"] = {"Изменяет размер имени.", "Changes the name text size."},
+ ["Name length"] = {"Ограничивает длину имени.", "Limits the length of names."},
+ ["Max distance"] = {"Ограничивает расстояние до цели.", "Limits target distance."},
+ ["Limit count"] = {"Ограничивает количество целей.", "Limits the number of targets."},
+ ["Show Tracers"] = {"Показывает линии к целям.", "Shows lines to targets."},
+ ["Show Skeleton"] = {"Показывает скелет целей.", "Shows target skeletons."},
+ ["FPS cap"] = {"Ограничивает частоту кадров, если доступно.", "Limits the frame rate when supported."},
+ ["ESP update rate"] = {"Изменяет частоту обновления ESP.", "Changes the ESP update rate."},
+ ["Image fit"] = {"Выбирает способ размещения фоновой картинки.", "Chooses how the background image fits."},
+ ["Triggerbot"] = {"Автоматически стреляет, когда цель попадает в прицел или допуск.", "Automatically fires when a target is in the crosshair or tolerance area."},
+ ["Multipoint"] = {"Ищет видимую точку на краях хитбокса.", "Searches for a visible point around the hitbox edges."},
+ ["Adv predict"] = {"Учитывает движение цели и падение пули; нужны атрибуты BulletSpeed и BulletGravity.", "Accounts for target motion and bullet drop; requires BulletSpeed and BulletGravity."},
+ ["Hitbox"] = {"Расширяет виртуальный хитбокс тела; размер ограничен сервером.", "Expands the virtual body hitbox; the server limits its size."},
+ ["Head hitbox"] = {"Расширяет виртуальный хитбокс головы.", "Expands the virtual head hitbox."},
+ ["Hitbox size (studs)"] = {"Размер расширения хитбокса тела в стадах.", "Body hitbox expansion in studs."},
+ ["Head hitbox size (studs)"] = {"Размер расширения хитбокса головы в стадах.", "Head hitbox expansion in studs."},
+ ["Hitbox ESP"] = {"Рисует расширенные хитбоксы целей.", "Draws expanded target hitboxes."},
+ ["Show head"] = {"Показывает хитбокс головы.", "Shows the head hitbox."},
+ ["Show body"] = {"Показывает хитбоксы тела.", "Shows body hitboxes."},
+ ["Only target"] = {"Показывает хитбокс только выбранной цели.", "Shows only the selected target's hitbox."},
+ ["All targets"] = {"Показывает хитбоксы всех целей.", "Shows hitboxes for all targets."},
+ ["Invuln check"] = {"Исключает неуязвимые цели.", "Excludes invulnerable targets."},
+ ["Flash check"] = {"Проверяет эффект ослепления.", "Checks for the flash effect."},
+ ["Smoke check"] = {"Проверяет наличие дыма.", "Checks for smoke."},
+ ["Players"] = {"Разрешает выбирать игроков как цели.", "Allows players to be selected as targets."},
+ ["NPCs"] = {"Разрешает выбирать NPC как цели.", "Allows NPCs to be selected as targets."},
+ ["Wall check"] = {"Проверяет видимость цели через препятствия.", "Checks target visibility through obstacles."},
+ ["Target priority"] = {"Выбирает приоритет цели: прицел, расстояние или здоровье.", "Chooses target priority: crosshair, distance or health."},
+ ["Aim center"] = {"Выбирает точку отсчёта для наведения.", "Selects the reference point for aiming."},
+ ["Auto fallback"] = {"Переходит к следующей доступной части тела.", "Falls back to the next available body part."},
+ ["Return to main"] = {"Возвращается к основной части, когда она доступна.", "Returns to the main body part when available."},
+ ["Debug HUD"] = {"Показывает диагностическую информацию.", "Shows diagnostic information."},
+ ["Trigger delay (sec)"] = {"Задержка автоматического выстрела в секундах.", "Delay before an automatic shot, in seconds."},
+ ["Smoothness (higher = faster)"] = {"Скорость наведения: большее значение означает быстрее.", "Aim speed: a higher value means faster."},
+ ["Manual predict (sec)"] = {"Ручное упреждение в секундах.", "Manual prediction time in seconds."},
+ ["Auto predict bias (ms)"] = {"Поправка автоматического упреждения в миллисекундах.", "Automatic prediction bias in milliseconds."},
+ ["Sticky (lower = stickier)"] = {"Удержание цели: меньшее значение сильнее удерживает цель.", "Target stickiness: lower values hold the target more strongly."},
+ ["FOV circle"] = {"Показывает круг FOV при включённом Aim.", "Shows the FOV circle while Aim is enabled."},
+ ["Fill"] = {"Включает заливку круга.", "Enables the circle fill."},
+ ["Highlight on target"] = {"Меняет цвет круга при захвате цели.", "Changes the circle color when a target is acquired."},
+ ["Dynamic FOV"] = {"Меняет радиус FOV в зависимости от расстояния до цели.", "Changes the FOV radius based on target distance."},
+ ["Target animation"] = {"Показывает анимацию появления, захвата и потери цели.", "Shows animations when a target appears, is acquired or lost."},
+ ["Animation style"] = {"Выбирает форму индикатора цели.", "Selects the target indicator shape."},
+ ["Animation speed"] = {"Изменяет скорость анимации цели.", "Changes the target animation speed."},
+}
+function helpUI.add(parent, title, desc, x)
+ local b = new("TextButton", {Size = O(26, 28), AnchorPoint = V2(1, 0.5), Position = U(1, x, 0, 20),
+  BackgroundColor3 = C.Input, Text = "?", TextColor3 = C.Mut, Font = GB, TextSize = 14, AutoButtonColor = false, ZIndex = 5}, parent)
+ rr(b, 8)
+ outline(b, OUT.Soft)
+ table.insert(helpUI.items, {card = parent, title = title, desc = desc})
+ on(b.Activated, function() if helpUI.open then helpUI.open(title, desc) end end)
+ return b
+end
+
 -- ряд-переключатель: название слева (и необязательное описание), ON/OFF справа
 local function toggleCard(parent, text, order, getv, setv, desc)
 	local b = new("TextButton", {
@@ -1530,15 +1608,16 @@ local function toggleCard(parent, text, order, getv, setv, desc)
 	rr(b, 8)
 	hoverable(b, outline(b), {bg = C.Card, bgHover = C.Sel})
 	new("TextLabel", {
-		Size = U(1, -72, 0, desc and 20 or 40), Position = O(10, desc and 6 or 0), BackgroundTransparency = 1, Text = text,
+		Size = U(1, -100, 0, desc and 20 or 40), Position = O(10, desc and 6 or 0), BackgroundTransparency = 1, Text = text,
 		TextColor3 = C.W, Font = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 	}, b)
 	if desc then
 		new("TextLabel", {
-			Size = U(1, -72, 0, 14), Position = O(10, 28), BackgroundTransparency = 1, Text = desc,
+			Size = U(1, -100, 0, 14), Position = O(10, 28), BackgroundTransparency = 1, Text = desc,
 			TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, b)
 	end
+	helpUI.add(b, text, desc, -66)
 	local sw, swPaint = makeSwitch(b)
 	sw.AnchorPoint, sw.Position = V2(1, 0.5), U(1, -10, 0.5, 0)
 	local function paint(anim) swPaint(getv(), anim) end
@@ -1558,16 +1637,17 @@ local function cycleCard(parent, text, order, getv, nextv, isOn)
 	rr(b, 8)
 	hoverable(b, outline(b), {bg = C.Card, bgHover = C.Sel})
 	new("TextLabel", {
-		Size = U(1, -20, 1, 0), Position = O(10, 0), BackgroundTransparency = 1, Text = text,
+		Size = U(1, -120, 1, 0), Position = O(10, 0), BackgroundTransparency = 1, Text = text, TextTruncate = Enum.TextTruncate.AtEnd,
 		TextColor3 = C.W, Font = GM, TextSize = 12, TextXAlignment = XL, Active = false,
 	}, b)
 	local pill = new("TextLabel", {
-		AnchorPoint = V2(1, 0.5), Position = U(1, -8, 0.5, 0), Size = O(0, 28), AutomaticSize = Enum.AutomaticSize.X,
+		AnchorPoint = V2(1, 0.5), Position = U(1, -38, 0.5, 0), Size = O(0, 28), AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundColor3 = C.Input, Text = "", TextColor3 = C.W, Font = GB, TextSize = 11, Active = false,
 	}, b)
 	new("UIPadding", {PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11)}, pill)
 	rr(pill, 6)
 	outline(pill, 0.55)
+	helpUI.add(b, text, nil, -8)
 	local function paint()
 		pill.Text = tostring(getv())
 		pill.TextColor3 = (isOn == nil or isOn()) and C.W or C.Mut
@@ -1591,13 +1671,14 @@ local function sliderCard(parent, title, order, min, max, getv, setv, fmt, step)
 	rr(f, 8)
 	local h = hoverable(f, outline(f))
 	new("TextLabel", {
-		Size = U(1, -92, 0, 20), Position = O(10, 6), BackgroundTransparency = 1, Text = title, TextColor3 = C.W,
+		Size = U(1, -122, 0, 20), Position = O(10, 6), BackgroundTransparency = 1, Text = title, TextColor3 = C.W,
 		Font = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 	}, f)
 	local val = new("TextLabel", {
 		Size = O(76, 20), AnchorPoint = V2(1, 0), Position = U(1, -10, 0, 6), BackgroundTransparency = 1, Text = "",
 		TextColor3 = C.W, Font = GB, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, Active = false,
 	}, f)
+	helpUI.add(f, title, nil, -88)
 	local hit = new("Frame", {Size = U(1, -20, 0, 32), Position = O(10, 24), BackgroundTransparency = 1, Active = true}, f)
 	local track = new("Frame", {
 		Size = U(1, 0, 0, 6), AnchorPoint = V2(0, 0.5), Position = U(0, 0, 0.5, 0), BackgroundColor3 = C.Hi, Active = false,
@@ -4094,14 +4175,21 @@ local function startMain()
 	table.insert(bgFrames, side)
 	new("Frame", {Size = U(0, 1, 1, 0), Position = U(1, -1, 0, 0), BackgroundColor3 = C.Line, BorderSizePixel = 0, Active = false}, side)
 	local tabsHolder = new("ScrollingFrame", {
-		Size = U(0, SBW - 9, 1, -8), Position = O(4, 4), BackgroundTransparency = 1, BorderSizePixel = 0,
+		Size = U(0, SBW - 9, 1, -44), Position = O(4, 40), BackgroundTransparency = 1, BorderSizePixel = 0,
 		ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.4,
 		CanvasSize = U(0, 0, 0, 0), ScrollingDirection = Enum.ScrollingDirection.Y,
 		ElasticBehavior = Enum.ElasticBehavior.Never,
 	}, side)
-	local tabPos, ty = {}, 0
+	local search = new("TextBox", {
+        Size = U(1, -12, 0, 30), Position = O(6, 5), BackgroundColor3 = C.Input,
+        Text = "", PlaceholderText = "Search / Поиск", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
+        Font = GM, TextSize = 11, ClearTextOnFocus = false,
+    }, side)
+    rr(search, 8)
+    outline(search, OUT.Soft)
+    local tabPos, ty, groupLabels = {}, 0, {}
 	for _, g in GROUPS do
-		new("TextLabel", {
+		groupLabels[g[1]] = new("TextLabel", {
 			Size = O(SBW - 24, 16), Position = O(8, ty + 2), BackgroundTransparency = 1, Text = g[1],
 			TextColor3 = C.Mut, Font = GB, TextSize = 10, TextXAlignment = XL, Active = false,
 		}, tabsHolder)
@@ -4135,6 +4223,7 @@ local function startMain()
 	local function show(n)
 		if not tabPos[n] then n = "Main" end
 		curTab, UICFG.Tab = n, n
+		pill.Visible = true
 		tween(pill, fast, {Position = O(2, tabPos[n])})
 		pTitle.Text, pSub.Text = DISP[n] or n, SUB[n] or ""
 		if aim then aim.preview(isOpen and n == "FOV") end
@@ -4184,7 +4273,7 @@ local function startMain()
 			BackgroundTransparency = 1, Active = false,
 		}, tb)
 		round(dot, 3)
-		ptabs[n] = {st = st, label = lbl, dot = dot, paintIcon = icPaint, h = hoverable(tb, st)}
+		ptabs[n] = {button = tb, st = st, label = lbl, dot = dot, paintIcon = icPaint, h = hoverable(tb, st)}
 		local pg
 		if SCROLLED[n] then
 			pg = new("ScrollingFrame", {
@@ -4283,7 +4372,7 @@ local function startMain()
 		Font = GB, TextSize = 13, TextColor3 = C.W, TextXAlignment = XL, Active = false,
 	}, toggle)
 	new("TextLabel", {
-		Size = U(1, -72, 0, 14), Position = O(12, 25), BackgroundTransparency = 1, Text = "Подсветка игроков и NPC",
+		Size = U(1, -100, 0, 14), Position = O(12, 25), BackgroundTransparency = 1, Text = "Подсветка игроков и NPC",
 		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, Active = false,
 	}, toggle)
 	local tsw, tpaint = makeSwitch(toggle)
@@ -5066,6 +5155,78 @@ local function startMain()
 	else
 		warn("[Enkaisy] Aim init error: " .. tostring(resA))
 	end
+
+	-- Справка открывается поверх страницы, поэтому работает и на сенсорном экране.
+    local helpBox = new("Frame", {Size = U(1, -24, 0, 150), AnchorPoint = V2(0.5, 0.5),
+        Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Card, Visible = false, ZIndex = 50}, panel)
+    rr(helpBox, 10)
+    outline(helpBox, OUT.Active)
+    local helpTitle = new("TextLabel", {Size = U(1, -50, 0, 28), Position = O(12, 8), BackgroundTransparency = 1,
+        Text = "", TextColor3 = C.W, Font = GB, TextSize = 13, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 51}, helpBox)
+    local helpText = new("TextLabel", {Size = U(1, -24, 1, -44), Position = O(12, 36), BackgroundTransparency = 1,
+        Text = "", TextColor3 = C.W, Font = GM, TextSize = 12, TextWrapped = true,
+        TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 51}, helpBox)
+    local helpClose = new("TextButton", {Size = O(32, 32), AnchorPoint = V2(1, 0), Position = U(1, -6, 0, 6),
+        BackgroundColor3 = C.Input, Text = "×", TextColor3 = C.W, Font = GB, TextSize = 18, ZIndex = 51}, helpBox)
+    rr(helpClose, 8)
+    on(helpClose.Activated, function() helpBox.Visible = false end)
+    helpUI.open = function(title, desc)
+        local info = helpUI.info[title]
+        helpTitle.Text = title
+        helpText.Text = info and ("RU: " .. info[1] .. "\n\nEN: " .. info[2])
+            or (desc and ("RU: " .. desc .. "\n\nEN: Description not available yet.")
+            or "RU: Описание пока недоступно.\n\nEN: Description not available yet.")
+        helpBox.Visible = true
+    end
+    -- Поиск по названиям папок и карточек, включая известные русские описания.
+    local function fold(s)
+        s = string.lower(s)
+        local upper, lower = {"А","Б","В","Г","Д","Е","Ё","Ж","З","И","Й","К","Л","М","Н","О","П","Р","С","Т","У","Ф","Х","Ц","Ч","Ш","Щ","Ъ","Ы","Ь","Э","Ю","Я"},
+            {"а","б","в","г","д","е","ё","ж","з","и","й","к","л","м","н","о","п","р","с","т","у","ф","х","ц","ч","ш","щ","ъ","ы","ь","э","ю","я"}
+        for i, c in upper do s = s:gsub(c, lower[i]) end
+        return s
+    end
+    local function filterTabs()
+        local q = fold(search.Text:match("^%s*(.-)%s*$"))
+        local matches = {}
+        for _, n in TABS do
+            local hay = n .. " " .. (DISP[n] or "") .. " " .. (SUB[n] or "")
+            for _, g in GROUPS do if table.find(g[2], n) then hay ..= " " .. g[1] end end
+            for _, item in helpUI.items do
+                if item.card:IsDescendantOf(pages[n]) then
+                    local info = helpUI.info[item.title]
+                    hay ..= " " .. item.title .. " " .. (item.desc or "") .. (info and (" " .. info[1] .. " " .. info[2]) or "")
+                end
+            end
+            matches[n] = q == "" or string.find(fold(hay), q, 1, true) ~= nil
+        end
+        local y = 0
+        for _, g in GROUPS do
+            local any = false
+            for _, n in g[2] do if matches[n] then any = true end end
+            groupLabels[g[1]].Visible = any
+            if any then
+                groupLabels[g[1]].Position = O(8, y + 2)
+                y += 20
+                for _, n in g[2] do
+                    ptabs[n].button.Visible = matches[n]
+                    if matches[n] then
+                        tabPos[n] = y
+                        ptabs[n].button.Position = O(2, y)
+                        y += TABH + TGAP
+                    end
+                end
+                y += 6
+            else
+                for _, n in g[2] do ptabs[n].button.Visible = false end
+            end
+        end
+        tabsHolder.CanvasSize = O(0, y)
+        tabsHolder.CanvasPosition = V2(0, 0)
+        pill.Visible = matches[curTab]
+        if pill.Visible then pill.Position = O(2, tabPos[curTab]) end
+    end
+    on(search:GetPropertyChangedSignal("Text"), filterTabs)
 
 	-- ===== События =====
 	movable(openBtn, openBtn, function() setOpen(true) end, function() clampGui(openBtn) end)
