@@ -6,15 +6,22 @@
 -- ОРУЖИЕ: любой Tool с атрибутом Damage (number). Необязательно: Range (500), Cooldown (0.15).
 -- NPC для Aim: любые модели с Humanoid (их находит ESP) или с тегом AimTarget.
 --
--- Интерфейс: только Android / сенсорное управление. Вид (тема, акцент, прозрачность, масштаб) — вкладка Appearance.
+-- Интерфейс: только Android / сенсорное управление. Вид (тема, акцент, прозрачность, масштаб) — папка Appearance.
 -- Окно: − свернуть в логотип, □ развернуть / вернуть размер, × открыть подтверждение выгрузки.
 -- Оформление как на референсе: Appearance → Reset appearance (игровые настройки не сбрасываются).
--- Управление: меню Enkaisy (кнопка-логотип), вкладка Aim, плавающая кнопка AIM, вкладка FOV для круга.
--- Triggerbot/Multipoint/Adv predict/Checks: вкладка Aim. Атрибуты Tool: BulletSpeed, BulletGravity. Атрибуты модели: Invulnerable, Flashed, InSmoke; тег SmokeCloud.
+-- Полный сброс: Appearance → RESET → «Полный сброс — выключить всё». Сначала окно подтверждения,
+-- после подтверждения ВСЕ настройки выключаются (все переключатели OFF), цвета и оформление — заводские.
+-- Управление: меню Enkaisy (кнопка-логотип), папка Aim, плавающая кнопка AIM, папка FOV для круга.
+-- Triggerbot/Multipoint: папка Trigger; Checks и модели целей: папка Targets; Hitbox и части тела: папка Hitbox.
+-- Атрибуты Tool: BulletSpeed, BulletGravity. Атрибуты модели: Invulnerable, Flashed, InSmoke; тег SmokeCloud.
+--
+-- ПАПКИ (порядок = порядок настройки): ESP → Targets → Aim → Trigger → FOV → Hitbox → Color → Players → Performance → Appearance.
+-- Правило раскладки: одна папка = одна задача, похожие настройки стоят рядом (Smoothness + Sticky, Triggerbot + delay/tolerance,
+-- Hitbox + размеры и Hitbox ESP, Dynamic FOV + размер круга). Пояснения — серым текстом прямо под разделом.
 
--- Target Lock: переключатель в Aim, кнопка Switch locked target = сменить цель. Silent Aim: переключатель в Aim (лимит угла — на сервере, SILENT_MAX_ANGLE).
--- Aim-координаты: ТОЧКА НАВЕДЕНИЯ (логика) и КРУГ FOV (визуал) — независимые значения в долях экрана; радиусы областей — % короткой стороны экрана.
--- Вкладка Aim: "Edit FOV / aim position" (что двигать выбирается явно), "Check coordinates" (проверка на устройстве).
+-- Target Lock: раздел TARGET LOCK в Aim, кнопка Switch locked target = сменить цель. Silent Aim: раздел SILENT AIM (лимит угла — на сервере, SILENT_MAX_ANGLE).
+-- Aim-координаты: ТОЧКА НАВЕДЕНИЯ (логика, раздел AIM POINT) и КРУГ FOV (визуал, папка FOV) — независимые значения в долях экрана; радиусы — % короткой стороны экрана.
+-- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
@@ -1306,6 +1313,9 @@ end
 Skin.glyphs = {
 	Main = {paths = {{8,1, 14,3.5, 13.5,9.5, 11.5,12.5, 8,15, 4.5,12.5, 2.5,9.5, 2,3.5, 8,1}}}, -- щит
 	Aim = {rings = {{8,8,14}, {8,8,9}, {8,8,3}}}, -- концентрическая мишень
+	Targets = {rings = {{8,8,11}, {8,8,2}}, paths = {{8,1, 8,4}, {8,12, 8,15}, {1,8, 4,8}, {12,8, 15,8}}}, -- прицел с точкой
+	Trigger = {paths = {{9,1, 4,9, 8,9, 6,15, 12,7, 8,7, 9,1}}}, -- молния
+	Hitbox = {paths = {{3,3, 13,3, 13,13, 3,13, 3,3}}, rings = {{8,8,2.5}}}, -- рамка хитбокса
 	FOV = {rings = {{8,8,12}}, paths = {{8,0.5, 8,4}, {8,12, 8,15.5}, {0.5,8, 4,8}, {12,8, 15.5,8}}},
 	Color = {paths = {{2,11, 9,4, 12,7, 5,14, 1.5,14.5, 2,11}, {8,3, 13,8}, {10,4, 13,1, 15,3, 12,6}}}, -- пипетка
 	Sizes = {paths = {{1,4, 7,4}, {11,4, 15,4}, {1,11, 4,11}, {8,11, 15,11}}, rings = {{9,4,4}, {6,11,4}}},
@@ -2060,8 +2070,12 @@ helpUI.info = {
  ["Manual predict (sec)"] = {"Ручное упреждение в секундах.", "Manual prediction time in seconds."},
  ["Auto predict bias (ms)"] = {"Поправка автоматического упреждения в миллисекундах.", "Automatic prediction bias in milliseconds."},
  ["Sticky (lower = stickier)"] = {"Удержание цели: меньшее значение сильнее удерживает цель.", "Target stickiness: lower values hold the target more strongly."},
+ ["Aim max distance"] = {"Максимальная дистанция цели для наводки, студы.", "Maximum target distance for aim assist, in studs."},
+ ["ESP max distance"] = {"Максимальная дистанция, на которой ESP показывает цели.", "Maximum distance at which ESP shows targets."},
+ ["Team check (Aim)"] = {"Не выбирать игроков своей команды целью наводки.", "Never select teammates as aim targets."},
  ["FOV circle"] = {"Показывает круг FOV при включённом Aim.", "Shows the FOV circle while Aim is enabled."},
  ["Fill"] = {"Включает заливку круга.", "Enables the circle fill."},
+ ["Fill circle"] = {"Заливка внутри круга FOV.", "Fill inside the FOV circle."},
  ["Highlight on target"] = {"Меняет цвет круга при захвате цели.", "Changes the circle color when a target is acquired."},
  ["Dynamic FOV"] = {"Меняет радиус FOV в зависимости от расстояния до цели.", "Changes the FOV radius based on target distance."},
  ["Target animation"] = {"Показывает анимацию появления, захвата и потери цели.", "Shows animations when a target appears, is acquired or lost."},
@@ -2337,7 +2351,7 @@ local function makePicker(parent, order, getC, onEdit, extra)
 	return card, refresh
 end
 
--- ===== Aim assist (встроен в меню как вкладка Aim) =====
+-- ===== Aim assist (встроен в меню: папки Aim / Targets / Trigger / Hitbox / FOV) =====
 local aim
 local function buildAim(page, api)
 	local A = AIMCFG
@@ -2817,7 +2831,10 @@ local function buildAim(page, api)
 	end
 	movable(quick, quick, function() setEnabled(not A.Enabled) end, function() clampGui(quick) end)
 
-	-- ===== UI вкладки =====
+	-- ===== UI папок Aim / Targets / Trigger / Hitbox / FOV =====
+	-- Правило навигации: одна папка = одна задача, похожие настройки стоят рядом.
+	-- Smoothness и Sticky идут подряд; Triggerbot и его задержка/допуск — в одной папке Trigger;
+	-- Hitbox и его размеры, вид и приоритет частей тела — в одной папке Hitbox.
 	local scroll = new("ScrollingFrame", {
 		Size = S(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2,
 		ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.6,
@@ -2830,9 +2847,16 @@ local function buildAim(page, api)
 	}, scroll)
 	local ord = 0
 	local function nextOrder() ord += 1 return ord end
-	local tgt = scroll -- куда добавляют section / chips / cycle / slider (вкладка Aim или вкладка FOV)
+	local tgt = scroll -- текущая страница сборки: Aim / Targets / Trigger / Hitbox / FOV
 
 	local function section(text) sectionLabel(tgt, text, nextOrder()) end
+	-- пояснение под разделом: серый текст во всю ширину, не карточка
+	local function note(text, height)
+		new("TextLabel", {
+			Size = U(1, 0, 0, height or 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
+			Text = text, TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		}, tgt)
+	end
 
 	-- список переключателей: {название, ключ, колбэк, описание}
 	-- короткие без описаний — в 2 колонки, с описанием (или одиночные) — во всю ширину
@@ -2861,6 +2885,14 @@ local function buildAim(page, api)
 		table.insert(refreshers, paint)
 	end
 
+	local function cycleKeep(text, key, options) -- как cycle, но не сбрасывает текущую цель
+		local _, paint = cycleCard(tgt, text, nextOrder(), function() return A[key] end, function()
+			local idx = table.find(options, A[key]) or 0
+			A[key] = options[idx % #options + 1]
+		end)
+		table.insert(refreshers, paint)
+	end
+
 	local function slider(title, key, min, max, step, decimals)
 		local fmt = "%." .. (decimals or 0) .. "f"
 		local _, paint = sliderCard(tgt, title, nextOrder(), min, max,
@@ -2871,28 +2903,154 @@ local function buildAim(page, api)
 		table.insert(refreshers, paint)
 	end
 
-	section("SILENT AIM")
-	chips({
-		{"Silent aim", "SilentAim", nil, "Пуля летит в цель, камера не двигается"},
-	})
-	section("AIM")
+	-- ---------- Aim: сама наводка, захват цели, silent aim, точка наведения, диагностика ----------
+	section("AIM ASSIST")
 	chips({
 		{"Aim on", "Enabled", setEnabled, "Включает наводку (то же, что кнопка AIM)"},
 	})
+	-- Smoothness и Sticky — две части одного ощущения наводки, поэтому стоят подряд
 	slider("Smoothness (higher = faster)", "Smoothness", 0.01, 1, 0.01, 2)
+	slider("Sticky (lower = stickier)", "Sticky", 0.2, 1, 0.05, 2)
 	chips({
 		{"Auto predict", "AutoPredict"},
+		{"Adv predict", "AdvPredict", nil, "Скорость, ускорение, прыжок/падение цели и падение пули (нужны BulletSpeed + BulletGravity)"},
 		{"Float button", "ShowButton", function(v) A.ShowButton = v; paintQuick(true) end, "Плавающая кнопка AIM на экране"},
+	})
+	slider("Auto predict bias (ms)", "LeadBias", 0, 300, 5, 0)
+	slider("Manual predict (sec)", "Prediction", 0, 0.6, 0.01, 2)
+	slider("Aim max distance", "MaxDistance", 50, 2000, 25, 0)
+
+	section("TARGET LOCK")
+	chips({
 		{"Target lock", "TargetLock", function(v) A.TargetLock = v; lockedModel = nil end, "Держит цель; смена — кнопкой ниже"},
 	})
 	local switchBtn = button(scroll, "Switch locked target", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
 	on(switchBtn.Activated, function() if switchTarget then switchTarget() end end)
-	section("EXTRA AIM")
+	slider("Lock release radius, %", "LockR", 5, 90, 1, 0)
+
+	section("SILENT AIM")
+	chips({
+		{"Silent aim", "SilentAim", nil, "Пуля летит в цель, камера не двигается"},
+	})
+	slider("Select radius (silent), %", "SilentR", 2, 60, 1, 0)
+
+	section("AIM POINT")
+	cycle("Aim center", "AimMode", {"Auto", "Center", "Touch", "Custom", "Crosshair"})
+	local editBtn = button(scroll, "Edit aim point", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	on(editBtn.Activated, function() editTarget = "Aim"; paintEdit(); setEditing(true) end)
+	note("Точка наведения — куда поворачивается камера. Круг FOV настраивается в папке FOV.", 28)
+
+	section("DIAGNOSTICS")
+	chips({{"Debug HUD", "DebugHUD"}})
+	local testBtn = button(scroll, "Check coordinates", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	local selfLabel = new("TextLabel", {
+		Size = U(1, 0, 0, 62), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+	}, scroll)
+	on(testBtn.Activated, function() if runSelfTest then runSelfTest() end end)
+
+	-- ---------- Targets: по кому целиться, проверки и фильтр моделей ----------
+	tgt, ord = api.targetsPage or scroll, 0
+	section("WHO TO TARGET")
+	chips({
+		{"Players", "TargetPlayers"}, {"NPCs", "TargetNPCs"},
+		{"Team check (Aim)", "TeamCheck"}, {"Wall check", "WallCheck"},
+	})
+	cycle("Target priority", "Priority", {"Crosshair", "Distance", "Lowest HP"})
+	chips({{"Visibility from head", "VisFromHead"}})
+
+	section("CHECKS")
+	chips({{"Invuln check", "CheckInvuln"}, {"Flash check", "CheckFlash"}, {"Smoke check", "CheckSmoke"}})
+
+	section("ФИЛЬТР NPC ПО ИМЕНИ")
+	local frow = row(tgt, 40, 6, nextOrder())
+	local fmode = button(frow, "", {Size = O(70, 40), LayoutOrder = 1})
+	local ftext = new("TextBox", {
+		Size = U(1, -76, 1, 0), BackgroundColor3 = C.Input, LayoutOrder = 2,
+		Text = CFG.NpcText, PlaceholderText = "имена через запятую", TextColor3 = C.W,
+		PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
+	}, frow)
+	Skin.field(ftext)
+	local function paintFilter()
+		local off = CFG.NpcFilter == "Off"
+		fmode.Text = CFG.NpcFilter
+		fmode.TextColor3 = off and C.Mut or C.W
+	end
+	on(fmode.Activated, function()
+		local order = {"Off", "Only", "Hide"}
+		CFG.NpcFilter = order[(table.find(order, CFG.NpcFilter) or 1) % 3 + 1]
+		paintFilter()
+		updAll()
+	end)
+	on(ftext.FocusLost, function()
+		CFG.NpcText = ftext.Text
+		parseWords()
+		updAll()
+	end)
+	paintFilter()
+	table.insert(refreshers, function() paintFilter(); ftext.Text = CFG.NpcText end)
+	note("Only — только совпавшие, Hide — скрыть совпавших. Работает для NPC.", 28)
+
+	section("TARGET MODELS / МОДЕЛИ ДЛЯ AIM И ESP")
+	local modelBox = new("TextBox", {
+		Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = nextOrder(),
+		Text = CFG.ModelNames, PlaceholderText = "Все модели / имена через запятую", TextColor3 = C.W,
+		PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
+	}, tgt)
+	Skin.field(modelBox)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, modelBox)
+	on(modelBox.FocusLost, function()
+		CFG.ModelNames = modelBox.Text
+		pruneModels()
+		scanModels()
+		updAll()
+	end)
+	table.insert(refreshers, function() if not modelBox:IsFocused() then modelBox.Text = CFG.ModelNames end end)
+	local modelPick = button(tgt, "Выбрать модель: все", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	modelPick.TextTruncate = Enum.TextTruncate.AtEnd
+	local function paintModelPick()
+		modelPick.Text = CFG.ModelNames:match("^%s*$") and "Выбрать модель: все" or ("Модель: " .. CFG.ModelNames)
+	end
+	on(modelPick.Activated, function()
+		local paths, seen = {}, {}
+		local function add(m)
+			if m and m:IsDescendantOf(Workspace) and not seen[m] then
+				seen[m] = true
+				table.insert(paths, m:GetFullName())
+			end
+		end
+		for _, player in Players:GetPlayers() do if player ~= LP then add(player.Character) end end
+		for m in npcs do add(m) end
+		table.sort(paths)
+		local current = table.find(paths, CFG.ModelNames) or 0
+		CFG.ModelNames = current < #paths and paths[current + 1] or ""
+		modelBox.Text = CFG.ModelNames
+		pruneModels()
+		scanModels()
+		updAll()
+		paintModelPick()
+	end)
+	paintModelPick()
+	table.insert(refreshers, paintModelPick)
+	on(modelBox.FocusLost, paintModelPick)
+	note("Кнопка перебирает найденные модели. Или введи имена/полный путь через запятую; пусто — все. Включи NPC отдельно в папках Targets и ESP.", 40)
+
+	-- ---------- Trigger: триггербот и multipoint ----------
+	tgt, ord = api.triggerPage or scroll, 0
+	section("TRIGGERBOT")
 	chips({
 		{"Triggerbot", "Trigger", nil, "Стреляет сам, когда цель в прицеле, в хитбоксе или рядом с прицелом (Aim не нужен). Статус — в Debug HUD"},
-		{"Multipoint", "Multipoint", nil, "Ищет видимую точку по краям хитбокса"},
-		{"Adv predict", "AdvPredict", nil, "Скорость, ускорение, прыжок/падение цели и падение пули (нужны BulletSpeed + BulletGravity)"},
 	})
+	slider("Trigger delay (sec)", "TriggerDelay", 0, 0.5, 0.01, 2)
+	slider("Trigger tolerance (% of screen)", "TriggerR", 0.5, 15, 0.5, 1)
+
+	section("MULTIPOINT")
+	chips({{"Multipoint", "Multipoint", nil, "Ищет видимую точку по краям хитбокса"}})
+	note("Части тела, на которые переходить, если выбранная закрыта:", 28)
+	chips({{"Edges (края)", "MPEdges"}, {"Head", "MPHead"}, {"Torso", "MPTorso"}, {"Arms", "MPArms"}, {"Legs", "MPLegs"}})
+
+	-- ---------- Hitbox: попадания, размеры, вид и приоритет частей тела ----------
+	tgt, ord = api.hitboxPage or scroll, 0
 	section("HITBOX")
 	chips({
 		{"Hitbox", "Hitbox", nil, "Расширяет попадание по всему телу цели (сервер ограничивает размер)"},
@@ -2900,7 +3058,8 @@ local function buildAim(page, api)
 	})
 	slider("Hitbox size (studs)", "HitboxSize", 0, HB_BODY_MAX, 0.25, 2)
 	slider("Head hitbox size (studs)", "HeadHitboxSize", 0, HB_HEAD_MAX, 0.25, 2)
-	section("HITBOX VISUAL")
+
+	section("HITBOX ESP")
 	do -- только вид: ни один из этих элементов не трогает HitboxSize / HeadHitboxSize и не влияет на попадания
 		local presetPaint = function() end
 		local function vslider(title, key, min, max, step, fmt)
@@ -2953,30 +3112,11 @@ local function buildAim(page, api)
 		_card, pickRefresh = makePicker(tgt, nextOrder(), function() return A[HBV.COLKEYS[curC]] end, function() end, tabsPaint)
 		pickRefresh()
 		table.insert(refreshers, function() pickRefresh() end)
-		new("TextLabel", {
-			Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
-			Text = "Только вид: цвета, прозрачность, заливка и обводка не меняют размеры хитбоксов и попадания. Размеры - ползунки Hitbox size / Head hitbox size.",
-			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
-		}, tgt)
+		note("Только вид: цвета, прозрачность, заливка и обводка не меняют размеры хитбоксов и попадания. Размеры - ползунки Hitbox size / Head hitbox size.", 40)
 	end
-	section("MULTIPOINT: ЧАСТИ ТЕЛА, НА КОТОРЫЕ ПЕРЕХОДИТЬ, ЕСЛИ ВЫБРАННАЯ ЗАКРЫТА")
-	chips({{"Edges (края)", "MPEdges"}, {"Head", "MPHead"}, {"Torso", "MPTorso"}, {"Arms", "MPArms"}, {"Legs", "MPLegs"}})
-	section("CHECKS")
-	chips({{"Invuln check", "CheckInvuln"}, {"Flash check", "CheckFlash"}, {"Smoke check", "CheckSmoke"}})
-	section("TARGETS")
-	chips({
-		{"Players", "TargetPlayers"}, {"NPCs", "TargetNPCs"},
-		{"Team check", "TeamCheck"}, {"Wall check", "WallCheck"},
-	})
-	cycle("Target priority", "Priority", {"Crosshair", "Distance", "Lowest HP"})
-	chips({{"Visibility from head", "VisFromHead"}})
-	cycle("Aim center", "AimMode", {"Auto", "Center", "Touch", "Custom", "Crosshair"})
+
 	section("BODY PART PRIORITY")
-	new("TextLabel", {
-		Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
-		Text = "Первая включённая часть - основная. Кнопки: ★ сделать основной, ▲▼ очередь; переключатель - вкл/выкл. Основная закрыта - цель берётся на следующую доступную часть.",
-		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
-	}, scroll)
+	note("Первая включённая часть - основная. Кнопки: ★ сделать основной, ▲▼ очередь; переключатель - вкл/выкл. Основная закрыта - цель берётся на следующую доступную часть.", 40)
 	local partPaint = {}
 	local function partsChanged()
 		V4.normalizeParts(A)
@@ -2996,7 +3136,7 @@ local function buildAim(page, api)
 		partsChanged()
 	end
 	do
-		local _, mp = cycleCard(scroll, "Main part", nextOrder(),
+		local _, mp = cycleCard(tgt, "Main part", nextOrder(),
 			function() return V4.NAMES[A.TargetPart] or A.TargetPart end,
 			function()
 				local i = table.find(V4.SLOTS, A.TargetPart) or 0
@@ -3012,7 +3152,7 @@ local function buildAim(page, api)
 	local partBase = ord
 	ord += 9 -- 8 рядов частей тела: LayoutOrder = partBase + место в очереди
 	for _, slot in ipairs(V4.SLOTS) do
-		local f = new("Frame", {Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card}, scroll)
+		local f = new("Frame", {Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card}, tgt)
 		rr(f, 8)
 		outline(f)
 		local sw, swPaint = makeSwitch(f)
@@ -3078,41 +3218,21 @@ local function buildAim(page, api)
 		table.insert(refreshers, paint)
 		table.insert(partPaint, paint)
 	end
-	local resetParts = button(scroll, "Reset body part priority", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	local resetParts = button(tgt, "Reset body part priority", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
 	on(resetParts.Activated, function()
 		A.PartOrder, A.PartOn, A.TargetPart = deepCopy(DEF.AIM.PartOrder), deepCopy(DEF.AIM.PartOn), DEF.AIM.TargetPart
 		partsChanged()
 	end)
-	section("TUNING")
-	chips({{"Debug HUD", "DebugHUD"}})
-	local editBtn = button(scroll, "Edit aim point", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	on(editBtn.Activated, function() editTarget = "Aim"; paintEdit(); setEditing(true) end)
-	slider("Select radius (silent), %", "SilentR", 2, 60, 1, 0)
-	slider("Lock release radius, %", "LockR", 5, 90, 1, 0)
-	slider("Trigger delay (sec)", "TriggerDelay", 0, 0.5, 0.01, 2)
-	slider("Trigger tolerance (% of screen)", "TriggerR", 0.5, 15, 0.5, 1)
-	slider("Manual predict (sec)", "Prediction", 0, 0.6, 0.01, 2)
-	slider("Auto predict bias (ms)", "LeadBias", 0, 300, 5, 0)
-	slider("Max distance", "MaxDistance", 50, 2000, 25, 0)
-	slider("Sticky (lower = stickier)", "Sticky", 0.2, 1, 0.05, 2)
-	section("DIAGNOSTICS")
-	local testBtn = button(scroll, "Check coordinates", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	local selfLabel = new("TextLabel", {
-		Size = U(1, 0, 0, 62), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
-		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
-	}, scroll)
-	on(testBtn.Activated, function() if runSelfTest then runSelfTest() end end)
 
-	-- ===== Вкладка FOV (визуал круга; живой предпросмотр, пока вкладка открыта) =====
+	-- ---------- FOV: круг, его вид, положение, динамический радиус и анимация цели ----------
 	-- Размер круга = область выбора цели. Позиция круга (CircleX/Y) не связана с точкой наведения (AimX/Y),
 	-- пока выключено «Circle = aim area»: двигается только рисунок.
 	do
-		local pageOrd = ord
 		tgt, ord = api.fovPage or scroll, 0
 		section("VISIBILITY")
 		chips({
 			{"FOV circle", "ShowFOV", nil, "Показывать круг, пока Aim включён"},
-			{"Fill", "FovFill", nil, "Заливка внутри круга"},
+			{"Fill circle", "FovFill", nil, "Заливка внутри круга"},
 			{"Highlight on target", "FovTarget", nil, "Круг зеленеет, когда цель захвачена"},
 		})
 		section("SIZE AND LOOK")
@@ -3128,38 +3248,7 @@ local function buildAim(page, api)
 		slider("FOV Thickness", "CircleThick", 0.5, 6, 0.5, 1)
 		slider("Fill Transparency", "FovFillAlpha", 0, 1, 0.02, 2)
 
-		section("DYNAMIC FOV")
-		chips({
-			{"Dynamic FOV", "DynFov", nil, "Радиус круга и выбора цели меняется с дистанцией до цели"},
-			{"Invert (far = bigger)", "DynInvert", nil, "Выкл: ближе - больше радиус; вкл: дальше - больше"},
-		})
-		local function cycleKeep(text, key, options) -- как cycle, но не сбрасывает текущую цель
-			local _, paint = cycleCard(tgt, text, nextOrder(), function() return A[key] end, function()
-				local idx = table.find(options, A[key]) or 0
-				A[key] = options[idx % #options + 1]
-			end)
-			table.insert(refreshers, paint)
-		end
-		cycleKeep("Change mode", "DynMode", {"Smooth", "Linear"})
-		slider("Min radius, % of screen", "DynMin", 2, 60, 1, 0)
-		slider("Max radius, % of screen", "DynMax", 2, 60, 1, 0)
-		slider("Start distance (studs)", "DynNear", 0, 1000, 5, 0)
-		slider("Max-change distance (studs)", "DynFar", 10, 2000, 10, 0)
-		slider("Smoothing (higher = smoother)", "DynSmooth", 0, 0.95, 0.05, 2)
-		NX.radLbl = new("TextLabel", {
-			Size = U(1, 0, 0, 34), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
-			TextColor3 = C.W, FontFace = GM, TextSize = 11, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
-		}, tgt)
-		section("TARGET ANIMATION")
-		chips({
-			{"Target animation", "TargetAnim", function(v) A.TargetAnim = v; if not v then NX.animReset() end end, "Индикатор цели: появление, переключение, захват, потеря"},
-			{"Capture effect", "AnimLock", nil, "Вспышка и сжатие при захвате и смене цели"},
-			{"Lose effect", "AnimLose", nil, "Красное расширение при потере цели"},
-		})
-		cycleKeep("Animation style", "AnimStyle", {"Ring", "Square", "Dot"})
-		slider("Animation speed", "AnimSpeed", 0.25, 3, 0.05, 2)
-		local demoBtn = button(tgt, "Preview animation", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-		on(demoBtn.Activated, function() NX.demo = os.clock() end)
+		-- цвет круга: рядом с размером и прозрачностью, потому что это тоже внешний вид
 		section("FOV COLOR")
 		local FOVCOL = {{0, 0, 0.94}, {0.33, 0.75, 0.9}, {0, 0.8, 0.95}, {0.52, 0.8, 1}, {0.14, 0.85, 1}, {0.8, 0.6, 1}}
 		local srow = row(tgt, 40, 8, nextOrder())
@@ -3174,6 +3263,7 @@ local function buildAim(page, api)
 		fovPicker, fovRefresh = makePicker(tgt, nextOrder(), function() return A.FovCol end, function() end, nil)
 		fovRefresh()
 		table.insert(refreshers, function() fovRefresh() end)
+
 		section("POSITION (VISUAL ONLY)")
 		chips({{"Circle = aim area", "CircleFollow", function(v)
 			if v then A.CircleFollow = true else unlinkCircle() end
@@ -3189,12 +3279,34 @@ local function buildAim(page, api)
 			unlinkCircle()
 			A.CircleX, A.CircleY = 0.5, 0.5
 		end)
-		new("TextLabel", {
-			Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
-			Text = "Размер круга задаёт и область выбора цели. Позиция круга — только визуал, пока он не связан с точкой наведения.",
-			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		note("Размер круга задаёт и область выбора цели. Позиция круга — только визуал, пока он не связан с точкой наведения.", 40)
+
+		section("DYNAMIC FOV")
+		chips({
+			{"Dynamic FOV", "DynFov", nil, "Радиус круга и выбора цели меняется с дистанцией до цели"},
+			{"Invert (far = bigger)", "DynInvert", nil, "Выкл: ближе - больше радиус; вкл: дальше - больше"},
+		})
+		cycleKeep("Change mode", "DynMode", {"Smooth", "Linear"})
+		slider("Min radius, % of screen", "DynMin", 2, 60, 1, 0)
+		slider("Max radius, % of screen", "DynMax", 2, 60, 1, 0)
+		slider("Start distance (studs)", "DynNear", 0, 1000, 5, 0)
+		slider("Max-change distance (studs)", "DynFar", 10, 2000, 10, 0)
+		slider("Smoothing (higher = smoother)", "DynSmooth", 0, 0.95, 0.05, 2)
+		NX.radLbl = new("TextLabel", {
+			Size = U(1, 0, 0, 34), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
+			TextColor3 = C.W, FontFace = GM, TextSize = 11, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 		}, tgt)
-		tgt, ord = scroll, pageOrd
+
+		section("TARGET ANIMATION")
+		chips({
+			{"Target animation", "TargetAnim", function(v) A.TargetAnim = v; if not v then NX.animReset() end end, "Индикатор цели: появление, переключение, захват, потеря"},
+			{"Capture effect", "AnimLock", nil, "Вспышка и сжатие при захвате и смене цели"},
+			{"Lose effect", "AnimLose", nil, "Красное расширение при потере цели"},
+		})
+		cycleKeep("Animation style", "AnimStyle", {"Ring", "Square", "Dot"})
+		slider("Animation speed", "AnimSpeed", 0.25, 3, 0.05, 2)
+		local demoBtn = button(tgt, "Preview animation", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+		on(demoBtn.Activated, function() NX.demo = os.clock() end)
 	end
 
 	-- ===== Координаты и точка наведения =====
@@ -4357,6 +4469,7 @@ local function buildAim(page, api)
 	return {
 		overlay = og,
 		preview = function(on) previewFov = on and true or false end,
+		cancelEdit = function() if editing then setEditing(false) end end,
 		refresh = function()
 			currentTarget = nil
 			V4.normalizeParts(A)
@@ -4458,25 +4571,56 @@ function helpUI.mount(panel, unload)
 	local actions = row(box, 36, 8)
 	actions.Size, actions.Position = U(1, -28, 0, 36), U(0, 14, 1, -50)
 	local cancel = button(actions, "Отмена", {Size = U(0.5, -4, 1, 0), LayoutOrder = 1})
-	local confirm = button(actions, "Выгрузить", {Size = U(0.5, -4, 1, 0), LayoutOrder = 2}, {primary = true})
-	local function hide() shade.Visible = false end
+	-- два варианта одной правой кнопки: обычное действие (акцент) и опасное (красное)
+	local confirm = button(actions, "Подтвердить", {Size = U(0.5, -4, 1, 0), LayoutOrder = 2}, {primary = true})
+	local danger = button(actions, "Сбросить всё", {Size = U(0.5, -4, 1, 0), LayoutOrder = 2,
+		BackgroundColor3 = C.DangerBg, TextColor3 = C.W, Visible = false}, {danger = true})
+	local pending -- что выполнить после подтверждения; nil у справочных окон
+	local function hide()
+		shade.Visible = false
+		pending = nil
+	end
+	local function complete()
+		local fn = pending
+		pending = nil
+		shade.Visible = false
+		if fn then fn() end
+	end
 	on(close.Activated, hide)
 	on(cancel.Activated, hide)
-	on(confirm.Activated, function() if shade.Visible and actions.Visible then unload() end end)
-	local function open(name, text, ask)
+	on(confirm.Activated, function() if shade.Visible and actions.Visible and not danger.Visible then complete() end end)
+	on(danger.Activated, function() if shade.Visible and actions.Visible and danger.Visible then complete() end end)
+	-- ask = false: обычная справка без кнопок; danger = true: красная кнопка для необратимых действий
+	local function open(name, text, ask, okText, isDanger, onOk)
 		title.Text, copy.Text = name, text
-		actions.Visible = ask
+		actions.Visible = ask and true or false
+		confirm.Visible = actions.Visible and not isDanger
+		danger.Visible = actions.Visible and isDanger and true or false
+		if ask then
+			if isDanger then danger.Text = okText or "Сбросить всё" else confirm.Text = okText or "Подтвердить" end
+			pending = onOk
+		else
+			pending = nil
+		end
 		body.Size = U(1, -28, 1, ask and -110 or -64)
 		body.CanvasPosition = V2(0, 0)
 		shade.Visible = true
 	end
-	helpUI.open = function(name, desc)
+	local api = {}
+	api.help = function(name, desc)
 		local info = helpUI.info[name]
 		local ru = info and info[1] or desc or "Описание пока недоступно."
 		local en = info and info[2] or "Description not available yet."
 		open(name, "RU: " .. ru .. "\n\nEN: " .. en, false)
 	end
-	return function() open("Выгрузить Enkaisy?", "Меню и плавающие элементы будут закрыты. Чтобы просто свернуть окно, нажмите минус в шапке.", true) end
+	helpUI.open = api.help
+	api.confirm = function(name, text, okText, isDanger, onOk)
+		open(name, text, true, okText, isDanger, onOk)
+	end
+	api.unload = function()
+		open("Выгрузить Enkaisy?", "Меню и плавающие элементы будут закрыты. Чтобы просто свернуть окно, нажмите минус в шапке.", true, "Выгрузить", false, unload)
+	end
+	return api
 end
 
 local function startMain()
@@ -4485,22 +4629,25 @@ local function startMain()
 	local CY = HDR + 40
 	local PAGE_SIZE = U(1 - RAIL, -Skin.RailBase - 26, 1, -(CY + 9))
 	local function pagePos(dx) return U(RAIL, Skin.RailBase + Skin.Inset + (dx or 0), 0, CY) end
-	-- Один каталог определяет порядок, подписи, старые поисковые термины и имена
-	-- пиктограмм. id остаются прежними для совместимости с сохранённой вкладкой.
+	-- Один каталог определяет порядок, подписи, старые поисковые термины и имена пиктограмм.
+	-- Порядок папок повторяет путь игрока: что подсвечивать → по кому → как целиться → чем стрелять → круг → хитбоксы → цвета.
+	-- Похожие настройки всегда стоят рядом внутри своей папки (Smoothness + Sticky, Triggerbot + его ползунки и т.д.).
 	local folders = {
-		{id = "Main", title = "General", keywords = "ESP targets and quick toggles"},
-		{id = "Color", keywords = "ESP palette for every element"},
-		{id = "Sizes", keywords = "ESP opacity labels limits"},
-		{id = "Aim", keywords = "AIM assist auto center predict", ownScroll = true},
-		{id = "FOV", keywords = "AIM circle look size position"},
-		{id = "Extra", keywords = "ESP friends NPC filter reset"},
+		{id = "Main", title = "ESP", keywords = "ESP targets display sizes opacity limits filters friends distance"},
+		{id = "Targets", keywords = "AIM targets players NPC team wall priority checks models filter"},
+		{id = "Aim", keywords = "AIM assist smoothness sticky predict lock silent radius aim point diagnostics", ownScroll = true},
+		{id = "Trigger", keywords = "AIM triggerbot multipoint delay tolerance edges head torso arms legs"},
+		{id = "FOV", keywords = "AIM circle look size position dynamic animation"},
+		{id = "Hitbox", keywords = "AIM hitbox head size ESP visual preset body part priority"},
+		{id = "Color", keywords = "ESP palette team colors for every element"},
 		{id = "Players", keywords = "ESP mark hide per-player look", ownScroll = true},
 		{id = "Visual", title = "Performance", keywords = "SETTINGS update rate effects low-end preset"},
-		{id = "Appearance", keywords = "SETTINGS window transparency theme accent"},
+		{id = "Appearance", keywords = "SETTINGS window transparency theme accent reset"},
 	}
 	local repaints = {}
 	local closeDetail
 	local applyUIAll
+	local dialog -- модальное окно справки и подтверждений (собирается ниже)
 	local bgFrames = {}
 	local curTab = "Main"
 
@@ -4862,7 +5009,8 @@ local function startMain()
 	statsPing = new("TextLabel", {Size = U(0.5, 0, 1, 0), Position = S(0.5, 0), BackgroundTransparency = 1,
 		Text = "-- ms", TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL}, statsCard)
 
-	-- ===== Страница Main =====
+	-- ===== Папка ESP (Main): что подсвечивать, как выглядит подсветка и какие цели фильтровать =====
+	-- Сначала включение, затем цели, затем внешний вид, затем фильтры: папка читается сверху вниз без прыжков.
 	local pm = pages.Main
 	sectionLabel(pm, "ESP", 0)
 	local _, paintToggle = toggleCard(pm, "Enable ESP", 1, function() return CFG.On end, function(v)
@@ -4919,133 +5067,48 @@ local function startMain()
 		{"Rainbow", "Rainbow", refreshHL}, {"Display name", "Disp"},
 	})
 
-	-- ===== Страница Extra =====
-	local pe = pages.Extra
-	sectionLabel(pe, "FILTERS", 0)
-	makeChips(chipGrid(pe, 1), {{"Distance", "Dist"}, {"HP color", "HPColor", refreshHL}, {"Limit nearest", "Limit"}, {"Hide native", "HideNative"}})
+	-- размеры и прозрачность подсветки: раньше жили в отдельной папке, теперь рядом с самим ESP
+	sectionLabel(pm, "РАЗМЕР И ПРОЗРАЧНОСТЬ", 6)
+	local sOrd = 6
+	local function slider(title, key, min, max, pct, fmt)
+		sOrd += 1
+		local _, paint = sliderCard(pm, title, sOrd, min, max,
+			function() return CFG[key] end,
+			function(v)
+				CFG[key] = pct and v or math.floor(v + 0.5)
+				refreshHL()
+			end,
+			function(v)
+				if fmt then return fmt(v) end
+				if pct then return math.floor(v * 100 + 0.5) .. "%" end
+				return tostring(v)
+			end,
+			not pct and 1 or nil)
+		table.insert(repaints, function() paint() end)
+	end
+	slider("Fill strength", "Fill", 0, 1, true)
+	slider("Outline opacity", "Outline", 0, 1, true)
+	slider("Name size", "NameSize", 10, 30)
+	slider("Name length", "NameLen", 3, 20)
+	slider("ESP max distance", "MaxDist", 50, DIST_MAX, false, function(v) return v >= DIST_MAX and "∞" or v .. "m" end)
+	slider("Limit count", "LimitN", 1, 31)
 
-	local _, paintFriend = cycleCard(pe, "Friends", 2, function() return CFG.FriendMode end, function()
+	-- фильтры целей: рядом с размерами, потому что тоже влияют только на подсветку
+	sectionLabel(pm, "ФИЛЬТРЫ", 13)
+	makeChips(chipGrid(pm, 14), {
+		{"Distance", "Dist"}, {"HP color", "HPColor", refreshHL}, {"Limit nearest", "Limit"}, {"Hide native", "HideNative"},
+	})
+	local _, paintFriend = cycleCard(pm, "Friends", 15, function() return CFG.FriendMode end, function()
 		local order = {"Off", "Color", "Hide"}
 		CFG.FriendMode = order[(table.find(order, CFG.FriendMode) or 1) % 3 + 1]
 		updAll()
 	end, function() return CFG.FriendMode ~= "Off" end)
 	table.insert(repaints, paintFriend)
-
-	sectionLabel(pe, "ФИЛЬТР NPC ПО ИМЕНИ", 3)
-	local frow = row(pe, 40, 6, 4)
-	local fmode = button(frow, "", {Size = O(70, 40), LayoutOrder = 1})
-	local ftext = new("TextBox", {
-		Size = U(1, -76, 1, 0), BackgroundColor3 = C.Input, LayoutOrder = 2,
-		Text = CFG.NpcText, PlaceholderText = "имена через запятую", TextColor3 = C.W,
-		PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
-	}, frow)
-	Skin.field(ftext)
-	local function paintFilter()
-		local off = CFG.NpcFilter == "Off"
-		fmode.Text = CFG.NpcFilter
-		fmode.TextColor3 = off and C.Mut or C.W
-	end
-	on(fmode.Activated, function()
-		local order = {"Off", "Only", "Hide"}
-		CFG.NpcFilter = order[(table.find(order, CFG.NpcFilter) or 1) % 3 + 1]
-		paintFilter()
-		updAll()
-	end)
-	on(ftext.FocusLost, function()
-		CFG.NpcText = ftext.Text
-		parseWords()
-		updAll()
-	end)
-	paintFilter()
-	table.insert(repaints, function() paintFilter(); ftext.Text = CFG.NpcText end)
 	new("TextLabel", {
-		Size = U(1, 0, 0, 28), BackgroundTransparency = 1, TextWrapped = true,
-		Text = "Only — только совпавшие, Hide — скрыть совпавших. Работает для NPC.",
-		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL,
-		TextYAlignment = Enum.TextYAlignment.Top, LayoutOrder = 5,
-	}, pe)
-
-	sectionLabel(pe, "TARGET MODELS / МОДЕЛИ ДЛЯ AIM И ESP", 6)
-    local modelBox = new("TextBox", {
-        Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = 7,
-        Text = CFG.ModelNames, PlaceholderText = "Все модели / имена через запятую", TextColor3 = C.W,
-        PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
-    }, pe)
-    Skin.field(modelBox)
-    new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, modelBox)
-    on(modelBox.FocusLost, function()
-        CFG.ModelNames = modelBox.Text
-        pruneModels()
-        scanModels()
-        updAll()
-    end)
-    table.insert(repaints, function() if not modelBox:IsFocused() then modelBox.Text = CFG.ModelNames end end)
-    local modelPick = button(pe, "Выбрать модель: все", {Size = U(1, 0, 0, 40), LayoutOrder = 8})
-    modelPick.TextTruncate = Enum.TextTruncate.AtEnd
-    local function paintModelPick()
-        modelPick.Text = CFG.ModelNames:match("^%s*$") and "Выбрать модель: все" or ("Модель: " .. CFG.ModelNames)
-    end
-    on(modelPick.Activated, function()
-        local paths, seen = {}, {}
-        local function add(m)
-            if m and m:IsDescendantOf(Workspace) and not seen[m] then
-                seen[m] = true
-                table.insert(paths, m:GetFullName())
-            end
-        end
-        for _, player in Players:GetPlayers() do if player ~= LP then add(player.Character) end end
-        for m in npcs do add(m) end
-        table.sort(paths)
-        local current = table.find(paths, CFG.ModelNames) or 0
-        CFG.ModelNames = current < #paths and paths[current + 1] or ""
-        modelBox.Text = CFG.ModelNames
-        pruneModels()
-        scanModels()
-        updAll()
-        paintModelPick()
-    end)
-    paintModelPick()
-    table.insert(repaints, paintModelPick)
-    on(modelBox.FocusLost, paintModelPick)
-    new("TextLabel", {Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 9,
-        Text = "Кнопка перебирает найденные модели. Или введи имена/полный путь через запятую; пусто — все. Включи NPC отдельно в Aim и ESP.",
-        TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, pe)
-    local resetBtn = button(pe, "Reset settings", {Size = U(1, 0, 0, 40), LayoutOrder = 10}, {danger = true})
-	local rArmed = false
-	local function disarmReset()
-		rArmed = false
-		resetBtn.Text = "Reset settings"
-		tween(resetBtn, fast, {BackgroundColor3 = C.Input, TextColor3 = C.Danger})
-	end
-	on(resetBtn.Activated, function()
-		if not rArmed then
-			rArmed = true
-			resetBtn.Text = "Точно сбросить?"
-			tween(resetBtn, fast, {BackgroundColor3 = C.DangerBg, TextColor3 = C.W})
-			task.delay(2.5, function() if rArmed and resetBtn.Parent then disarmReset() end end)
-			return
-		end
-		disarmReset()
-		for k, v in DEF.CFG do CFG[k] = v end
-		for n, t in DEF.col do
-			for k, v in t do col[n][k] = v end
-		end
-		table.clear(pset)
-		for k, v in DEF.AIM do AIMCFG[k] = type(v) == "table" and deepCopy(v) or v end
-		for k, v in DEF.UI do UICFG[k] = type(v) == "table" and deepCopy(v) or v end
-		if applyUIAll then applyUIAll() end
-		AIMCFG.Enabled = false
-		CFG.On = true
-		cur = "Fill"
-		parseWords()
-        pruneModels()
-        scanModels()
-		statsCard.Visible = CFG.ShowStats
-		if closeDetail then closeDetail() end
-		for _, fn in repaints do fn() end
-		updAll()
-		saveNow()
-	end)
+		Size = U(1, 0, 0, 28), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 16,
+		Text = "Friends: Off — как обычные цели, Color — цвет союзников, Hide — не показывать.",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+	}, pm)
 
 	-- ===== Страница Color =====
 	local refreshPicker
@@ -5146,32 +5209,6 @@ local function startMain()
 		on(resetTC.Activated, function() TC.reset() apply() end)
 		pickRefresh()
 	end
-
-	-- ===== Страница Sizes =====
-	sectionLabel(pages.Sizes, "SIZE & OPACITY", 0)
-	local sOrd = 0
-	local function slider(title, key, min, max, pct, fmt)
-		sOrd += 1
-		local _, paint = sliderCard(pages.Sizes, title, sOrd, min, max,
-			function() return CFG[key] end,
-			function(v)
-				CFG[key] = pct and v or math.floor(v + 0.5)
-				refreshHL()
-			end,
-			function(v)
-				if fmt then return fmt(v) end
-				if pct then return math.floor(v * 100 + 0.5) .. "%" end
-				return tostring(v)
-			end,
-			not pct and 1 or nil)
-		table.insert(repaints, function() paint() end)
-	end
-	slider("Fill strength", "Fill", 0, 1, true)
-	slider("Outline opacity", "Outline", 0, 1, true)
-	slider("Name size", "NameSize", 10, 30)
-	slider("Name length", "NameLen", 3, 20)
-	slider("Max distance", "MaxDist", 50, DIST_MAX, false, function(v) return v >= DIST_MAX and "∞" or v .. "m" end)
-	slider("Limit count", "LimitN", 1, 31)
 
 	-- ===== Страница Players =====
 	local pp = pages.Players
@@ -5528,6 +5565,52 @@ local function startMain()
 		for _, fn in repaints do fn() end
 	end
 
+	-- ===== Полный сброс: выключается абсолютно всё, значения и цвета возвращаются к заводским =====
+	-- Запускается только из подтверждения (раздел RESET внизу Appearance), поэтому случайно не срабатывает.
+	local function fullReset()
+		-- 1. ESP и общие настройки: каждый флаг OFF, числа / строки / таблицы — к значениям по умолчанию
+		for k, v in DEF.CFG do
+			if type(v) == "boolean" then CFG[k] = false
+			elseif type(v) == "table" then CFG[k] = deepCopy(v)
+			else CFG[k] = v end
+		end
+		-- 2. Aim целиком: наводка, Target Lock, Silent, Triggerbot, Hitbox, Dynamic FOV, анимация, HUD — OFF
+		for k, v in DEF.AIM do
+			if type(v) == "boolean" then AIMCFG[k] = false
+			elseif type(v) == "table" then AIMCFG[k] = deepCopy(v)
+			else AIMCFG[k] = v end
+		end
+		V4.normalizeParts(AIMCFG) -- очередь частей тела как после установки: основная = первая включённая
+		-- 3. Цвета подсветки и Team Colors — заводские
+		for n, t in DEF.col do
+			for k, v in t do col[n][k] = v end
+		end
+		TC.reset()
+		-- 4. Оформление окна как при первом запуске: тема, акцент, размер, фон-картинка, вкладка
+		for k, v in DEF.UI do
+			UICFG[k] = type(v) == "table" and deepCopy(v) or v
+		end
+		-- 5. Сессионные данные: метки игроков, фильтры имён моделей, редактор точки наведения
+		table.clear(pset)
+		table.clear(marks)
+		cur = "Fill"
+		if aim and aim.cancelEdit then aim.cancelEdit() end
+		parseWords()
+		pruneModels()
+		scanModels()
+		if applyUIAll then applyUIAll() end
+		statsCard.Visible = CFG.ShowStats
+		if closeDetail then closeDetail() end
+		for _, fn in repaints do fn() end
+		updAll()
+		applyFps()
+		saveNow()
+		pcall(function()
+			game:GetService("StarterGui"):SetCore("SendNotification",
+				{Title = "Enkaisy", Text = "Все настройки сброшены: все функции выключены.", Duration = 3})
+		end)
+	end
+
 	local function aSlider(title, key, min, max, step, fmt)
 		local _, paint = sliderCard(pa, title, nextA(), min, max,
 			function() return UICFG[key] end,
@@ -5673,15 +5756,38 @@ local function startMain()
 	accRefresh()
 	table.insert(repaints, accRefresh)
 
+	-- ----- сброс: сначала оформление, затем полный сброс всех настроек (с подтверждением) -----
+	sectionLabel(pa, "RESET / СБРОС", nextA())
 	local appReset = button(pa, "Reset appearance", {Size = U(1, 0, 0, 40), LayoutOrder = nextA()}, {danger = true})
 	on(appReset.Activated, function()
 		for k, v in DEF.UI do UICFG[k] = type(v) == "table" and deepCopy(v) or v end
 		applyUIAll()
 	end)
+	local fullBtn = button(pa, "Полный сброс — выключить всё", {
+		Size = U(1, 0, 0, 44), LayoutOrder = nextA(), BackgroundColor3 = C.DangerBg, TextColor3 = C.W,
+	}, {danger = true})
+	on(fullBtn.Activated, function()
+		if not dialog then return end
+		dialog.confirm("Сбросить все настройки?",
+			"Абсолютно все функции будут выключены: ESP, Aim, Target Lock, Silent Aim, Triggerbot, Multipoint, Hitbox и Hitbox ESP, "
+				.. "Dynamic FOV, Target Animation, HUD, трассы, скелет, Team Colors, FPS unlock — всё станет OFF. "
+				.. "Цвета, тема, акцент, фон-картинка, размер окна и метки игроков вернутся к заводским. Отменить это нельзя.",
+			"Да, сбросить всё", true, fullReset)
+	end)
+	new("TextLabel", {
+		Size = U(1, 0, 0, 46), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextA(),
+		Text = "Полный сброс сначала спросит подтверждение. После него все переключатели выключены — включай только то, что нужно.",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+	}, pa)
 
 
-	-- ===== Вкладка Aim =====
-	local okA, resA = pcall(buildAim, pages.Aim, {menu = function(s) setOpen(s) end, fovPage = pages.FOV})
+	-- ===== Папки Aim / Targets / Trigger / Hitbox / FOV =====
+	-- Aim и FOV дополнительно несут оверлеи, а Targets, Trigger и Hitbox — обычные страницы,
+	-- в которые модуль наводки складывает свои разделы (см. buildAim).
+	local okA, resA = pcall(buildAim, pages.Aim, {
+		menu = function(s) setOpen(s) end,
+		fovPage = pages.FOV, targetsPage = pages.Targets, triggerPage = pages.Trigger, hitboxPage = pages.Hitbox,
+	})
 	if okA then
 		aim = resA
 		table.insert(repaints, aim.refresh)
@@ -5689,7 +5795,8 @@ local function startMain()
 		warn("[Enkaisy] Aim init error: " .. tostring(resA))
 	end
 
-	on(chrome.close.Activated, helpUI.mount(panel, stop))
+	dialog = helpUI.mount(panel, stop)
+	on(chrome.close.Activated, dialog.unload)
 	-- Подсказки статичны после сборки страниц. Индекс строится только один раз,
 	-- поэтому набор текста на телефоне не обходит все карточки на каждую букву.
 	local function fold(s)
