@@ -5,6 +5,11 @@
 --
 -- ОРУЖИЕ: любой Tool с атрибутом Damage (number). Необязательно: Range (500), Cooldown (0.15).
 -- NPC для Aim: любые модели с Humanoid (их находит ESP) или с тегом AimTarget.
+-- КЛЮЧ ДОСТУПА: проверяется на СЕРВЕРЕ (RemoteFunction EnkaisyAuth, в клиенте нет ни ключа, ни его хеша).
+-- Пока игрок не ввёл ключ, сервер отбрасывает его выстрелы ("not activated"), поэтому обойти окно
+-- ключа правкой локальной копии клиента можно, а пользоваться aim/triggerbot/silent aim — нет.
+-- Сменить ключ: пересчитать djb2(AUTH_SALT .. новый ключ в нижнем регистре без пробелов) и подставить в AUTH_HASH.
+-- Попытки ввода ограничены: 5 в минуту на игрока.
 --
 -- Интерфейс: только Android / сенсорное управление. Вид (тема, акцент, прозрачность, масштаб) — папка Appearance.
 -- Окно: − свернуть в логотип, □ развернуть / вернуть размер, × открыть подтверждение выгрузки.
@@ -24,6 +29,11 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
+-- v4.3: Ключ доступа проверяется на сервере (клиент его больше не знает), выстрелы без авторизации сервер не обрабатывает.
+--       Кулдаун выстрела и триггера — на каждое оружие отдельно (смена пушки больше не съедает выстрел).
+--       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
+--       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
+--       ESP update rate теперь реально ограничивает частоту (в т.ч. 60 Гц на 120-Гц экране).
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
 -- v4.0: Dynamic FOV (вкладка FOV): радиус круга и выбора цели зависит от дистанции (Linear / Smooth, мин/макс, дистанции, плавность, текущий радиус).
 --       Target Animation (вкладка FOV): индикатор цели - появление, переключение, захват, потеря; стили Ring / Square / Dot, скорость, Preview.
@@ -72,12 +82,14 @@ local function rayBox(origin, dir, maxDist, cf, size, pad)
 	return t0
 end
 -- ближайшее пересечение луча с расширенными хитбоксами модели: расстояние и часть тела
+-- Голова получает СВОЙ размер (Head hitbox size). Если Head hitbox выключен (0), голова
+-- расширяется как тело — иначе обычный Hitbox перестал бы работать по голове.
 local function rayModelHitbox(origin, dir, maxDist, model, bodyPad, headPad)
 	local bestT, bestPart
 	for _, p in model:GetChildren() do
 		if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
 			local pad = bodyPad
-			if p.Name == "Head" then pad = math.max(bodyPad, headPad) end
+			if p.Name == "Head" then pad = headPad > 0 and headPad or bodyPad end
 			if pad > 0 then
 				local t = rayBox(origin, dir, bestT or maxDist, p.CFrame, p.Size, pad)
 				if t and (not bestT or t < bestT) then bestT, bestPart = t, p end
@@ -94,6 +106,19 @@ local function humanoidModel(inst)
 		m = m.Parent
 	end
 	return nil
+end
+
+-- ===== Ключ доступа (проверка ТОЛЬКО на сервере) =====
+-- В клиенте нет ни ключа, ни хеша: он просто спрашивает сервер "пустишь?".
+-- Пока сервер не подтвердил ключ, он не принимает выстрелы этого игрока (reject "not activated"),
+-- поэтому правка локальной копии клиента не даёт ни наводки, ни триггера, ни silent aim.
+local AUTH_NAME = "EnkaisyAuth"
+local AUTH_SALT = "enkaisy.v4.2:" -- соль: хеш ключа не совпадает с хешем самого ключа
+local AUTH_HASH = 4229176949 -- djb2(AUTH_SALT .. ключ в нижнем регистре без пробелов); сменить ключ = пересчитать это число
+local function hashKey(s)
+	local h = 5381
+	for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967296 end
+	return h
 end
 
 ----------------------------------------------------------------
@@ -123,6 +148,37 @@ if RS:IsServer() then
     remote:SetAttribute("HitboxMaxHead", HITBOX_ALLOWED and HITBOX_MAX_HEAD or 0)
     remote.Parent = ReplicatedStorage
 
+    -- ===== Авторизация по ключу (на сервере, а не в клиенте) =====
+    -- Клиент присылает только то, что ввёл игрок. Хитрость в том, что без успешной авторизации
+    -- сервер вообще не обрабатывает выстрелы этого игрока — обойти окно ключа в своей копии
+    -- клиента можно, а наносить урон (aim / triggerbot / silent aim / hitbox) нельзя.
+    local authorized, authTries = {}, {}
+    local AUTH_MAX_TRIES, AUTH_WINDOW = 5, 60 -- 5 попыток в минуту: перебор ключа по сети исключён
+    local authRemote = Instance.new("RemoteFunction")
+    authRemote.Name = AUTH_NAME
+    authRemote.Parent = ReplicatedStorage
+    authRemote.OnServerInvoke = function(plr, key)
+        if authorized[plr] then return true end
+        local now = os.clock()
+        local st = authTries[plr]
+        if not st or now - st.t > AUTH_WINDOW then
+            st = {n = 0, t = now}
+            authTries[plr] = st
+        end
+        if st.n >= AUTH_MAX_TRIES then
+            return false, "wait", math.max(1, math.ceil(AUTH_WINDOW - (now - st.t)))
+        end
+        st.n += 1
+        if type(key) ~= "string" or #key < 1 or #key > 64 then return false, "bad" end
+        local norm = (key:lower():gsub("%s+", ""))
+        if hashKey(AUTH_SALT .. norm) == AUTH_HASH then
+            authorized[plr] = true
+            plr:SetAttribute("EnkaisyAccess", true)
+            return true
+        end
+        return false, "wrong"
+    end
+
     -- Client Scripts не запускаются из ReplicatedStorage: выдаём копию каждому PlayerScripts.
     local function installClient(plr)
         task.spawn(function()
@@ -139,7 +195,9 @@ if RS:IsServer() then
     Players.PlayerAdded:Connect(installClient)
     for _, plr in Players:GetPlayers() do installClient(plr) end
 
-    local lastShot = {}
+    -- Кулдаун считается ПО ОРУЖИЮ, а не на игрока: своё оружие = свой таймер.
+    -- Слабые ключи: инструмент удалили — запись уходит сама.
+    local lastShot = setmetatable({}, {__mode = "k"})
 
     -- NPC (модели с Humanoid, не игроки) для проверки хитбоксов
     local npcModels = setmetatable({}, { __mode = "k" })
@@ -200,6 +258,8 @@ if RS:IsServer() then
 
     -- обработка выстрела; возвращает короткий код результата (клиент показывает его в HUD)
     local function handleShot(plr, tool, origin, direction, aimDir, hbB, hbH)
+        -- 0. Ключ: без успешной авторизации сервер не обрабатывает выстрелы вовсе
+        if not authorized[plr] then return "not activated" end
         -- 1. Типы данных
         if typeof(tool) ~= "Instance" or not tool:IsA("Tool") then return "bad data" end
         if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then return "bad data" end
@@ -226,10 +286,10 @@ if RS:IsServer() then
         if type(cooldown) ~= "number" or cooldown ~= cooldown or cooldown < 0 or cooldown == math.huge then cooldown = DEFAULT_COOLDOWN end
         cooldown = math.max(cooldown, 0.03)
 
-        -- 4. Кулдаун
+        -- 4. Кулдаун (у каждого оружия свой)
         local now = os.clock()
-        if now - (lastShot[plr] or 0) < cooldown * 0.9 then return "cooldown" end -- 10% допуск на джиттер сети
-        lastShot[plr] = now
+        if now - (lastShot[tool] or 0) < cooldown * 0.9 then return "cooldown" end -- 10% допуск на джиттер сети
+        lastShot[tool] = now
 
         -- 5. Стрелять можно только из района головы
         if not ((origin - head.Position).Magnitude <= MAX_ORIGIN_OFFSET) then return "origin too far" end
@@ -338,7 +398,8 @@ if RS:IsServer() then
     end)
 
     Players.PlayerRemoving:Connect(function(plr)
-        lastShot[plr] = nil
+        authorized[plr], authTries[plr] = nil, nil
+        plr:SetAttribute("EnkaisyAccess", nil)
     end)
 
     return
@@ -359,7 +420,6 @@ local U, S, O, V2 = UDim2.new, UDim2.fromScale, UDim2.fromOffset, Vector2.new
 -- Встроенное семейство с кириллицей; используем настоящие начертания, а не обводку букв.
 local GR = Font.fromEnum(Enum.Font.Roboto)
 local GB, GM, XL = Font.new(GR.Family, Enum.FontWeight.Bold), Font.new(GR.Family, Enum.FontWeight.Medium), Enum.TextXAlignment.Left
-local KEY_HASH = 200016687
 
 local MODES = {"Players", "NPC", "Both"}
 local DIST_MAX = 2000
@@ -854,11 +914,6 @@ local function on(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); re
 local UT = Enum.UserInputType
 local function press(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 end
 local function move(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseMovement end
-local function hashKey(s)
-	local h = 5381
-	for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967296 end
-	return h
-end
 
 -- Наведение / нажатие: плавно меняется только прозрачность обводки (и при желании цвет фона).
 -- Лёгкий эффект без свечения и теней — не просаживает FPS. h.base можно менять (выбранное состояние).
@@ -1800,7 +1855,9 @@ local function frame()
 	lastT = now
 	fps += (1 / math.max(dt, 1e-3) - fps) * 0.08
 	local hz = CFG.EspHz
-	if hz < 60 and now - lastWork < 1 / hz - 0.004 then return end -- Performance: реже обновляем ESP-подписи
+	-- ограничение работает на любой выбранной частоте: на 120-Гц экране "60 Hz" теперь реально 60,
+	-- а не полная частота кадров (раньше при hz = 60 условие не срабатывало никогда)
+	if hz > 0 and now - lastWork < 1 / hz - 0.004 then return end
 	lastWork = now
 	local cam = Workspace.CurrentCamera
 	local camPos = cam and cam.CFrame.Position
@@ -4066,7 +4123,7 @@ local function buildAim(page, api)
 					for _, p in s.list do
 						if p.Parent then
 							local isHead = p.Name == "Head"
-							local pad = isHead and math.max(b, h) or b -- как в rayModelHitbox
+							local pad = isHead and (h > 0 and h or b) or b -- ровно как в rayModelHitbox
 							if pad > 0 and (isHead and A.HbvShowHead or (not isHead and A.HbvShowBody)) then
 								local e = s.parts[p]
 								if not e then
@@ -4124,7 +4181,7 @@ local function buildAim(page, api)
 	-- В случаях 2 и 3 пуля отправляется точно в точку цели (как Silent Aim; сервер ограничивает угол, SILENT_MAX_ANGLE).
 	-- При включённом Silent Aim стреляем, когда цель есть в радиусе Silent.
 	local pickMs, pickWarned = 0, false
-	local lastTrigger, seenSince, seenModel, lastWarm = 0, nil, nil, 0
+	local lastTrigger, seenSince, seenModel, lastWarm = setmetatable({}, {__mode = "k"}), nil, nil, 0
 	local trigStatus = "off"
 	local fireTool -- присваивается ниже (= shoot)
 	local silentTarget -- определена ниже (нужна triggerbot'у)
@@ -4162,8 +4219,11 @@ local function buildAim(page, api)
 		local ch = LP.Character
 		local tool = ch and ch:FindFirstChildOfClass("Tool")
 		if not tool then seenSince, seenModel = nil, nil trigStatus = "no tool (equip weapon)" return end
+		-- дальность триггера = Range самого оружия (Aim max distance к триггеру больше не применяется:
+		-- из-за него оружие с Range 800 молча не стреляло дальше 500 студов)
 		local range = tool:GetAttribute("Range")
-		range = math.min(type(range) == "number" and range or 500, A.MaxDistance)
+		if type(range) ~= "number" or range ~= range or range <= 0 or range == math.huge then range = 500 end
+		range = math.clamp(range, 1, 5000)
 		local tolPx = math.min(SP.vp.X, SP.vp.Y) * A.TriggerR * 0.01
 		local model, aimPart, how, why
 		if A.SilentAim then
@@ -4213,15 +4273,15 @@ local function buildAim(page, api)
 		local cd = tool:GetAttribute("Cooldown")
 		cd = type(cd) == "number" and cd or 0.15
 		if now - seenSince < A.TriggerDelay then trigStatus = "aiming" return end
-		if now - lastTrigger < cd * 1.06 then trigStatus = "cooldown" return end
+		if now - (lastTrigger[tool] or 0) < cd * 1.06 then trigStatus = "cooldown" return end
 		bindRemote()
 		if tool:GetAttribute("Damage") ~= nil and fireRemote then
 			-- встроенное оружие (Damage + ремоут): выстрел через сервер
 			local ok, w = fireTool(tool, aimPart)
-			if ok then lastTrigger = now trigStatus = "FIRE (" .. how .. ")" else trigStatus = w or "blocked" end
+			if ok then lastTrigger[tool] = now trigStatus = "FIRE (" .. how .. ")" else trigStatus = w or "blocked" end
 		else
 			-- у оружия нет Damage или нет ремоута: нажимаем родное действие инструмента
-			lastTrigger = now
+			lastTrigger[tool] = now
 			local okA = pcall(tool.Activate, tool)
 			trigStatus = okA and ("FIRE Activate (" .. how .. ")") or "Activate failed"
 		end
@@ -4258,7 +4318,7 @@ local function buildAim(page, api)
 
 	-- встроенное оружие: Tool с атрибутом Damage
 	local hooked = setmetatable({}, {__mode = "k"})
-	local lastSent, shotsSent = 0, 0
+	local lastSent, shotsSent = setmetatable({}, {__mode = "k"}), 0 -- [Tool] = время последнего выстрела
 	local function shoot(tool, forcePart)
 		bindRemote()
 		if not fireRemote then return false, "no remote" end
@@ -4269,7 +4329,7 @@ local function buildAim(page, api)
 		local cd = tool:GetAttribute("Cooldown")
 		cd = type(cd) == "number" and cd or 0.15
 		local t = os.clock()
-		if t - lastSent < cd * 1.05 then return false, "cooldown" end
+		if t - (lastSent[tool] or 0) < cd * 1.05 then return false, "cooldown" end
 		local origin = head.Position
 		-- куда реально смотрит прицел (SP.aim), а не mouse.Hit; свой персонаж исключён через rayParams
 		local ray = camera:ViewportPointToRay(SP.aim.X, SP.aim.Y)
@@ -4293,7 +4353,7 @@ local function buildAim(page, api)
 			local toTarget = getAimPoint(part) - origin
 			if toTarget.Magnitude > 0.01 then shotDir = toTarget.Unit end
 		end
-		lastSent = t
+		lastSent[tool] = t
 		shotsSent += 1
 		local hbB, hbH = hbPads()
 		fireRemote:FireServer(tool, origin, shotDir, aimDir, hbB, hbH)
@@ -5975,10 +6035,23 @@ local function keyScreen(done)
 	end)
 
 	local busy, tries = false, 0
+	-- ключ проверяет СЕРВЕР: в клиенте нет ни ключа, ни его хеша, поэтому правка этого окна
+	-- ничего не даёт — без авторизации сервер отбрасывает выстрелы ("not activated").
+	local function getAuth()
+		return ReplicatedStorage:FindFirstChild(AUTH_NAME) or ReplicatedStorage:WaitForChild(AUTH_NAME, 5)
+	end
+	local function askServer(key)
+		local rf = getAuth()
+		if not rf then return false, "no server" end
+		local ok, a, b, c = pcall(function() return rf:InvokeServer(key) end)
+		if not ok then return false, "error" end
+		return a == true, b, c
+	end
 	local function submit()
 		if busy then return end
 		busy = true
-		if hashKey((box.Text:gsub("%s", ""))) == KEY_HASH then
+		local granted, err, waitSec = askServer(box.Text)
+		if granted then
 			status.TextColor3, status.Text = C.W, "Ключ принят"
 			task.wait(0.4)
 			if closed then return end
@@ -5992,8 +6065,19 @@ local function keyScreen(done)
 			done()
 			return
 		end
+		if err == "wait" then -- сервер включил паузу за перебор
+			status.TextColor3, status.Text = C.Danger, "Слишком много попыток, подождите " .. tostring(waitSec or 60) .. " c"
+			box.Text, busy = "", false
+			return
+		end
 		tries += 1
-		status.TextColor3, status.Text = C.Danger, "Неверный ключ"
+		local msg = "Неверный ключ"
+		if err == "no server" then
+			msg = "Сервер Enkaisy не найден"
+		elseif err == "error" or err == "bad" then
+			msg = "Ошибка связи, попробуй ещё"
+		end
+		status.TextColor3, status.Text = C.Danger, msg
 		if CFG.Anim then
 			for _, dx in {-12, 12, -8, 8, -4, 4, 0} do
 				if closed then return end
