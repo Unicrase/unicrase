@@ -7,6 +7,8 @@
 -- NPC для Aim: любые модели с Humanoid (их находит ESP) или с тегом AimTarget.
 --
 -- Интерфейс: только Android / сенсорное управление. Вид (тема, акцент, прозрачность, масштаб) — вкладка Appearance.
+-- Окно: − свернуть в логотип, □ развернуть / вернуть размер, × открыть подтверждение выгрузки.
+-- Оформление как на референсе: Appearance → Reset appearance (игровые настройки не сбрасываются).
 -- Управление: меню Enkaisy (кнопка-логотип), вкладка Aim, плавающая кнопка AIM, вкладка FOV для круга.
 -- Triggerbot/Multipoint/Adv predict/Checks: вкладка Aim. Атрибуты Tool: BulletSpeed, BulletGravity. Атрибуты модели: Invulnerable, Flashed, InSmoke; тег SmokeCloud.
 
@@ -28,7 +30,7 @@
 -- v3.3: триггер (стреляет и при движущейся цели + наводке), Adv predict (без ложного упреждения на время полёта), стекло карточек над фоном-картинкой.
 -- v3.2: переписан предикт (скорость по позиции, трекер ускорения), триггер (допуск, Activate-режим, статусы), фон-картинка в Appearance.
 -- v3.1: окно меню растягивается за правый нижний угол (значок из точек). Двойное касание угла — вернуть размер.
--- Размер, положение окна и последняя вкладка сохраняются; раскладка (1/2/3 колонки) подстраивается под ширину.
+-- Размер, положение окна и последняя вкладка сохраняются; карточки переходят во вторую колонку только в широком окне.
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -347,7 +349,9 @@ local HttpService = game:GetService("HttpService")
 local Stats = game:GetService("Stats")
 local LP = Players.LocalPlayer
 local U, S, O, V2 = UDim2.new, UDim2.fromScale, UDim2.fromOffset, Vector2.new
-local GB, GM, XL = Enum.Font.GothamBold, Enum.Font.GothamMedium, Enum.TextXAlignment.Left
+-- Встроенное семейство с кириллицей; используем настоящие начертания, а не обводку букв.
+local GR = Font.fromEnum(Enum.Font.Roboto)
+local GB, GM, XL = Font.new(GR.Family, Enum.FontWeight.Bold), Font.new(GR.Family, Enum.FontWeight.Medium), Enum.TextXAlignment.Left
 local KEY_HASH = 200016687
 
 local MODES = {"Players", "NPC", "Both"}
@@ -533,38 +537,26 @@ local UICFG = {
 	MenuScale = 1, MenuAlpha = 0, BgAlpha = 0, UIScale = 1, Corner = 8,
 	Theme = "Dark", Accent = {h = 0, s = 0, v = 0.94},
 	-- окно: размер (логические px до UIScale), центр в долях экрана (-1 = по умолчанию: справа по центру), вкладка
-	PanelW = 480, PanelH = 392, PanelCX = -1, PanelCY = -1, Tab = "Main",
+	PanelW = 672, PanelH = 448, PanelCX = -1, PanelCY = -1, Tab = "Main",
 	BgImage = "", BgImgAlpha = 0.25, BgImgFit = "Crop", CardAlpha = 0.5, -- фон окна: ссылка / ID картинки, прозрачность, режим
 }
 local WIN_MIN_W, WIN_MIN_H, WIN_MAX_W, WIN_MAX_H = 440, 320, 900, 700
 
--- ===== ТЕМА: Modern Dark Gaming Dashboard (минималистичный тактический стиль) =====
--- Глубокий чёрный и тёмно-серый фон. Белый — только для тонких контуров, иконок, текста и акцентов.
--- Цвета и яркость белых контуров меняются здесь.
+-- Общая геометрия панели, окна ключа и оверлеев (логические px, до UIScale).
+-- Цвета поверхностей задаются только в THEMES; цвета мира / палитр игроков независимы.
+local Skin = {Header = 54, Rail = 0.125, RailBase = 88, Tab = 30, Gap = 6, Inset = 14, Row = 56, Radius = 11}
 local C = {
-	Win = Color3.fromRGB(10, 10, 12),     -- фон окна
-	Side = Color3.fromRGB(14, 14, 16),    -- шапка, боковое меню, подвал
-	Card = Color3.fromRGB(20, 20, 23),    -- карточки и ряды
-	Input = Color3.fromRGB(26, 26, 30),   -- поля, кнопки, дорожки
-	Line = Color3.fromRGB(38, 38, 43),    -- разделители
-	Sel = Color3.fromRGB(33, 33, 38),     -- выбранный элемент / наведение
-	Hi = Color3.fromRGB(50, 50, 57),      -- дорожка слайдера
-	Mut = Color3.fromRGB(124, 124, 134),  -- серый текст и неактивные иконки
-	W = Color3.fromRGB(240, 240, 242),    -- основной текст / белые элементы
-	Dark = Color3.fromRGB(10, 10, 12),    -- тёмный текст на белом
 	On = Color3.fromRGB(120, 225, 155), Off = Color3.fromRGB(215, 85, 85),
-	Danger = Color3.fromRGB(235, 120, 120), DangerBg = Color3.fromRGB(86, 30, 34),
-	B = Color3.new(),
-	Acc = Color3.fromRGB(240, 240, 240), AccTx = Color3.fromRGB(10, 10, 12), -- акцент (Appearance)
+	Danger = Color3.fromRGB(226, 159, 159), DangerBg = Color3.fromRGB(70, 43, 46), B = Color3.new(),
 }
 local PURE = Color3.new(1, 1, 1)
 -- Палитры тем (Dark / Midnight / Amoled / Forest / Crimson). Win всегда равен Dark (тёмный текст на акценте).
 local THEMES = {
-	Dark = {Win = {10, 10, 12}, Side = {14, 14, 16}, Card = {24, 25, 29}, Input = {31, 32, 37}, Line = {34, 36, 41}, Sel = {40, 41, 46}, Hi = {62, 63, 69}, Mut = {145, 146, 154}, W = {240, 240, 242}},
-	Midnight = {Win = {8, 11, 20}, Side = {12, 16, 28}, Card = {18, 24, 40}, Input = {24, 32, 52}, Line = {34, 44, 70}, Sel = {30, 40, 66}, Hi = {48, 62, 96}, Mut = {118, 130, 162}, W = {234, 240, 252}},
-	Amoled = {Win = {0, 0, 0}, Side = {6, 6, 7}, Card = {13, 13, 15}, Input = {21, 21, 24}, Line = {31, 31, 35}, Sel = {27, 27, 31}, Hi = {46, 46, 52}, Mut = {120, 120, 128}, W = {244, 244, 246}},
-	Forest = {Win = {9, 14, 12}, Side = {12, 19, 16}, Card = {18, 28, 23}, Input = {24, 37, 30}, Line = {34, 52, 43}, Sel = {30, 46, 38}, Hi = {48, 72, 60}, Mut = {122, 144, 131}, W = {236, 245, 239}},
-	Crimson = {Win = {14, 9, 10}, Side = {20, 12, 14}, Card = {30, 18, 21}, Input = {40, 24, 28}, Line = {58, 34, 40}, Sel = {52, 30, 36}, Hi = {80, 48, 56}, Mut = {146, 122, 128}, W = {247, 238, 240}},
+	Dark = {Win = {14, 14, 16}, Side = {12, 12, 14}, Card = {25, 25, 28}, Input = {30, 30, 34}, Line = {33, 33, 37}, Sel = {36, 36, 40}, Hi = {47, 47, 53}, Mut = {158, 158, 167}, W = {240, 240, 243}},
+	Midnight = {Win = {8, 11, 20}, Side = {12, 16, 28}, Card = {18, 24, 40}, Input = {24, 32, 52}, Line = {34, 44, 70}, Sel = {30, 40, 66}, Hi = {48, 62, 96}, Mut = {133, 145, 177}, W = {234, 240, 252}},
+	Amoled = {Win = {0, 0, 0}, Side = {6, 6, 7}, Card = {13, 13, 15}, Input = {21, 21, 24}, Line = {31, 31, 35}, Sel = {27, 27, 31}, Hi = {46, 46, 52}, Mut = {136, 136, 144}, W = {244, 244, 246}},
+	Forest = {Win = {9, 14, 12}, Side = {12, 19, 16}, Card = {18, 28, 23}, Input = {24, 37, 30}, Line = {34, 52, 43}, Sel = {30, 46, 38}, Hi = {48, 72, 60}, Mut = {135, 157, 144}, W = {236, 245, 239}},
+	Crimson = {Win = {14, 9, 10}, Side = {20, 12, 14}, Card = {30, 18, 21}, Input = {40, 24, 28}, Line = {58, 34, 40}, Sel = {52, 30, 36}, Hi = {80, 48, 56}, Mut = {160, 137, 146}, W = {247, 238, 240}},
 }
 local THEME_ORDER = {"Dark", "Midnight", "Amoled", "Forest", "Crimson"}
 local PAL = {"Win", "Side", "Card", "Input", "Line", "Sel", "Hi", "Mut", "W"}
@@ -578,16 +570,18 @@ end
 local function applyAccent()
 	local a = UICFG.Accent
 	C.Acc = Color3.fromHSV(a.h, a.s, a.v)
-	local lum = 0.299 * C.Acc.R + 0.587 * C.Acc.G + 0.114 * C.Acc.B
-	C.AccTx = lum > 0.55 and Color3.fromRGB(10, 10, 12) or Color3.fromRGB(245, 245, 247)
+	-- Контраст не только у бегунка, но и у текста основной кнопки на любом пользовательском акценте.
+	local function linear(c) return c <= 0.04045 and c / 12.92 or ((c + 0.055) / 1.055) ^ 2.4 end
+	local lum = 0.2126 * linear(C.Acc.R) + 0.7152 * linear(C.Acc.G) + 0.0722 * linear(C.Acc.B)
+	C.AccTx = (lum + 0.05) / 0.05 >= 1.05 / (lum + 0.05) and C.B or PURE
+	C.AccHover, C.AccDown = C.Acc:Lerp(C.AccTx, 0.05), C.Acc:Lerp(C.AccTx, 0.1)
 end
 -- Прозрачность тонкой белой обводки (0 = яркая, 1 = нет):
 -- Idle — покой, Hover — наведение/нажатие, Active — выбранное, Soft — информационные плашки
-local OUT = {Idle = 0.66, Hover = 0.38, Active = 0.1, Soft = 0.84}
--- Окно ключа: KEY_DIM больше = игра просвечивает сильнее (светлее), KEY_BG = цвет карточки
-local KEY_BG = Color3.fromRGB(16, 16, 19)
-local KEY_DIM = 0.7
-local KEY_BLUR = 14
+local OUT = {Idle = 0.95, Hover = 0.84, Active = 0.74, Soft = 0.96, Window = 0.89, Focus = 0.5}
+-- Окно ключа: затемнение и размытие игры под окном.
+local KEY_DIM = 0.50
+local KEY_BLUR = 10
 -- статусы FPS / пинга: белый = хорошо, приглушённые жёлтый и красный = хуже
 local GOOD, MID, BAD = Color3.fromRGB(226, 226, 230), Color3.fromRGB(214, 190, 120), Color3.fromRGB(222, 100, 100)
 
@@ -786,6 +780,7 @@ end
 local glass, glassNow = setmetatable({}, {__mode = "k"}), 0
 local function new(class, props, parent)
 	local o = Instance.new(class)
+	if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
 	for k, v in props do o[k] = v end
 	if props.BackgroundTransparency == nil and (class == "Frame" or class == "TextButton" or class == "TextBox") then
 		local bc = props.BackgroundColor3
@@ -800,27 +795,29 @@ end
 local function round(o, r) return new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
 -- реестры для живой настройки вида: скругления, акцентные элементы, плавающие элементы (UI Scale)
 local corners = setmetatable({}, {__mode = "k"})
+local function cornerPx(r, cap)
+	return math.clamp(r + UICFG.Corner - DEF.UI.Corner, 0, cap or math.huge)
+end
 local function rr(o, r, cap)
-	local c = round(o, r)
+	local c = round(o, cornerPx(r, cap))
 	corners[c] = {r, cap}
 	return c
 end
 local function applyRadius()
-	local d0 = UICFG.Corner - 8
 	for c, d in corners do
 		if c.Parent then
-			local r = math.max(0, d[1] + d0)
-			if d[2] then r = math.min(r, d[2]) end
-			c.CornerRadius = UDim.new(0, r)
+			c.CornerRadius = UDim.new(0, cornerPx(d[1], d[2]))
 		else
 			corners[c] = nil
 		end
 	end
 end
 local accents = setmetatable({}, {__mode = "k"})
-local function accent(inst, prop)
-	accents[inst] = prop
-	inst[prop] = C.Acc
+local function accent(inst, prop, token)
+	token = token or "Acc"
+	accents[inst] = accents[inst] or {}
+	accents[inst][prop] = token
+	inst[prop] = C[token]
 	return inst
 end
 local floatScales = setmetatable({}, {__mode = "k"})
@@ -882,18 +879,30 @@ local function hoverable(btn, st, o)
 	return h
 end
 
--- Кнопка: тёмная заливка + тонкая белая обводка. opt.primary — главная (ярче обводка), opt.danger — красный текст
+-- Кнопки действий, в том числе внутри редактора/диалогов. Primary использует ту же
+-- пару акцент/контрастный текст, что инвертированная иконка выбранной папки.
 local function button(parent, text, props, opt)
 	opt = opt or {}
-	props.Text, props.Font, props.AutoButtonColor = text, GB, false
-	props.TextSize = props.TextSize or 12
+	props.Text, props.FontFace, props.AutoButtonColor = text, GM, false
+	props.TextSize = props.TextSize or 13
 	props.TextColor3 = props.TextColor3 or (opt.danger and C.Danger or C.W)
-	props.BackgroundColor3 = props.BackgroundColor3 or (opt.primary and C.Sel or C.Input)
+	props.BackgroundColor3 = props.BackgroundColor3 or C.Input
 	local b = new("TextButton", props, parent)
 	rr(b, 8)
-	local base = opt.primary and 0.28 or OUT.Idle
-	hoverable(b, outline(b, base), {base = base, hover = opt.primary and 0.05 or OUT.Hover, down = 0})
+	if opt.primary then
+		accent(b, "BackgroundColor3")
+		accent(b, "TextColor3", "AccTx")
+		b.FontFace = GB
+	end
+	hoverable(b, outline(b), opt.primary and {bg = "Acc", bgHover = "AccHover", bgDown = "AccDown"} or nil)
 	return b
+end
+
+function Skin.field(box)
+	rr(box, 7)
+	local edge = outline(box)
+	on(box.Focused, function() tween(edge, fast, {Transparency = OUT.Focus}) end)
+	on(box.FocusLost, function() tween(edge, fast, {Transparency = OUT.Idle}) end)
 end
 local function row(parent, h, pad, order)
 	local f = new("Frame", {Size = U(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = order or 0}, parent)
@@ -908,30 +917,17 @@ end
 
 -- Переключатель ON / OFF (под палец): ON = дорожка акцентного цвета, бегунок справа; OFF = тёмная дорожка, бегунок слева
 local function makeSwitch(parent)
-	local track = new("Frame", {Size = O(44, 24), BackgroundColor3 = C.Hi, Active = false}, parent)
-	round(track, 12)
-	local st = stroke(track, PURE, 0.55, 1)
-	local lOn = new("TextLabel", {
-		Size = O(27, 28), BackgroundTransparency = 1, Text = "", Font = GB, TextSize = 10,
-		TextColor3 = C.AccTx, TextTransparency = 1, Active = false,
-	}, track)
-	local lOff = new("TextLabel", {
-		Size = O(27, 28), Position = O(25, 0), BackgroundTransparency = 1, Text = "", Font = GB, TextSize = 10,
-		TextColor3 = C.Mut, Active = false,
-	}, track)
+	local track = new("Frame", {Name = "Switch", Size = O(40, 22), BackgroundColor3 = C.Hi, Active = false}, parent)
+	round(track, 11)
 	local knob = new("Frame", {
-		Size = O(18, 18), AnchorPoint = V2(0, 0.5), Position = U(0, 3, 0.5, 0),
-		BackgroundColor3 = C.Mut, Active = false, ZIndex = 2,
+		Name = "Thumb", Size = O(16, 16), AnchorPoint = V2(0, 0.5), Position = U(0, 3, 0.5, 0),
+		BackgroundColor3 = C.Mut, Active = false,
 	}, track)
-	round(knob, 9)
-	local function paint(o, anim)
-		o = o and true or false
-		lOn.TextColor3 = C.AccTx
-		put(track, {BackgroundColor3 = o and C.Acc or C.Hi}, anim)
-		put(knob, {Position = o and U(1, -21, 0.5, 0) or U(0, 3, 0.5, 0), BackgroundColor3 = o and C.AccTx or C.Mut}, anim)
-		put(st, {Transparency = o and 0.1 or 0.55}, anim)
-		put(lOn, {TextTransparency = o and 0 or 1}, anim)
-		put(lOff, {TextTransparency = o and 1 or 0}, anim)
+	round(knob, 8)
+	local function paint(enabled, anim)
+		put(track, {BackgroundColor3 = enabled and C.Acc or C.Hi}, anim)
+		put(knob, {BackgroundColor3 = enabled and C.AccTx or C.Mut,
+			Position = enabled and U(1, -19, 0.5, 0) or U(0, 3, 0.5, 0)}, anim)
 	end
 	return track, paint
 end
@@ -942,68 +938,118 @@ local gui = new("ScreenGui", {
 }, LP:WaitForChild("PlayerGui"))
 pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 
-local function logo(size, ts, parent)
-	local f = new("Frame", {Size = O(size, size), BackgroundColor3 = C.Input, Active = false}, parent)
-	round(f, size / 2)
-	local st = outline(f, 0.35)
-	new("TextLabel", {
-		Size = S(1, 1), BackgroundTransparency = 1, Text = "E",
-		TextColor3 = C.W, Font = Enum.Font.GothamBlack, TextSize = ts, Active = false,
-	}, f)
+-- Серебряная складчатая монограмма E. Только нативные элементы: знак остаётся
+-- резким при изменении масштаба, в том числе до ввода ключа, без загрузки ассета.
+local function logo(size, parent)
+	local f = new("Frame", {Name = "BrandMark", Size = O(size, size), BackgroundColor3 = C.B, Active = false}, parent)
+	rr(f, 7, 9)
+	local st = outline(f, OUT.Window)
+	local silver = ColorSequence.new({ColorSequenceKeypoint.new(0, PURE),
+		ColorSequenceKeypoint.new(0.48, Color3.fromRGB(195, 197, 202)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 102, 109))})
+	local function fold(x1, y1, x2, y2, width, light)
+		local dx, dy = x2 - x1, y2 - y1
+		local band = new("Frame", {AnchorPoint = V2(0.5, 0.5), Position = S((x1 + x2) / 64, (y1 + y2) / 64),
+			Size = S(math.sqrt(dx * dx + dy * dy) / 32, width / 32), Rotation = math.deg(math.atan2(dy, dx)),
+			BackgroundColor3 = PURE, Active = false}, f)
+		new("UIGradient", {Color = silver, Rotation = light}, band)
+	end
+	fold(7, 8, 26, 8, 4, 78)
+	fold(25, 8, 17, 15, 4, 18)
+	fold(5, 15, 20, 15, 4, 72)
+	fold(7, 16, 16, 25, 4, 0)
+	fold(15, 25, 26, 25, 4, 82)
 	return f, st
 end
 
--- Иконки меню: рисуются из тонких рамок (один стиль линий, без картинок и ассетов).
--- Возвращает контейнер 16x16 и paint(цвет, anim) для смены цвета при выборе вкладки.
-local function icon(name, parent)
-	local box = new("Frame", {Size = O(16, 16), AnchorPoint = V2(0, 0.5), BackgroundTransparency = 1, Active = false}, parent)
-	local strokes, fills = {}, {}
-	local function ring(x, y, w, h, r)
-		local f = new("Frame", {Size = O(w, h), Position = O(x, y), BackgroundTransparency = 1, Active = false}, box)
-		round(f, r)
-		table.insert(strokes, stroke(f, C.Mut, 0, 1))
+-- Штриховые пиктограммы в единой сетке 16×16. path = ломаные, rings = {x,y,диаметр}.
+-- Один и тот же знак используется на плитке папки и в заголовке открытой страницы.
+Skin.glyphs = {
+	Main = {paths = {{8,1, 14,3.5, 13.5,9.5, 11.5,12.5, 8,15, 4.5,12.5, 2.5,9.5, 2,3.5, 8,1}}}, -- щит
+	Aim = {rings = {{8,8,14}, {8,8,9}, {8,8,3}}}, -- концентрическая мишень
+	FOV = {rings = {{8,8,12}}, paths = {{8,0.5, 8,4}, {8,12, 8,15.5}, {0.5,8, 4,8}, {12,8, 15.5,8}}},
+	Color = {paths = {{2,11, 9,4, 12,7, 5,14, 1.5,14.5, 2,11}, {8,3, 13,8}, {10,4, 13,1, 15,3, 12,6}}}, -- пипетка
+	Sizes = {paths = {{1,4, 7,4}, {11,4, 15,4}, {1,11, 4,11}, {8,11, 15,11}}, rings = {{9,4,4}, {6,11,4}}},
+	Extra = {paths = {{1,3, 15,3}, {3,6.5, 13,6.5}, {5,10, 11,10}, {7,13.5, 9,13.5}}},
+	Players = {rings = {{8,5,6}}, paths = {{2,14, 2.5,12, 5,10, 11,10, 13.5,12, 14,14}}},
+	Appearance = {paths = {{2,2, 11,2, 14,5, 14,14, 2,14, 2,2}, {5,2, 5,6, 10,6, 10,2}, {5,14, 5,9, 11,9, 11,14}}}, -- конфигурация
+	Visual = {paths = {{1,8, 4,8, 6.5,2.5, 9.5,13.5, 12,8, 15,8}}},
+	Search = {rings = {{6.5,6.5,9}}, paths = {{10,10, 14,14}}},
+	Key = {rings = {{5,5,6}}, paths = {{7,7, 14,14}, {10,10, 12,8}, {12,12, 14,10}}},
+	Info = {rings = {{8,8,13}}, paths = {{8,7, 8,11}, {8,4.5, 8,5}}},
+	Min = {paths = {{3,9, 13,9}}}, Max = {paths = {{3,3, 13,3, 13,13, 3,13, 3,3}}},
+	Restore = {paths = {{3,6, 10,6, 10,13, 3,13, 3,6}, {6,3, 13,3, 13,10}}},
+	Close = {paths = {{3,3, 13,13}, {3,13, 13,3}}},
+	Star = {paths = {{8,1, 10,6, 15,6.5, 11.5,10, 12.5,15, 8,12.5, 3.5,15, 4.5,10, 1,6.5, 6,6, 8,1}}},
+	Next = {paths = {{5.5,3, 10.5,8, 5.5,13}}},
+}
+local function icon(name, parent, size, color)
+	local box = new("Frame", {Name = name .. "Icon", Size = O(size or 16, size or 16), AnchorPoint = V2(0.5, 0.5),
+		Position = S(0.5, 0.5), BackgroundTransparency = 1, Active = false}, parent)
+	local glyph, ink = Skin.glyphs[name], {}
+	color = color or C.Mut
+	for _, p in glyph.paths or {} do
+		for i = 1, #p - 3, 2 do
+			local x, y, dx, dy = p[i], p[i+1], p[i+2] - p[i], p[i+3] - p[i+1]
+			local line = new("Frame", {AnchorPoint = V2(0.5, 0.5), Position = S((x + dx/2)/16, (y + dy/2)/16),
+				Size = S((math.sqrt(dx*dx + dy*dy) + 0.7)/16, 1.45/16), Rotation = math.deg(math.atan2(dy, dx)),
+				BackgroundColor3 = color, Active = false}, box)
+			ink[line] = "BackgroundColor3"
+		end
 	end
-	local function fill(x, y, w, h, r)
-		local f = new("Frame", {Size = O(w, h), Position = O(x, y), BackgroundColor3 = C.Mut, BorderSizePixel = 0, Active = false}, box)
-		if r then round(f, r) end
-		table.insert(fills, f)
+	for _, r in glyph.rings or {} do
+		local ring = new("Frame", {Size = S(r[3]/16, r[3]/16), AnchorPoint = V2(0.5, 0.5), Position = S(r[1]/16, r[2]/16),
+			BackgroundTransparency = 1, Active = false}, box)
+		round(ring, 32)
+		ink[stroke(ring, color, 0, 1.4)] = "Color"
 	end
-	if name == "Main" then            -- сетка 2x2
-		ring(1, 1, 6, 6, 2) ring(9, 1, 6, 6, 2) ring(1, 9, 6, 6, 2) ring(9, 9, 6, 6, 2)
-	elseif name == "Aim" then         -- прицел
-		ring(2, 2, 12, 12, 6)
-		fill(7.5, 0, 1, 4) fill(7.5, 12, 1, 4) fill(0, 7.5, 4, 1) fill(12, 7.5, 4, 1)
-	elseif name == "FOV" then         -- круг в круге
-		ring(0, 0, 16, 16, 8) ring(4, 4, 8, 8, 4) fill(7, 7, 2, 2, 1)
-	elseif name == "Color" or name == "Appearance" then       -- палитра
-		ring(1, 1, 14, 14, 7)
-		fill(4, 5, 2, 2, 1) fill(9, 4, 2, 2, 1) fill(7, 9, 2, 2, 1)
-	elseif name == "Sizes" then       -- ползунки
-		fill(1, 3, 14, 1) fill(1, 8, 14, 1) fill(1, 13, 14, 1)
-		fill(9, 1, 4, 4, 2) fill(3, 6, 4, 4, 2) fill(10, 11, 4, 4, 2)
-	elseif name == "Extra" then       -- фильтр
-		fill(1, 3, 14, 1.5, 1) fill(3.5, 7.5, 9, 1.5, 1) fill(6, 12, 4, 1.5, 1)
-	elseif name == "Visual" then      -- глаз
-		ring(0, 3, 16, 10, 5)
-		fill(6, 6, 4, 4, 2)
-	elseif name == "Players" then     -- человек
-		ring(5, 0, 6, 6, 3) ring(2, 9, 12, 6, 3)
+	local last = color
+	return box, function(c, anim)
+		if anim and c == last then return end
+		last = c
+		for obj, prop in ink do put(obj, {[prop] = c}, anim) end
 	end
-	local function paint(c, anim)
-		for _, s in strokes do put(s, {Color = c}, anim) end
-		for _, f in fills do put(f, {BackgroundColor3 = c}, anim) end
-	end
-	return box, paint
 end
 
--- крестик закрытия из двух линий
-local function xMark(parent, color)
-	for _, r in {45, -45} do
-		local l = new("Frame", {
-			Size = O(12, 2), AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0), Rotation = r,
-			BackgroundColor3 = color, BorderSizePixel = 0, Active = false,
-		}, parent)
-		round(l, 1)
+-- Кнопка с пиктограммой на обычной поверхности (стрелки, приоритет, переход к игроку).
+function Skin.iconAction(parent, glyph, rotation, props)
+	local b = button(parent, "", props)
+	local mark, paint = icon(glyph, b, 14, C.W)
+	mark.Rotation = rotation
+	return b, paint
+end
+
+function Skin.iconButton(parent, name, right)
+	local b = new("TextButton", {Name = name, Size = O(30, 34), AnchorPoint = V2(1, 0.5), Position = U(1, -right, 0.5, 0),
+		BackgroundTransparency = 1, Text = "", AutoButtonColor = false}, parent)
+	rr(b, 6)
+	hoverable(b, outline(b, 1), {base = 1})
+	local glyph = icon(name, b, 14)
+	return b, glyph
+end
+
+function Skin.header(parent)
+	local bar = new("Frame", {Name = "TitleBar", Size = U(1, 0, 0, Skin.Header), BackgroundColor3 = C.Side, Active = true}, parent)
+	new("Frame", {Size = U(1, 0, 0, 1), Position = U(0, 0, 1, -1), BackgroundColor3 = C.Line}, bar)
+	local mark = logo(32, bar)
+	mark.AnchorPoint, mark.Position = V2(0, 0.5), U(0, 12, 0.5, 0)
+	new("TextLabel", {Size = O(85, 19), Position = O(54, 9), BackgroundTransparency = 1,
+		Text = "Enkaisy", FontFace = GB, TextSize = 16, TextColor3 = C.W, TextXAlignment = XL}, bar)
+	new("TextLabel", {Size = O(85, 14), Position = O(54, 28), BackgroundTransparency = 1,
+		Text = "ESP + AIM", FontFace = GM, TextSize = 10, TextColor3 = C.Mut, TextXAlignment = XL}, bar)
+	return bar
+end
+
+function Skin.badge(bar, text, x, w, withDot)
+	local chip = new("Frame", {Size = O(w, 21), AnchorPoint = V2(0, 0.5), Position = U(0, x, 0.5, 0),
+		BackgroundColor3 = withDot and C.Sel or C.Card, Active = false}, bar)
+	rr(chip, 5, 7)
+	new("TextLabel", {Size = U(1, withDot and -11 or 0, 1, 0), Position = O(withDot and 11 or 0, 0),
+		BackgroundTransparency = 1, Text = text, FontFace = GM, TextSize = 11, TextColor3 = C.W}, chip)
+	if withDot then
+		local dot = new("Frame", {Size = O(5, 5), AnchorPoint = V2(0, 0.5), Position = U(0, 8, 0.5, 0), BackgroundColor3 = C.Mut}, chip)
+		round(dot, 3)
+		return dot
 	end
 end
 
@@ -1270,7 +1316,7 @@ local function dohl(char, plr)
 		}, char)
 		o.nl = new("TextLabel", {
 			Size = S(1, 1), BackgroundTransparency = 1,
-			Font = GB, TextStrokeTransparency = 0.3,
+			FontFace = GB, TextStrokeTransparency = 0.3,
 		}, o.nb)
 		o.hb = new("BillboardGui", {
 			Adornee = root, Size = S(2.4, 5.2), StudsOffset = Vector3.new(2.9, 0, 0),
@@ -1280,7 +1326,7 @@ local function dohl(char, plr)
 		o.bar = new("Frame", {AnchorPoint = V2(0, 1), Position = S(0, 1), BorderSizePixel = 0}, o.bg)
 		o.pct = new("TextLabel", {
 			Size = S(1, 0.3), Position = S(0, 0.35), BackgroundTransparency = 1,
-			TextScaled = true, Font = GB, TextXAlignment = XL,
+			TextScaled = true, FontFace = GB, TextXAlignment = XL,
 			TextStrokeTransparency = 0.3,
 		}, o.hb)
 		if hum then hum.Died:Once(function()
@@ -1557,10 +1603,10 @@ local function clampGui(o, m)
 end
 
 -- onTap — короткое касание; onEnd — после настоящего перетаскивания (удобно вернуть элемент на экран и сохранить место)
-local function movable(handle, target, onTap, onEnd)
+local function movable(handle, target, onTap, onEnd, canDrag)
 	local d, m, s0, p0, t = false, false
 	on(handle.InputBegan, function(i)
-		if press(i) then d, m, s0, p0, t = true, false, i.Position, target.Position, i end
+		if press(i) and (not canDrag or canDrag()) then d, m, s0, p0, t = true, false, i.Position, target.Position, i end
 	end)
 	on(UIS.InputChanged, function(i)
 		if not d or not move(i) or not (i == t or i.UserInputType == UT.MouseMovement) then return end
@@ -1583,8 +1629,8 @@ end
 -- ===== Общие элементы интерфейса (единый стиль: тёмная карточка + тонкая белая обводка) =====
 local function sectionLabel(parent, text, order)
 	local l = new("TextLabel", {
-		Size = U(1, 0, 0, 18), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Text = text,
-		TextColor3 = C.Mut, Font = GB, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Bottom,
+		Size = U(1, 0, 0, 18), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Text = string.upper(text),
+		TextColor3 = C.Mut, FontFace = GB, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Bottom,
 		TextWrapped = true, LayoutOrder = order or 0,
 	}, parent)
 	new("UIPadding", {PaddingLeft = UDim.new(0, 2), PaddingBottom = UDim.new(0, 1)}, l)
@@ -1599,7 +1645,7 @@ local function applyGridCols(n)
 	gridCols = n
 	for lay in grids do
 		if lay.Parent then
-			lay.CellSize = U(1 / n, -6 * (n - 1) / n, 0, 54)
+			lay.CellSize = U(1 / n, -Skin.Gap * (n - 1) / n, 0, Skin.Row)
 		else
 			grids[lay] = nil
 		end
@@ -1608,7 +1654,7 @@ end
 local function chipGrid(parent, order)
 	local g = new("Frame", {Size = U(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order or 0}, parent)
 	local lay = new("UIGridLayout", {
-		CellSize = U(1 / gridCols, -6 * (gridCols - 1) / gridCols, 0, 54), CellPadding = O(6, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		CellSize = U(1 / gridCols, -Skin.Gap * (gridCols - 1) / gridCols, 0, Skin.Row), CellPadding = O(Skin.Gap, Skin.Gap), SortOrder = Enum.SortOrder.LayoutOrder,
 	}, g)
 	grids[lay] = true
 	return g
@@ -1617,6 +1663,7 @@ end
 -- Справка общих карточек; окно создаётся главным меню. Реестр также служит поиску.
 local helpUI = {items = {}}
 helpUI.info = {
+ ["Enable ESP"] = {"Включает подсветку игроков и NPC.", "Enables highlights for players and NPCs."},
  ["Aim on"] = {"Включает помощь в наведении.", "Enables aim assistance."},
  ["Auto predict"] = {"Автоматически рассчитывает упреждение движущейся цели.", "Automatically predicts a moving target's position."},
  ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
@@ -1722,7 +1769,7 @@ helpUI.info = {
  ["Team colors"] = {"Использует цвет команды в обычной подсветке игроков.", "Uses player team colors in the standard highlight."},
  ["Size by dist"] = {"Меняет размер меток в зависимости от расстояния.", "Changes label size with distance."},
  ["Animations"] = {"Включает анимации интерфейса.", "Enables interface animations."},
- ["FPS / ping"] = {"Показывает частоту кадров и задержку внизу меню.", "Shows frame rate and ping in the menu footer."},
+ ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
  ["Menu Transparency"] = {"Меняет прозрачность всего окна.", "Changes transparency of the whole window."},
@@ -1733,85 +1780,77 @@ helpUI.info = {
  ["Corner Radius"] = {"Меняет скругление элементов интерфейса.", "Changes interface corner rounding."},
 }
 function helpUI.add(parent, title, desc, label)
-    -- Маленький значок рядом с названием, но зона касания остаётся 28×28.
-    local b = new("TextButton", {Size = O(28, 28), AnchorPoint = V2(0, 0.5),
-        BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 5}, parent)
-    local mark = new("TextLabel", {Size = O(14, 14), AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0),
-        BackgroundTransparency = 1, Text = "?", TextColor3 = C.Mut, Font = GB, TextSize = 10, ZIndex = 6}, b)
-    round(mark, 7)
-    stroke(mark, C.Mut, 0.35, 1)
-    local function place()
-        if parent.AbsoluteSize.X <= 0 or label.AbsoluteSize.X <= 0 then return end
-        local x = label.AbsolutePosition.X - parent.AbsolutePosition.X + math.min(label.TextBounds.X, label.AbsoluteSize.X)
-        b.Position = U(0, 0, 0, 0) + U(x / parent.AbsoluteSize.X, 2, 0, label.Position.Y.Offset + label.Size.Y.Offset / 2)
-    end
-    on(parent:GetPropertyChangedSignal("AbsoluteSize"), place)
-    on(label:GetPropertyChangedSignal("TextBounds"), place)
-    on(label:GetPropertyChangedSignal("AbsoluteSize"), place)
-    place()
-    table.insert(helpUI.items, {card = parent, title = title, desc = desc})
-    on(b.Activated, function() if helpUI.open then helpUI.open(title, desc) end end)
-    return b
+	-- Кнопка справки больше самого знака и не перекрывает переключатель.
+	local b = new("TextButton", {Name = "Help", Size = O(28, 28), AnchorPoint = V2(0, 0.5),
+		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 5}, parent)
+	icon("Info", b, 11)
+	-- Отдельная колонка перед значением. Не измеряем TextBounds: на смене языка,
+	-- при анимации UIScale и у длинного текста значок никогда не наезжает на буквы.
+	local function place()
+		local x, w = label.Position.X, label.Size.X
+		b.Position = U(x.Scale + w.Scale, x.Offset + w.Offset, 0, label.Position.Y.Offset + label.Size.Y.Offset / 2)
+	end
+	on(label:GetPropertyChangedSignal("Size"), place)
+	place()
+	table.insert(helpUI.items, {card = parent, title = title, desc = desc})
+	on(b.Activated, function() if helpUI.open then helpUI.open(title, desc) end end)
 end
 
--- ряд-переключатель: название слева (и необязательное описание), ON/OFF справа
+function Skin.setting(parent, order, interactive)
+	local props = {Size = U(1, 0, 0, Skin.Row), BackgroundColor3 = C.Card, LayoutOrder = order or 0}
+	if interactive then props.Text, props.AutoButtonColor = "", false end
+	local f = new(interactive and "TextButton" or "Frame", props, parent)
+	rr(f, Skin.Radius)
+	local h = hoverable(f, outline(f), interactive and {bg = C.Card, bgHover = C.Sel} or nil)
+	return f, h
+end
+
+function Skin.copy(card, title, desc, reserve)
+	local label = new("TextLabel", {Name = "Title", Size = U(1, -reserve - 28, 0, 20), Position = O(Skin.Inset, 8),
+		BackgroundTransparency = 1, Text = title, TextColor3 = C.W, FontFace = GM, TextSize = 14, TextXAlignment = XL,
+		TextTruncate = Enum.TextTruncate.AtEnd, Active = false}, card)
+	local caption = new("TextLabel", {Name = "Caption", Size = U(1, -reserve, 0, 16), Position = O(Skin.Inset, 29),
+		BackgroundTransparency = 1, Text = desc or (helpUI.info[title] and helpUI.info[title][1]) or "",
+		TextColor3 = C.Mut, FontFace = GR, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false}, card)
+	helpUI.add(card, title, desc, label)
+	return label, caption
+end
+
 local function toggleCard(parent, text, order, getv, setv, desc)
-    local b = new("TextButton", {
-        Size = U(1, 0, 0, 54), BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, LayoutOrder = order or 0,
-    }, parent)
-    rr(b, 9)
-    hoverable(b, outline(b, 0.88), {base = 0.88, bg = C.Card, bgHover = C.Sel})
-    local label = new("TextLabel", {
-        Size = U(1, -76, 0, 20), Position = O(12, 7), BackgroundTransparency = 1, Text = text,
-        TextColor3 = C.W, Font = GB, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
-    }, b)
-    -- Место для значка зарезервировано даже у длинных названий.
-    label.Size = U(1, -132, 0, 20)
-    local summary = desc or (helpUI.info[text] and helpUI.info[text][1]) or ""
-    new("TextLabel", {Size = U(1, -80, 0, 14), Position = O(12, 29), BackgroundTransparency = 1,
-        Text = summary, TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL,
-        TextTruncate = Enum.TextTruncate.AtEnd, Active = false}, b)
-    helpUI.add(b, text, desc, label)
-    local sw, swPaint = makeSwitch(b)
-    sw.AnchorPoint, sw.Position = V2(1, 0.5), U(1, -10, 0.5, 0)
-    local function paint(anim) swPaint(getv(), anim) end
-    paint(false)
-    on(b.Activated, function() setv(not getv()); paint(true) end)
-    return b, paint
+	local b = Skin.setting(parent, order, true)
+	Skin.copy(b, text, desc, 80)
+	local sw, swPaint = makeSwitch(b)
+	sw.AnchorPoint, sw.Position = V2(1, 0.5), U(1, -Skin.Inset, 0.5, 0)
+	local function paint(anim) swPaint(getv(), anim) end
+	paint(false)
+	on(b.Activated, function() setv(not getv()); paint(true) end)
+	return b, paint
 end
 
--- ряд-выбор: название слева, текущее значение в рамке справа, тап = следующее значение
 local function cycleCard(parent, text, order, getv, nextv, isOn)
-	local b = new("TextButton", {
-		Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, LayoutOrder = order or 0,
-	}, parent)
-	rr(b, 8)
-	hoverable(b, outline(b, 0.88), {base = 0.88, bg = C.Card, bgHover = C.Sel})
-	local label = new("TextLabel", {
-		Size = U(1, -140, 0, 20), Position = O(12, 10), BackgroundTransparency = 1, Text = text, TextTruncate = Enum.TextTruncate.AtEnd,
-		TextColor3 = C.W, Font = GM, TextSize = 12, TextXAlignment = XL, Active = false,
-	}, b)
+	local b = Skin.setting(parent, order, true)
+	local label, caption = Skin.copy(b, text, nil, 120)
 	local pill = new("TextLabel", {
-		AnchorPoint = V2(1, 0.5), Position = U(1, -10, 0.5, 0), Size = O(0, 28), AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = C.Input, Text = "", TextColor3 = C.W, Font = GB, TextSize = 11, Active = false,
+		AnchorPoint = V2(1, 0.5), Position = U(1, -Skin.Inset, 0.5, 0), Size = O(0, 24), AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = C.Sel, Text = "", TextColor3 = C.W, FontFace = GM, TextSize = 12, Active = false,
 	}, b)
-	new("UIPadding", {PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11)}, pill)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9)}, pill)
 	rr(pill, 6)
-	outline(pill, 0.55)
 	local function fitLabel()
-        local width = math.max(0, b.AbsoluteSize.X - pill.AbsoluteSize.X - 82)
-        local scale = b.AbsoluteSize.X > 0 and width / b.AbsoluteSize.X or 0
-        label.Size = U(scale, 0, 0, 20)
-    end
-    on(pill:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
-    on(b:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
-    fitLabel()
-    helpUI.add(b, text, nil, label)
+		if b.AbsoluteSize.X <= 0 then return end
+		-- Ширина значения в долях карточки остаётся верной при любом UIScale.
+		local frac = 1 - pill.AbsoluteSize.X / b.AbsoluteSize.X
+		label.Size = U(frac, -2 * Skin.Inset - 36, 0, 20)
+		caption.Size = U(frac, -2 * Skin.Inset - 8, 0, 16)
+	end
+	on(pill:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
+	on(b:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
 	local function paint()
-		pill.Text = tostring(getv())
+		pill.Text = tostring(getv()) .. "  ›"
 		pill.TextColor3 = (isOn == nil or isOn()) and C.W or C.Mut
 	end
 	paint()
+	fitLabel()
 	on(b.Activated, function() nextv(); paint() end)
 	return b, paint
 end
@@ -1826,30 +1865,27 @@ local function unlockSF()
 end
 -- слайдер: название и значение сверху, дорожка и бегунок акцентного цвета, зона касания 32 px
 local function sliderCard(parent, title, order, min, max, getv, setv, fmt, step)
-	local f = new("Frame", {Size = U(1, 0, 0, 58), BackgroundColor3 = C.Card, LayoutOrder = order or 0}, parent)
-	rr(f, 8)
-	local h = hoverable(f, outline(f))
+	local f, h = Skin.setting(parent, order, false)
 	local label = new("TextLabel", {
-		Size = U(1, -150, 0, 20), Position = O(10, 6), BackgroundTransparency = 1, Text = title, TextColor3 = C.W,
-		Font = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+		Size = U(1, -112, 0, 20), Position = O(Skin.Inset, 7), BackgroundTransparency = 1, Text = title, TextColor3 = C.W,
+		FontFace = GM, TextSize = 14, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 	}, f)
 	local val = new("TextLabel", {
-		Size = O(76, 20), AnchorPoint = V2(1, 0), Position = U(1, -10, 0, 6), BackgroundTransparency = 1, Text = "",
-		TextColor3 = C.W, Font = GB, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, Active = false,
+		Name = "Value", Size = O(54, 20), AnchorPoint = V2(1, 0), Position = U(1, -Skin.Inset, 0, 7), BackgroundTransparency = 1, Text = "",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Right, Active = false,
 	}, f)
 	helpUI.add(f, title, nil, label)
-	local hit = new("Frame", {Size = U(1, -20, 0, 32), Position = O(10, 24), BackgroundTransparency = 1, Active = true}, f)
+	local hit = new("Frame", {Name = "SliderHit", Size = U(1, -2 * Skin.Inset, 0, 32), Position = O(Skin.Inset, 24), BackgroundTransparency = 1, Active = true}, f)
 	local track = new("Frame", {
-		Size = U(1, 0, 0, 6), AnchorPoint = V2(0, 0.5), Position = U(0, 0, 0.5, 0), BackgroundColor3 = C.Hi, Active = false,
+		Name = "Track", Size = U(1, 0, 0, 5), AnchorPoint = V2(0, 0.5), Position = U(0, 0, 0.5, 0), BackgroundColor3 = C.Hi, Active = false,
 	}, hit)
 	round(track, 3)
-	local bar = new("Frame", {Size = U(0, 0, 1, 0), BackgroundColor3 = C.Acc, Active = false}, track)
+	local bar = new("Frame", {Name = "ValueFill", Size = U(0, 0, 1, 0), Active = false}, track)
 	accent(bar, "BackgroundColor3")
 	round(bar, 3)
-	local knob = new("Frame", {Size = O(20, 20), AnchorPoint = V2(0.5, 0.5), BackgroundColor3 = C.Acc, ZIndex = 3, Active = false}, track)
+	local knob = new("Frame", {Name = "Thumb", Size = O(13, 13), AnchorPoint = V2(0.5, 0.5), ZIndex = 3, Active = false}, track)
 	accent(knob, "BackgroundColor3")
-	round(knob, 10)
-	stroke(knob, C.Card, 0, 2)
+	round(knob, 7)
 	local function paint()
 		local v = getv()
 		local x = math.clamp((v - min) / (max - min), 0, 1)
@@ -1885,10 +1921,10 @@ local function colorTab(parent, name, size, order, onClick)
 	local h = hoverable(b, outline(b), {bg = C.Card, bgHover = C.Sel})
 	local dot = new("Frame", {Size = O(10, 10), AnchorPoint = V2(0, 0.5), Position = U(0, 8, 0.5, 0), Active = false}, b)
 	round(dot, 5)
-	stroke(dot, PURE, 0.45, 1)
+	stroke(dot, PURE, OUT.Hover, 1)
 	new("TextLabel", {
 		Size = U(1, -22, 1, 0), Position = O(22, 0), BackgroundTransparency = 1, Text = name, TextColor3 = C.W,
-		Font = GB, TextSize = 10, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+		FontFace = GM, TextSize = 11, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 	}, b)
 	on(b.Activated, onClick)
 	return {btn = b, dot = dot, h = h}
@@ -1901,14 +1937,23 @@ local function colorTabSel(t, sel)
 	t.h.apply()
 end
 
+-- Цветной здесь только образец, а не вся кнопка. Ряд помещается и в узкую страницу.
+function Skin.swatch(parent, i, count, color)
+	local b = button(parent, "", {Size = U(1 / count, -8 * (count - 1) / count, 1, 0), BackgroundColor3 = C.Card, LayoutOrder = i})
+	local sample = new("Frame", {Size = O(18, 18), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5), BackgroundColor3 = color, Active = false}, b)
+	round(sample, 9)
+	outline(sample, OUT.Hover)
+	return b
+end
+
 -- Палитра (квадрат S/V + полоса оттенка + HEX). getC(edit) отдаёт таблицу {h,s,v}
 local function makePicker(parent, order, getC, onEdit, extra)
 	local card = new("Frame", {Size = U(1, 0, 0, 170), BackgroundColor3 = C.Card, LayoutOrder = order}, parent)
-	rr(card, 8)
-	outline(card, OUT.Soft)
+	rr(card, Skin.Radius)
+	outline(card)
 	local sv = new("Frame", {Size = U(1, -20, 0, 92), Position = O(10, 10)}, card)
 	rr(sv, 6)
-	outline(sv, 0.55)
+	outline(sv, OUT.Hover)
 	for _, d in {{PURE, 0, NumberSequence.new(0, 1)}, {C.B, 90, NumberSequence.new(1, 0)}} do
 		local f = new("Frame", {Size = S(1, 1), BackgroundColor3 = d[1], Active = false}, sv)
 		rr(f, 6)
@@ -1926,11 +1971,9 @@ local function makePicker(parent, order, getC, onEdit, extra)
 	local hex = new("TextBox", {
 		Size = U(1, -20, 0, 26), Position = O(10, 134), BackgroundColor3 = C.Input,
 		Text = "", PlaceholderText = "HEX #RRGGBB", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
-		Font = GB, TextSize = 13, ClearTextOnFocus = false,
+		FontFace = GB, TextSize = 13, ClearTextOnFocus = false,
 	}, card)
-	rr(hex, 6)
-	local hexStroke = outline(hex, OUT.Idle)
-	on(hex.Focused, function() tween(hexStroke, fast, {Transparency = OUT.Active}) end)
+	Skin.field(hex)
 	local function refresh()
 		local c = getC(false)
 		sv.BackgroundColor3 = Color3.fromHSV(c.h, 1, 1)
@@ -1942,7 +1985,6 @@ local function makePicker(parent, order, getC, onEdit, extra)
 	drag(sv, function(x, y) local c = getC(true); c.s, c.v = x, 1 - y; onEdit(); refresh() end)
 	drag(hueBar, function(x) getC(true).h = x; onEdit(); refresh() end)
 	on(hex.FocusLost, function()
-		tween(hexStroke, fast, {Transparency = OUT.Idle})
 		local ok, c3 = pcall(Color3.fromHex, hex.Text)
 		if ok then
 			local h, s, v = c3:ToHSV()
@@ -2039,36 +2081,35 @@ local function buildAim(page, api)
 	}, LP:WaitForChild("PlayerGui"))
 	local probe = new("Frame", {Size = O(1, 1), BackgroundTransparency = 1, Active = false}, probeGui)
 	local hud = new("TextLabel", {
-		AnchorPoint = V2(0.5, 0), Position = U(0.5, 0, 0, 44), Size = O(0, 22), AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = C.Win, BackgroundTransparency = 0.25,
-		TextColor3 = C.W, TextSize = 12, Font = Enum.Font.Gotham, Text = "", Visible = false,
+		AnchorPoint = V2(0.5, 0), Position = U(0.5, 0, 0, 44), Size = O(320, 24), AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true,
+		BackgroundColor3 = C.Side, BackgroundTransparency = 0.08,
+		TextColor3 = C.W, TextSize = 12, FontFace = GM, Text = "", Visible = false,
 	}, og)
-	new("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, hud)
-	rr(hud, 6) outline(hud, OUT.Soft)
-	floatScales[new("UIScale", {Scale = UICFG.UIScale}, hud)] = true
+	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4)}, hud)
+	rr(hud, 7) outline(hud, OUT.Soft)
+	do
+		local sc = new("UIScale", {Scale = UICFG.UIScale}, hud)
+		floatScales[sc] = true
+		local function fitHud() hud.Size = O(math.clamp((og.AbsoluteSize.X - 24) / sc.Scale, 1, 660), 24) end
+		connect(og:GetPropertyChangedSignal("AbsoluteSize"), fitHud)
+		connect(sc:GetPropertyChangedSignal("Scale"), fitHud)
+		fitHud()
+	end
 
-	-- плавающая кнопка AIM: капсула с индикатором (перетаскивается, тап = вкл/выкл)
+	-- Плавающий ярлык повторяет плитку папки и использует обычный переключатель меню.
 	local quick = new("TextButton", {
-		Size = O(108, 36), AnchorPoint = V2(0, 0.5), Position = U(0, 16, 0.45, 0),
+		Name = "QuickAim", Size = O(126, 40), AnchorPoint = V2(0, 0.5), Position = U(0, 16, 0.45, 0),
 		BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, ZIndex = 10,
 	}, gui)
-	round(quick, 18)
-	local qStroke = outline(quick, 0.5)
+	rr(quick, Skin.Radius)
+	hoverable(quick, outline(quick))
 	floatScales[new("UIScale", {Scale = UICFG.UIScale}, quick)] = true
-	local qDot = new("Frame", {
-		Size = O(8, 8), AnchorPoint = V2(0, 0.5), Position = U(0, 15, 0.5, 0),
-		BackgroundColor3 = C.Mut, Active = false,
-	}, quick)
-	round(qDot, 4)
-	new("TextLabel", {
-		Size = O(40, 36), Position = O(31, 0), BackgroundTransparency = 1, Text = "AIM",
-		TextColor3 = C.W, Font = Enum.Font.GothamBlack, TextSize = 14, TextXAlignment = XL, Active = false,
-	}, quick)
-	local qState = new("TextLabel", {
-		Size = O(32, 36), AnchorPoint = V2(1, 0), Position = U(1, -13, 0, 0), BackgroundTransparency = 1,
-		Text = "OFF", TextColor3 = C.Mut, Font = GB, TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Right, Active = false,
-	}, quick)
+	local qIcon = icon("Aim", quick, 17, C.W)
+	qIcon.Position = U(0, 19, 0.5, 0)
+	new("TextLabel", {Size = O(38, 40), Position = O(36, 0), BackgroundTransparency = 1, Text = "AIM",
+		TextColor3 = C.W, FontFace = GB, TextSize = 14, TextXAlignment = XL, Active = false}, quick)
+	local qSwitch, qPaint = makeSwitch(quick)
+	qSwitch.AnchorPoint, qSwitch.Position = V2(1, 0.5), U(1, -10, 0.5, 0)
 
 	local CIRCLE_COLORS = {
 		White = C.W, Green = Color3.fromRGB(80, 220, 120), Red = Color3.fromRGB(240, 80, 80),
@@ -2269,11 +2310,17 @@ local function buildAim(page, api)
 		AnchorPoint = V2(0.5, 0), Position = U(0.5, 0, 0, 80), Size = O(300, 232),
 		BackgroundColor3 = C.Win, Active = true, Visible = false, ZIndex = 8,
 	}, og)
-	rr(editBar, 12) outline(editBar, 0.4)
-	new("TextLabel", {
-		Size = U(1, -16, 0, 28), Position = O(8, 4), BackgroundTransparency = 1, TextWrapped = true,
-		Text = "Тяни по экрану — двигается выбранное (круг или точка aim)", TextColor3 = C.W, Font = GM, TextSize = 12,
-	}, editBar)
+	rr(editBar, Skin.Radius) outline(editBar, OUT.Window)
+	do
+		local head = new("Frame", {Size = U(1, 0, 0, 31), BackgroundTransparency = 1}, editBar)
+		local glyph = icon("FOV", head, 15, C.W)
+		glyph.Position = U(0, 17, 0.5, 0)
+		new("TextLabel", {Size = O(132, 31), Position = O(31, 0), BackgroundTransparency = 1,
+			Text = "Редактор позиции", TextColor3 = C.W, FontFace = GB, TextSize = 14, TextXAlignment = XL}, head)
+		new("TextLabel", {Size = U(1, -171, 1, 0), Position = O(160, 0), BackgroundTransparency = 1,
+			Text = "Тяни круг или точку", TextColor3 = C.Mut, FontFace = GR, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right}, head)
+		new("Frame", {Size = U(1, 0, 0, 1), Position = U(0, 0, 1, -1), BackgroundColor3 = C.Line}, head)
+	end
 	local doneBtn = button(editBar, "Готово", {
 		Size = O(86, 32), Position = O(8, 36), TextSize = 13,
 	}, {primary = true})
@@ -2289,13 +2336,13 @@ local function buildAim(page, api)
 	-- шаг стрелок в пикселях экрана
 	new("TextLabel", {
 		Size = O(120, 18), Position = O(160, 74), BackgroundTransparency = 1, Text = "Шаг, px",
-		TextColor3 = C.Mut, Font = GM, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
 	}, editBar)
 	local stepBox = new("TextBox", {
 		Size = O(120, 32), Position = O(160, 94), BackgroundColor3 = C.Input, Text = tostring(A.StepPx),
-		TextColor3 = C.W, Font = GM, TextSize = 14, ClearTextOnFocus = true, PlaceholderText = "10",
+		TextColor3 = C.W, FontFace = GM, TextSize = 14, ClearTextOnFocus = true, PlaceholderText = "10", PlaceholderColor3 = C.Mut,
 	}, editBar)
-	rr(stepBox, 8) outline(stepBox, 0.5)
+	Skin.field(stepBox)
 	local function readStep()
 		local n = tonumber(stepBox.Text)
 		if n then A.StepPx = math.clamp(n, 0.5, 500) end
@@ -2307,7 +2354,7 @@ local function buildAim(page, api)
 	local followBtn = button(editBar, "", {Size = O(284, 28), Position = O(8, 166), TextSize = 11})
 	local xyLabel = new("TextLabel", {
 		Size = O(284, 30), Position = O(8, 198), BackgroundTransparency = 1, Text = "", TextWrapped = true,
-		TextColor3 = C.Mut, Font = GM, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 	}, editBar)
 
@@ -2375,8 +2422,8 @@ local function buildAim(page, api)
 	-- удержание стрелки = непрерывный сдвиг
 	local holdToken = 0
 	local function arrow(txt, x, y, dx, dy)
-		local b = button(editBar, txt, {
-			Size = O(40, 32), Position = O(x, y), TextSize = 18,
+		local b = Skin.iconAction(editBar, "Next", math.deg(math.atan2(dy, dx)), {
+			Name = txt, Size = O(40, 32), Position = O(x, y),
 		})
 		connect(b.InputBegan, function(i)
 			if not press(i) then return end
@@ -2419,14 +2466,7 @@ local function buildAim(page, api)
 	local function paintQuick(anim)
 		local o = A.Enabled
 		quick.Visible = A.ShowButton and not editing
-		qState.Text = o and "ON" or "OFF"
-		local function apply(inst, g)
-			if anim then tween(inst, fast, g) else for k, v in g do inst[k] = v end end
-		end
-		apply(quick, {BackgroundColor3 = o and C.Sel or C.Card})
-		apply(qStroke, {Transparency = o and 0.08 or 0.5})
-		apply(qDot, {BackgroundColor3 = o and C.W or C.Mut})
-		apply(qState, {TextColor3 = o and C.W or C.Mut})
+		qPaint(o, anim)
 	end
 	table.insert(refreshers, paintQuick)
 	paintQuick(false)
@@ -2440,8 +2480,8 @@ local function buildAim(page, api)
 
 	-- ===== UI вкладки =====
 	local scroll = new("ScrollingFrame", {
-		Size = S(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
-		ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.3,
+		Size = S(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2,
+		ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.6,
 		CanvasSize = U(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	}, page)
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, scroll)
@@ -2492,13 +2532,19 @@ local function buildAim(page, api)
 		table.insert(refreshers, paint)
 	end
 
-	section("MAIN")
+	section("SILENT AIM")
+	chips({
+		{"Silent aim", "SilentAim", nil, "Пуля летит в цель, камера не двигается"},
+	})
+	section("AIM")
 	chips({
 		{"Aim on", "Enabled", setEnabled, "Включает наводку (то же, что кнопка AIM)"},
+	})
+	slider("Smoothness (higher = faster)", "Smoothness", 0.01, 1, 0.01, 2)
+	chips({
 		{"Auto predict", "AutoPredict"},
 		{"Float button", "ShowButton", function(v) A.ShowButton = v; paintQuick(true) end, "Плавающая кнопка AIM на экране"},
 		{"Target lock", "TargetLock", function(v) A.TargetLock = v; lockedModel = nil end, "Держит цель; смена — кнопкой ниже"},
-		{"Silent aim", "SilentAim", nil, "Пуля летит в цель, камера не двигается"},
 	})
 	local switchBtn = button(scroll, "Switch locked target", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
 	on(switchBtn.Activated, function() if switchTarget then switchTarget() end end)
@@ -2571,7 +2617,7 @@ local function buildAim(page, api)
 		new("TextLabel", {
 			Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
 			Text = "Только вид: цвета, прозрачность, заливка и обводка не меняют размеры хитбоксов и попадания. Размеры - ползунки Hitbox size / Head hitbox size.",
-			TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 		}, tgt)
 	end
 	section("MULTIPOINT: ЧАСТИ ТЕЛА, НА КОТОРЫЕ ПЕРЕХОДИТЬ, ЕСЛИ ВЫБРАННАЯ ЗАКРЫТА")
@@ -2590,7 +2636,7 @@ local function buildAim(page, api)
 	new("TextLabel", {
 		Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
 		Text = "Первая включённая часть - основная. Кнопки: ★ сделать основной, ▲▼ очередь; переключатель - вкл/выкл. Основная закрыта - цель берётся на следующую доступную часть.",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, scroll)
 	local partPaint = {}
 	local function partsChanged()
@@ -2634,16 +2680,16 @@ local function buildAim(page, api)
 		sw.AnchorPoint, sw.Position = V2(0, 0.5), U(0, 8, 0.5, 0)
 		local rankLbl = new("TextLabel", {
 			Size = O(18, 40), Position = O(66, 0), BackgroundTransparency = 1, Text = "", TextColor3 = C.Mut,
-			Font = GB, TextSize = 11, Active = false,
+			FontFace = GB, TextSize = 11, Active = false,
 		}, f)
 		local nameLbl = new("TextLabel", {
 			Size = U(1, -202, 1, 0), Position = O(86, 0), BackgroundTransparency = 1, Text = V4.NAMES[slot], TextColor3 = C.W,
-			Font = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+			FontFace = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, f)
 		local hit = new("TextButton", {Size = O(64, 40), BackgroundTransparency = 1, Text = "", AutoButtonColor = false}, f)
-		local starBtn = button(f, "★", {Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -80, 0.5, 0), TextSize = 14})
-		local upBtn = button(f, "▲", {Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -44, 0.5, 0), TextSize = 12})
-		local dnBtn = button(f, "▼", {Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -8, 0.5, 0), TextSize = 12})
+		local starBtn, paintStar = Skin.iconAction(f, "Star", 0, {Name = "Primary", Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -80, 0.5, 0), TextSize = 14})
+		local upBtn, paintUp = Skin.iconAction(f, "Next", -90, {Name = "MoveUp", Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -44, 0.5, 0), TextSize = 12})
+		local dnBtn, paintDown = Skin.iconAction(f, "Next", 90, {Name = "MoveDown", Size = O(32, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -8, 0.5, 0), TextSize = 12})
 		local function paint(anim)
 			local isOn = A.PartOn[slot] == true
 			local rank = partRank(slot)
@@ -2656,11 +2702,11 @@ local function buildAim(page, api)
 			end
 			local isMain = isOn and A.TargetPart == slot
 			rankLbl.Text = not isOn and "·" or (isMain and "★" or tostring(n))
-			rankLbl.TextColor3 = isMain and C.On or C.Mut
+			rankLbl.TextColor3 = isMain and C.Acc or C.Mut
 			nameLbl.TextColor3 = isOn and C.W or C.Mut
-			starBtn.TextColor3 = isMain and C.On or C.W
-			upBtn.TextTransparency = rank <= 1 and 0.6 or 0
-			dnBtn.TextTransparency = rank >= #A.PartOrder and 0.6 or 0
+			paintStar(isMain and C.Acc or C.Mut, anim)
+			paintUp(rank <= 1 and C.Hi or C.W, anim)
+			paintDown(rank >= #A.PartOrder and C.Hi or C.W, anim)
 		end
 		on(hit.Activated, function()
 			local nowOn = not A.PartOn[slot]
@@ -2706,7 +2752,6 @@ local function buildAim(page, api)
 	slider("Lock release radius, %", "LockR", 5, 90, 1, 0)
 	slider("Trigger delay (sec)", "TriggerDelay", 0, 0.5, 0.01, 2)
 	slider("Trigger tolerance (% of screen)", "TriggerR", 0.5, 15, 0.5, 1)
-	slider("Smoothness (higher = faster)", "Smoothness", 0.01, 1, 0.01, 2)
 	slider("Manual predict (sec)", "Prediction", 0, 0.6, 0.01, 2)
 	slider("Auto predict bias (ms)", "LeadBias", 0, 300, 5, 0)
 	slider("Max distance", "MaxDistance", 50, 2000, 25, 0)
@@ -2715,7 +2760,7 @@ local function buildAim(page, api)
 	local testBtn = button(scroll, "Check coordinates", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
 	local selfLabel = new("TextLabel", {
 		Size = U(1, 0, 0, 62), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, scroll)
 	on(testBtn.Activated, function() if runSelfTest then runSelfTest() end end)
 
@@ -2764,7 +2809,7 @@ local function buildAim(page, api)
 		slider("Smoothing (higher = smoother)", "DynSmooth", 0, 0.95, 0.05, 2)
 		NX.radLbl = new("TextLabel", {
 			Size = U(1, 0, 0, 34), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
-			TextColor3 = C.W, Font = GM, TextSize = 11, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = C.W, FontFace = GM, TextSize = 11, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 		}, tgt)
 		section("TARGET ANIMATION")
 		chips({
@@ -2781,11 +2826,7 @@ local function buildAim(page, api)
 		local srow = row(tgt, 40, 8, nextOrder())
 		local fovPicker, fovRefresh
 		for i, p in FOVCOL do
-			local b = new("TextButton", {
-				Size = O(40, 40), BackgroundColor3 = Color3.fromHSV(p[1], p[2], p[3]), Text = "", AutoButtonColor = false, LayoutOrder = i,
-			}, srow)
-			rr(b, 8)
-			outline(b, 0.4)
+			local b = Skin.swatch(srow, i, #FOVCOL, Color3.fromHSV(p[1], p[2], p[3]))
 			connect(b.Activated, function()
 				A.FovCol = {h = p[1], s = p[2], v = p[3]}
 				fovRefresh()
@@ -2812,7 +2853,7 @@ local function buildAim(page, api)
 		new("TextLabel", {
 			Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(),
 			Text = "Размер круга задаёт и область выбора цели. Позиция круга — только визуал, пока он не связан с точкой наведения.",
-			TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 		}, tgt)
 		tgt, ord = scroll, pageOrd
 	end
@@ -4054,29 +4095,70 @@ end
 
 -- ===== Главное меню =====
 local stop
+-- Одно модальное окно для справки и подтверждения выгрузки. Подложка перехватывает
+-- касания: прокрутка, переключатели и ручка размера под диалогом не активируются.
+function helpUI.mount(panel, unload)
+	local shade = new("Frame", {Name = "DialogLayer", Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 0.38,
+		Active = true, Visible = false, ZIndex = 50}, panel)
+	local box = new("Frame", {Size = U(1, -48, 0, 180), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+		BackgroundColor3 = C.Win, Active = true}, shade)
+	new("UISizeConstraint", {MaxSize = V2(406, 180)}, box)
+	rr(box, 12)
+	outline(box, OUT.Window)
+	local head = new("Frame", {Size = U(1, -24, 0, 42), Position = O(12, 2), BackgroundTransparency = 1}, box)
+	local glyph = icon("Info", head, 17, C.W)
+	glyph.Position = U(0, 9, 0.5, 0)
+	local title = new("TextLabel", {Size = U(1, -60, 1, 0), Position = O(25, 0), BackgroundTransparency = 1,
+		Text = "", TextColor3 = C.W, FontFace = GB, TextSize = 16, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd}, head)
+	local close = Skin.iconButton(head, "Close", 0)
+	new("Frame", {Size = U(1, 0, 0, 1), Position = O(0, 44), BackgroundColor3 = C.Line}, box)
+	local body = new("ScrollingFrame", {Size = U(1, -28, 1, -60), Position = O(14, 54), BackgroundTransparency = 1,
+		ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, CanvasSize = O(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y}, box)
+	local copy = new("TextLabel", {Size = U(1, -6, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+		Text = "", TextColor3 = C.W, FontFace = GR, TextSize = 14, TextWrapped = true, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, body)
+	local actions = row(box, 36, 8)
+	actions.Size, actions.Position = U(1, -28, 0, 36), U(0, 14, 1, -50)
+	local cancel = button(actions, "Отмена", {Size = U(0.5, -4, 1, 0), LayoutOrder = 1})
+	local confirm = button(actions, "Выгрузить", {Size = U(0.5, -4, 1, 0), LayoutOrder = 2}, {primary = true})
+	local function hide() shade.Visible = false end
+	on(close.Activated, hide)
+	on(cancel.Activated, hide)
+	on(confirm.Activated, function() if shade.Visible and actions.Visible then unload() end end)
+	local function open(name, text, ask)
+		title.Text, copy.Text = name, text
+		actions.Visible = ask
+		body.Size = U(1, -28, 1, ask and -110 or -64)
+		body.CanvasPosition = V2(0, 0)
+		shade.Visible = true
+	end
+	helpUI.open = function(name, desc)
+		local info = helpUI.info[name]
+		local ru = info and info[1] or desc or "Описание пока недоступно."
+		local en = info and info[2] or "Description not available yet."
+		open(name, "RU: " .. ru .. "\n\nEN: " .. en, false)
+	end
+	return function() open("Выгрузить Enkaisy?", "Меню и плавающие элементы будут закрыты. Чтобы просто свернуть окно, нажмите минус в шапке.", true) end
+end
+
 local function startMain()
-	local PW, PH = 480, 392
-	local HDR, FTR = 46, 40
-	local SBW, TABH, TGAP = 130, 34, 2
-	local CX, CY = SBW + 12, HDR + 46
-	-- размер области страниц считается от окна: растягивается вместе с ним
-	local PAGE_SIZE = U(1, -(CX + 10), 1, -(CY + FTR + 6))
-	local TABS = {"Main", "Color", "Sizes", "Extra", "Players", "Aim", "FOV", "Appearance", "Visual"}
-	-- группы бокового меню: заголовок + вкладки (визуальное разделение категорий)
-	local GROUPS = {
-		{"ESP", {"Main", "Color", "Sizes", "Extra", "Players"}},
-		{"AIM", {"Aim", "FOV"}},
-		{"SETTINGS", {"Appearance", "Visual"}},
+	local PW, PH = DEF.UI.PanelW, DEF.UI.PanelH
+	local HDR, RAIL, TABH, TGAP = Skin.Header, Skin.Rail, Skin.Tab, 2
+	local CY = HDR + 40
+	local PAGE_SIZE = U(1 - RAIL, -Skin.RailBase - 26, 1, -(CY + 9))
+	local function pagePos(dx) return U(RAIL, Skin.RailBase + Skin.Inset + (dx or 0), 0, CY) end
+	-- Один каталог определяет порядок, подписи, старые поисковые термины и имена
+	-- пиктограмм. id остаются прежними для совместимости с сохранённой вкладкой.
+	local folders = {
+		{id = "Main", title = "General", keywords = "ESP targets and quick toggles"},
+		{id = "Color", keywords = "ESP palette for every element"},
+		{id = "Sizes", keywords = "ESP opacity labels limits"},
+		{id = "Aim", keywords = "AIM assist auto center predict", ownScroll = true},
+		{id = "FOV", keywords = "AIM circle look size position"},
+		{id = "Extra", keywords = "ESP friends NPC filter reset"},
+		{id = "Players", keywords = "ESP mark hide per-player look", ownScroll = true},
+		{id = "Visual", title = "Performance", keywords = "SETTINGS update rate effects low-end preset"},
+		{id = "Appearance", keywords = "SETTINGS window transparency theme accent"},
 	}
-	local DISP = {Main = "General", Visual = "Performance"}
-	local SUB = {
-		Main = "ESP targets and quick toggles", Color = "Palette for every element",
-		Sizes = "Opacity, labels and limits", Extra = "Friends, NPC filter, reset",
-		Visual = "Update rate, effects, low-end preset", Players = "Tap: mark / hide  •  › per-player look",
-		Aim = "Aim assist, auto center, predict", FOV = "Circle look, size and position",
-		Appearance = "Window, transparency, theme, accent",
-	}
-	local SCROLLED = {Main = true, Color = true, Sizes = true, Extra = true, Visual = true, Appearance = true, FOV = true}
 	local repaints = {}
 	local closeDetail
 	local applyUIAll
@@ -4086,19 +4168,19 @@ local function startMain()
 	-- кнопка-логотип (когда меню свёрнуто)
 	local openBtn = new("TextButton", {
 		Size = O(44, 44), AnchorPoint = V2(1, 0),
-		Position = U(1, -16, 0, 80), BackgroundTransparency = 1, Text = "", Visible = false,
+		Position = U(1, -16, 0, 80), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Visible = false,
 	}, gui)
 	floatScales[new("UIScale", {Scale = UICFG.UIScale}, openBtn)] = true
-	local _, openStroke = logo(44, 24, openBtn)
-	hoverable(openBtn, openStroke, {base = 0.35, hover = 0.1, down = 0})
+	local _, openStroke = logo(44, openBtn)
+	hoverable(openBtn, openStroke, {base = OUT.Window})
 
 	-- окно (CanvasGroup: Menu Transparency = GroupTransparency, плавное появление)
 	local panel = new("CanvasGroup", {
-		Size = O(UICFG.PanelW, UICFG.PanelH), AnchorPoint = V2(0.5, 0.5), GroupTransparency = 1,
-		Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Win, Visible = false, Active = true,
+		Name = "MainWindow", Size = O(UICFG.PanelW, UICFG.PanelH), AnchorPoint = V2(0.5, 0.5), GroupTransparency = 1,
+		Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Win, Visible = false, Active = true, ZIndex = 20,
 	}, gui)
-	rr(panel, 12)
-	local panelStroke = outline(panel, 0.88)
+	rr(panel, 14)
+	local panelStroke = outline(panel, OUT.Window)
 	table.insert(bgFrames, panel)
 	local scale = new("UIScale", {}, panel)
 	-- фон-картинка: лежит под всем содержимым (ZIndex 0), обрезается скруглением окна
@@ -4108,54 +4190,23 @@ local function startMain()
 		ScaleType = FIT_TYPES[UICFG.BgImgFit] or Enum.ScaleType.Crop, ImageTransparency = UICFG.BgImgAlpha,
 	}, panel)
 
-	-- шапка: логотип, название, индикаторы включённых функций, закрыть
-	local titleBar = new("Frame", {Size = U(1, 0, 0, HDR), BackgroundColor3 = C.Side}, panel)
-	rr(titleBar, 12, 12)
-	local titleFill = new("Frame", {Size = U(1, 0, 0, 12), Position = U(0, 0, 1, -12), BackgroundColor3 = C.Side, BorderSizePixel = 0, Active = false}, titleBar)
+	local titleBar = Skin.header(panel)
 	table.insert(bgFrames, titleBar)
-	table.insert(bgFrames, titleFill)
-	new("Frame", {Size = U(1, 0, 0, 1), Position = U(0, 0, 1, -1), BackgroundColor3 = C.Line, BorderSizePixel = 0, Active = false, ZIndex = 2}, titleBar)
-	local badge = logo(30, 16, titleBar)
-	badge.Position = O(12, 8)
-	new("TextLabel", {
-		Size = O(110, 20), Position = O(52, 6), BackgroundTransparency = 1,
-		Text = "Enkaisy", TextColor3 = C.W, Font = GB, TextSize = 15, TextXAlignment = XL,
-	}, titleBar)
-	new("TextLabel", {
-		Size = O(110, 12), Position = O(52, 26), BackgroundTransparency = 1,
-		Text = "esp + aim", TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL,
-	}, titleBar)
-	local function headChip(text, rightOffset, withDot)
-		local c = new("TextLabel", {
-			AnchorPoint = V2(1, 0.5), Position = U(1, rightOffset, 0.5, 0), Size = O(0, 24), AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundColor3 = C.Card, Text = text, TextColor3 = C.Mut, Font = GM, TextSize = 10, Active = false,
-		}, titleBar)
-		new("UIPadding", {PaddingLeft = UDim.new(0, withDot and 20 or 9), PaddingRight = UDim.new(0, 9)}, c)
-		round(c, 12)
-		outline(c, OUT.Soft)
-		local dot
-		if withDot then
-			dot = new("Frame", {Size = O(6, 6), AnchorPoint = V2(0, 0.5), Position = U(0, 9, 0.5, 0), BackgroundColor3 = C.Mut, Active = false}, c)
-			round(dot, 3)
-		end
-		return c, dot
-	end
-	headChip("v4.2", -56)
-	local _, aimDot = headChip("AIM", -110, true)
-	local _, espDot = headChip("ESP", -168, true)
-	local close = new("TextButton", {
-		Size = O(36, 36), AnchorPoint = V2(1, 0.5), Position = U(1, -8, 0.5, 0),
-		BackgroundColor3 = C.Input, Text = "", AutoButtonColor = false,
-	}, titleBar)
-	rr(close, 10)
-	hoverable(close, outline(close))
-	xMark(close, C.W)
+	local espDot = Skin.badge(titleBar, "ESP", 138, 46, true)
+	local aimDot = Skin.badge(titleBar, "AIM", 190, 46, true)
+	Skin.badge(titleBar, "v4.2 · Mobile", 242, 78)
+	local chrome = {}
+	chrome.min = Skin.iconButton(titleBar, "Min", 66)
+	chrome.max, chrome.maxIcon = Skin.iconButton(titleBar, "Max", 36)
+	chrome.restoreIcon = icon("Restore", chrome.max, 14)
+	chrome.restoreIcon.Visible = false
+	chrome.close = Skin.iconButton(titleBar, "Close", 6)
 
-	-- размер окна: Menu Scale, но никогда не больше экрана
+	-- Сначала ужимаем раскладку до минимального рабочего размера и только затем
+	-- масштабируем её целиком. На телефоне широкий макет не превращается в миниатюру.
 	local function fit()
 		local a = gui.AbsoluteSize
-		local maxK = math.max(0.4, math.min((a.Y - 16) / PH, (a.X - 16) / PW))
-		return math.clamp(UICFG.MenuScale * math.min(1, maxK), 0.4, maxK)
+		return math.max(0.1, math.min(UICFG.MenuScale, (a.X - 16) / WIN_MIN_W, (a.Y - 16) / WIN_MIN_H))
 	end
 	-- ===== Размер и положение окна: растягивание за правый нижний угол =====
 	-- Размер хранится в UICFG.PanelW/H (логические px до UIScale), центр — в долях экрана PanelCX/CY.
@@ -4183,10 +4234,12 @@ local function startMain()
 		local k = fit()
 		local w, h = winW * k, winH * k
 		local fx, fy
-		if UICFG.PanelCX < 0 then
+		if chrome.maximized then
+			fx, fy = 0.5, 0.5
+		elseif UICFG.PanelCX < 0 then
 			fx, fy = 1 - (16 + w / 2) / gs.X, 0.5
 		else
-			fx, fy = readCenter()
+			fx, fy = UICFG.PanelCX, UICFG.PanelCY
 		end
 		local cx, cy = fx * gs.X, fy * gs.Y
 		local mx, my = 6 + w / 2, 6 + h / 2
@@ -4196,14 +4249,14 @@ local function startMain()
 	end
 	local function commitPanel() saveCenter(); clampPanel(); saveCenter() end
 	local function updateCols()
-		local cw = winW - (CX + 20)
+		local cw = winW * (1 - RAIL) - Skin.RailBase - 36
 		applyGridCols(cw >= 600 and 2 or 1)
 	end
 	local function applySize()
 		if gui.AbsoluteSize.X < 50 or gui.AbsoluteSize.Y < 50 then return end
 		local loW, loH, hiW, hiH = sizeLimits()
-		winW = math.clamp(math.floor(UICFG.PanelW + 0.5), loW, hiW)
-		winH = math.clamp(math.floor(UICFG.PanelH + 0.5), loH, hiH)
+		winW = chrome.maximized and hiW or math.clamp(math.floor(UICFG.PanelW + 0.5), loW, hiW)
+		winH = chrome.maximized and hiH or math.clamp(math.floor(UICFG.PanelH + 0.5), loH, hiH)
 		panel.Size = O(winW, winH)
 		updateCols()
 		clampPanel()
@@ -4214,6 +4267,12 @@ local function startMain()
 		Name = "ResizeGrip", Size = O(36, 36), AnchorPoint = V2(1, 1), Position = U(1, 0, 1, 0),
 		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 30,
 	}, panel)
+	function chrome.maximize(state)
+		chrome.maximized = state
+		chrome.maxIcon.Visible, chrome.restoreIcon.Visible, grip.Visible = not state, state, not state
+		applySize() -- сохранённый размер/центр не меняются при разворачивании
+	end
+	on(chrome.max.Activated, function() chrome.maximize(not chrome.maximized) end)
 	local gripDots = {}
 	for _, d in {{26, 26}, {20, 26}, {14, 26}, {26, 20}, {20, 20}, {26, 14}} do
 		local f = new("Frame", {
@@ -4230,7 +4289,7 @@ local function startMain()
 	end
 	local sizeChip = new("TextLabel", {
 		AnchorPoint = V2(0.5, 1), Position = U(0.5, 0, 1, -48), Size = O(0, 24), AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = C.Card, Text = "", TextColor3 = C.W, Font = GB, TextSize = 11, Visible = false, Active = false, ZIndex = 29,
+		BackgroundColor3 = C.Card, Text = "", TextColor3 = C.W, FontFace = GB, TextSize = 11, Visible = false, Active = false, ZIndex = 29,
 	}, panel)
 	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, sizeChip)
 	rr(sizeChip, 12)
@@ -4270,7 +4329,7 @@ local function startMain()
 		dragMoves[rsMove], dragEnds[rsEnd] = nil, nil
 		paintGrip(false)
 		sizeChip.Visible = false
-		tween(panelStroke, fast, {Transparency = 0.78})
+		tween(panelStroke, fast, {Transparency = OUT.Window})
 		if moved then
 			commitPanel()
 		else
@@ -4295,7 +4354,7 @@ local function startMain()
 		dragMoves[rsMove], dragEnds[rsEnd] = true, true
 		paintGrip(true)
 		sizeChip.Text = winW .. " × " .. winH
-		tween(panelStroke, fast, {Transparency = 0.45})
+		tween(panelStroke, fast, {Transparency = OUT.Active})
 	end)
 	on(grip.MouseEnter, function() if not rs.act then paintGrip(true) end end)
 	on(grip.MouseLeave, function() if not rs.act then paintGrip(false) end end)
@@ -4333,115 +4392,94 @@ local function startMain()
 		clampGui(openBtn)
 	end)
 
-	-- боковое меню (прокручивается): заголовки групп, иконка + название, точка «функция включена»
-	local side = new("Frame", {Size = U(0, SBW, 1, -(HDR + FTR)), Position = O(0, HDR), BackgroundColor3 = C.Side, BorderSizePixel = 0}, panel)
+	-- Плоский список папок, как у референса: плитка со знаком слева и одна выделенная строка.
+	-- Поиск и телеметрия закреплены снизу; на коротком экране прокручиваются только папки.
+	local side = new("Frame", {Name = "Sidebar", Size = U(RAIL, Skin.RailBase, 1, -HDR), Position = O(0, HDR), BackgroundColor3 = C.Side}, panel)
 	table.insert(bgFrames, side)
-	new("Frame", {Size = U(0, 1, 1, 0), Position = U(1, -1, 0, 0), BackgroundColor3 = C.Line, BorderSizePixel = 0, Active = false}, side)
+	new("Frame", {Size = U(0, 1, 1, 0), Position = U(1, -1, 0, 0), BackgroundColor3 = C.Line}, side)
 	local tabsHolder = new("ScrollingFrame", {
-		Size = U(0, SBW - 9, 1, -44), Position = O(4, 40), BackgroundTransparency = 1, BorderSizePixel = 0,
-		ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.4,
-		CanvasSize = U(0, 0, 0, 0), ScrollingDirection = Enum.ScrollingDirection.Y,
+		Name = "Folders", Size = U(1, -10, 1, -93), Position = O(6, 10), BackgroundTransparency = 1,
+		ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.65,
+		CanvasSize = O(0, #folders * (TABH + TGAP)), ScrollingDirection = Enum.ScrollingDirection.Y,
 		ElasticBehavior = Enum.ElasticBehavior.Never,
 	}, side)
 	local search = new("TextBox", {
-        Size = U(1, -12, 0, 30), Position = O(6, 5), BackgroundColor3 = C.Input,
-        Text = "", PlaceholderText = "Search / Поиск", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
-        Font = GM, TextSize = 11, ClearTextOnFocus = false,
-    }, side)
-    rr(search, 8)
-    outline(search, OUT.Soft)
-    local tabPos, ty, groupLabels = {}, 0, {}
-	for _, g in GROUPS do
-		groupLabels[g[1]] = new("TextLabel", {
-			Size = O(SBW - 24, 16), Position = O(8, ty + 2), BackgroundTransparency = 1, Text = g[1],
-			TextColor3 = C.Mut, Font = GB, TextSize = 10, TextXAlignment = XL, Active = false,
-		}, tabsHolder)
-		ty += 20
-		for _, n in g[2] do
-			tabPos[n] = ty
-			ty += TABH + TGAP
-		end
-		ty += 6
-	end
-	tabsHolder.CanvasSize = O(0, ty)
-	-- выбранная вкладка: светлее фон + акцентная обводка; плавно переезжает между кнопками
-	local pill = new("Frame", {
-		Size = U(1, -6, 0, TABH), Position = O(2, tabPos.Main), BackgroundColor3 = C.Sel, Active = false, ZIndex = 1,
-	}, tabsHolder)
-	rr(pill, 8)
-	outline(pill, 0.83)
+		Name = "Search", Size = U(1, -20, 0, 28), Position = U(0, 10, 1, -77), BackgroundColor3 = C.Card,
+		Text = "", PlaceholderText = "Поиск", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
+		FontFace = GM, TextSize = 12, TextXAlignment = XL, ClearTextOnFocus = false,
+	}, side)
+	Skin.field(search)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 29), PaddingRight = UDim.new(0, 5)}, search)
+	local searchIcon = icon("Search", side, 13)
+	searchIcon.Position = U(0, 25, 1, -63)
+	local empty = new("TextLabel", {Size = U(1, -8, 0, 38), Position = O(4, 0), BackgroundTransparency = 1, TextWrapped = true,
+		Text = "Ничего не найдено", TextColor3 = C.Mut, FontFace = GR, TextSize = 12, Visible = false}, tabsHolder)
 
-	-- заголовок страницы
 	local pTitle = new("TextLabel", {
-		Size = U(1, -(CX + 10), 0, 18), Position = O(CX, HDR + 9), BackgroundTransparency = 1, Text = "",
-		TextColor3 = C.W, Font = GB, TextSize = 16, TextXAlignment = XL,
+		Size = U(1 - RAIL, -Skin.RailBase - 54, 0, 24), Position = U(RAIL, Skin.RailBase + 42, 0, HDR + 9), BackgroundTransparency = 1, Text = "",
+		TextColor3 = C.W, FontFace = GB, TextSize = 18, TextXAlignment = XL,
 	}, panel)
-	local pSub = new("TextLabel", {
-		Size = U(1, -(CX + 10), 0, 14), Position = O(CX, HDR + 28), BackgroundTransparency = 1, Text = "",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL,
-	}, panel)
-
-	-- вкладки и страницы
 	local pages, ptabs = {}, {}
+	local function paintTab(t, sel, anim)
+		t.selected = sel
+		t.headIcon.Visible = sel
+		t.h.locked, t.h.over, t.h.pressed = sel, false, false
+		put(t.button, {BackgroundTransparency = sel and 0 or 1}, anim)
+		put(t.st, {Transparency = sel and OUT.Idle or 1}, anim)
+		put(t.label, {TextColor3 = sel and C.W or C.Mut}, anim)
+		put(t.tile, {BackgroundColor3 = sel and C.Acc or C.Card}, anim)
+		t.paintIcon(sel and C.AccTx or C.Mut, anim)
+	end
 	local function show(n)
-		if not tabPos[n] then n = "Main" end
+		if not ptabs[n] then n = "Main" end
 		curTab, UICFG.Tab = n, n
-		pill.Visible = true
-		tween(pill, fast, {Position = O(2, tabPos[n])})
-		pTitle.Text, pSub.Text = DISP[n] or n, SUB[n] or ""
+		pTitle.Text = ptabs[n].label.Text
 		if aim then aim.preview(isOpen and n == "FOV") end
-		-- вкладка всегда в зоне видимости бокового списка
-		local top, bot = tabPos[n], tabPos[n] + TABH
-		local cp, vh = tabsHolder.CanvasPosition.Y, tabsHolder.AbsoluteSize.Y
-		if top - 22 < cp then
-			tabsHolder.CanvasPosition = Vector2.new(0, math.max(0, top - 22))
-		elseif bot + 6 > cp + vh then
-			tabsHolder.CanvasPosition = Vector2.new(0, bot + 6 - vh)
+		local tab = ptabs[n].button
+		local y = tab.AbsolutePosition.Y - tabsHolder.AbsolutePosition.Y
+		local overflow = y + tab.AbsoluteSize.Y - tabsHolder.AbsoluteSize.Y
+		if y < 0 or overflow > 0 then
+			tabsHolder.CanvasPosition = V2(0, math.max(0, tabsHolder.CanvasPosition.Y + (y < 0 and y or overflow)))
 		end
 		for k, f in pages do
 			local sel = k == n
 			if sel and not f.Visible and CFG.Anim then
-				f.Position = O(CX + 16, CY)
-				f.Visible = true
-				tween(f, slow, {Position = O(CX, CY)})
+				f.Position, f.Visible = pagePos(8), true
+				tween(f, slow, {Position = pagePos()})
 			else
 				f.Visible = sel
-				if sel then f.Position = O(CX, CY) end
+				if sel then f.Position = pagePos() end
 			end
 			local t = ptabs[k]
-			if t.sel ~= sel then
-				t.sel = sel
-				t.h.locked = sel
-				t.h.over, t.h.pressed = false, false
-				tween(t.st, fast, {Transparency = sel and 1 or OUT.Idle})
-				tween(t.label, fast, {TextColor3 = sel and C.W or C.Mut})
-				t.paintIcon(sel and C.W or C.Mut, true)
-			end
+			if t.selected ~= sel then paintTab(t, sel, t.selected ~= nil) end
 		end
 	end
-	for _, n in TABS do
+	for i, folder in folders do
+		local n = folder.id
 		local tb = new("TextButton", {
-			Size = U(1, -6, 0, TABH), Position = O(2, tabPos[n]), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 2,
+			Name = n, Size = U(1, -5, 0, TABH), Position = O(2, (i-1) * (TABH + TGAP)), BackgroundColor3 = C.Sel,
+			BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
 		}, tabsHolder)
 		rr(tb, 8)
-		local st = outline(tb)
-		local ic, icPaint = icon(n, tb)
-		ic.Position = O(11, TABH / 2)
+		local st = outline(tb, 1)
+		local tile = new("Frame", {Size = O(24, 24), Position = U(0, 7, 0.5, 0), AnchorPoint = V2(0, 0.5), BackgroundColor3 = C.Card}, tb)
+		rr(tile, 6, 8)
+		local _, icPaint = icon(n, tile, 15)
+		local headIcon = icon(n, panel, 18, C.W)
+		headIcon.Position, headIcon.Visible = U(RAIL, Skin.RailBase + 24, 0, HDR + 21), false
 		local lbl = new("TextLabel", {
-			Size = U(1, -54, 1, 0), Position = O(36, 0), BackgroundTransparency = 1, Text = DISP[n] or n, TextColor3 = C.Mut,
-			Font = GB, TextSize = 12, TextXAlignment = XL, Active = false,
+			Size = U(1, -49, 1, 0), Position = O(39, 0), BackgroundTransparency = 1, Text = folder.title or n, TextColor3 = C.Mut,
+			FontFace = GM, TextSize = 13, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, tb)
-		local dot = new("Frame", {
-			Size = O(6, 6), AnchorPoint = V2(1, 0.5), Position = U(1, -9, 0.5, 0), BackgroundColor3 = C.On,
-			BackgroundTransparency = 1, Active = false,
-		}, tb)
-		round(dot, 3)
-		ptabs[n] = {button = tb, st = st, label = lbl, dot = dot, paintIcon = icPaint, h = hoverable(tb, st)}
+		local dot = new("Frame", {Size = O(4, 4), AnchorPoint = V2(1, 0.5), Position = U(1, -6, 0.5, 0),
+			BackgroundColor3 = C.W, BackgroundTransparency = 1, Active = false}, tb)
+		round(dot, 2)
+		ptabs[n] = {button = tb, st = st, tile = tile, label = lbl, dot = dot, headIcon = headIcon, paintIcon = icPaint, h = hoverable(tb, st, {base = 1})}
 		local pg
-		if SCROLLED[n] then
+		if not folder.ownScroll then
 			pg = new("ScrollingFrame", {
-				Size = PAGE_SIZE, Position = O(CX, CY), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
-				ScrollBarThickness = 3, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.3,
+				Name = n .. "Page", Size = PAGE_SIZE, Position = pagePos(), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+				ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.6,
 				CanvasSize = U(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			}, panel)
 			-- отступы, чтобы тонкие обводки карточек не обрезались краем прокрутки
@@ -4449,12 +4487,16 @@ local function startMain()
 				PaddingLeft = UDim.new(0, 2), PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), PaddingRight = UDim.new(0, 8),
 			}, pg)
 		else
-			pg = new("Frame", {Size = PAGE_SIZE, Position = O(CX, CY), BackgroundTransparency = 1, Visible = false}, panel)
+			pg = new("Frame", {Name = n .. "Page", Size = PAGE_SIZE, Position = pagePos(), BackgroundTransparency = 1, Visible = false}, panel)
 		end
 		new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, pg)
 		pages[n] = pg
 		on(tb.Activated, function() show(n) end)
 	end
+
+	table.insert(repaints, function()
+		for n, t in ptabs do paintTab(t, n == curTab, false) end
+	end)
 
 	-- индикаторы «включено»: шапка (ESP / AIM) и точки на вкладках; обновляются из frame() раз в 0.1 с, только при изменении
 	local stCache = {}
@@ -4465,95 +4507,39 @@ local function startMain()
 		apply(v)
 	end
 	statusFn = function()
-		flag("hESP", CFG.On, function(o) espDot.BackgroundColor3 = o and C.On or C.Mut end)
-		flag("hAIM", AIMCFG.Enabled, function(o) aimDot.BackgroundColor3 = o and C.On or C.Mut end)
+		flag("hESP", CFG.On, function(o) espDot.BackgroundColor3 = o and C.W or C.Mut end)
+		flag("hAIM", AIMCFG.Enabled, function(o) aimDot.BackgroundColor3 = o and C.W or C.Mut end)
 		flag("tMain", CFG.On, function(o) ptabs.Main.dot.BackgroundTransparency = o and 0 or 1 end)
 		flag("tAim", AIMCFG.Enabled, function(o) ptabs.Aim.dot.BackgroundTransparency = o and 0 or 1 end)
 		flag("tFOV", AIMCFG.Enabled and AIMCFG.ShowFOV, function(o) ptabs.FOV.dot.BackgroundTransparency = o and 0 or 1 end)
 	end
 
-	-- подвал: счётчик, FPS / пинг, выгрузка
-	local footer = new("Frame", {Size = U(1, 0, 0, FTR), AnchorPoint = V2(0, 1), Position = U(0, 0, 1, 0), BackgroundColor3 = C.Side}, panel)
-	rr(footer, 12, 12)
-	local footerFill = new("Frame", {Size = U(1, 0, 0, 12), BackgroundColor3 = C.Side, BorderSizePixel = 0, Active = false}, footer)
-	table.insert(bgFrames, footer)
-	table.insert(bgFrames, footerFill)
-	new("Frame", {Size = U(1, 0, 0, 1), BackgroundColor3 = C.Line, BorderSizePixel = 0, Active = false, ZIndex = 2}, footer)
-	counterLbl = new("TextLabel", {
-		Size = O(136, 26), AnchorPoint = V2(0, 0.5), Position = U(0, 10, 0.5, 1),
-		BackgroundColor3 = C.Card, Text = "Players: 0 • NPC: 0",
-		TextColor3 = C.Mut, Font = GM, TextSize = 11,
-	}, footer)
-	rr(counterLbl, 8)
-	outline(counterLbl, OUT.Soft)
-	statsCard = new("Frame", {
-		Size = O(118, 26), AnchorPoint = V2(0, 0.5), Position = U(0, 154, 0.5, 1),
-		BackgroundColor3 = C.Card, Visible = CFG.ShowStats,
-	}, footer)
-	rr(statsCard, 8)
-	outline(statsCard, OUT.Soft)
-	statsFps = new("TextLabel", {
-		Size = U(0.5, 0, 1, 0), BackgroundTransparency = 1, Text = "-- FPS",
-		TextColor3 = C.Mut, Font = GB, TextSize = 11,
-	}, statsCard)
-	statsPing = new("TextLabel", {
-		Size = U(0.5, 0, 1, 0), Position = U(0.5, 0, 0, 0), BackgroundTransparency = 1, Text = "-- ms",
-		TextColor3 = C.Mut, Font = GM, TextSize = 11,
-	}, statsCard)
-
-	-- кнопка выгрузки скрипта (с подтверждением вторым нажатием)
-	local unload = button(footer, "Unload", {
-		Size = O(76, 30), AnchorPoint = V2(1, 0.5), Position = U(1, -42, 0.5, 1), TextSize = 11,
-	}, {danger = true})
-	local armed = false
-	on(unload.Activated, function()
-		if armed then
-			stop()
-			return
-		end
-		armed = true
-		unload.Text = "Точно?"
-		tween(unload, fast, {BackgroundColor3 = C.DangerBg, TextColor3 = C.W})
-		task.delay(2.5, function()
-			if armed and unload.Parent then
-				armed = false
-				unload.Text = "Unload"
-				tween(unload, fast, {BackgroundColor3 = C.Input, TextColor3 = C.Danger})
-			end
-		end)
-	end)
+	new("Frame", {Size = U(1, -20, 0, 1), Position = U(0, 10, 1, -41), BackgroundColor3 = C.Line}, side)
+	counterLbl = new("TextLabel", {Size = U(1, -20, 0, 16), Position = U(0, 12, 1, -38), BackgroundTransparency = 1,
+		Text = "Players: 0 • NPC: 0", TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = XL}, side)
+	statsCard = new("Frame", {Size = U(1, -20, 0, 15), Position = U(0, 12, 1, -21), BackgroundTransparency = 1, Visible = CFG.ShowStats}, side)
+	statsFps = new("TextLabel", {Size = U(0.5, 0, 1, 0), BackgroundTransparency = 1,
+		Text = "-- FPS", TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL}, statsCard)
+	statsPing = new("TextLabel", {Size = U(0.5, 0, 1, 0), Position = S(0.5, 0), BackgroundTransparency = 1,
+		Text = "-- ms", TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL}, statsCard)
 
 	-- ===== Страница Main =====
 	local pm = pages.Main
-	local toggle = new("TextButton", {
-		Size = U(1, 0, 0, 46), BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false, LayoutOrder = 1,
-	}, pm)
-	rr(toggle, 8)
-	hoverable(toggle, outline(toggle), {bg = C.Card, bgHover = C.Sel})
-	local tLbl = new("TextLabel", {
-		Size = U(1, -72, 0, 18), Position = O(12, 6), BackgroundTransparency = 1,
-		Font = GB, TextSize = 13, TextColor3 = C.W, TextXAlignment = XL, Active = false,
-	}, toggle)
-	new("TextLabel", {
-		Size = U(1, -100, 0, 14), Position = O(12, 25), BackgroundTransparency = 1, Text = "Подсветка игроков и NPC",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, Active = false,
-	}, toggle)
-	local tsw, tpaint = makeSwitch(toggle)
-	tsw.AnchorPoint, tsw.Position = V2(1, 0.5), U(1, -12, 0.5, 0)
-	local function paintToggle(anim)
-		tLbl.Text = CFG.On and "Enabled" or "Disabled"
-		tpaint(CFG.On, anim)
-	end
+	sectionLabel(pm, "ESP", 0)
+	local _, paintToggle = toggleCard(pm, "Enable ESP", 1, function() return CFG.On end, function(v)
+		CFG.On = v
+		updAll()
+	end)
 	table.insert(repaints, function() paintToggle(false) end)
 
 	sectionLabel(pm, "ЦЕЛИ ПОДСВЕТКИ", 2)
-	-- сегментированный переключатель: выбранный сегмент светлее и с яркой обводкой
-	local segTrack = new("Frame", {Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = 3}, pm)
+	-- сегментированный переключатель: выбранный сегмент светлее и с тонким контуром
+	local segTrack = new("Frame", {Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card, LayoutOrder = 3}, pm)
 	rr(segTrack, 8)
 	outline(segTrack)
 	local segInd = new("Frame", {Size = U(1 / 3, -6, 1, -6), Position = U(0, 3, 0, 3), BackgroundColor3 = C.Sel, Active = false}, segTrack)
 	rr(segInd, 6)
-	outline(segInd, OUT.Active)
+	outline(segInd, OUT.Hover)
 	local segBtns = {}
 	local function paintSeg(anim)
 		local idx = table.find(MODES, CFG.Mode) or 1
@@ -4567,7 +4553,7 @@ local function startMain()
 	for i, m in MODES do
 		segBtns[i] = new("TextButton", {
 			Size = U(1 / 3, 0, 1, 0), Position = U((i - 1) / 3, 0, 0, 0), BackgroundTransparency = 1,
-			Text = m, Font = GB, TextSize = 12, TextColor3 = C.Mut, AutoButtonColor = false, ZIndex = 2,
+			Text = m, FontFace = GB, TextSize = 12, TextColor3 = C.Mut, AutoButtonColor = false, ZIndex = 2,
 		}, segTrack)
 		on(segBtns[i].Activated, function()
 			CFG.Mode = m
@@ -4596,6 +4582,7 @@ local function startMain()
 
 	-- ===== Страница Extra =====
 	local pe = pages.Extra
+	sectionLabel(pe, "FILTERS", 0)
 	makeChips(chipGrid(pe, 1), {{"Distance", "Dist"}, {"HP color", "HPColor", refreshHL}, {"Limit nearest", "Limit"}, {"Hide native", "HideNative"}})
 
 	local _, paintFriend = cycleCard(pe, "Friends", 2, function() return CFG.FriendMode end, function()
@@ -4611,11 +4598,9 @@ local function startMain()
 	local ftext = new("TextBox", {
 		Size = U(1, -76, 1, 0), BackgroundColor3 = C.Input, LayoutOrder = 2,
 		Text = CFG.NpcText, PlaceholderText = "имена через запятую", TextColor3 = C.W,
-		PlaceholderColor3 = C.Mut, Font = GM, TextSize = 12, ClearTextOnFocus = false,
+		PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
 	}, frow)
-	rr(ftext, 8)
-	local ftextStroke = outline(ftext)
-	on(ftext.Focused, function() tween(ftextStroke, fast, {Transparency = OUT.Active}) end)
+	Skin.field(ftext)
 	local function paintFilter()
 		local off = CFG.NpcFilter == "Off"
 		fmode.Text = CFG.NpcFilter
@@ -4628,7 +4613,6 @@ local function startMain()
 		updAll()
 	end)
 	on(ftext.FocusLost, function()
-		tween(ftextStroke, fast, {Transparency = OUT.Idle})
 		CFG.NpcText = ftext.Text
 		parseWords()
 		updAll()
@@ -4638,7 +4622,7 @@ local function startMain()
 	new("TextLabel", {
 		Size = U(1, 0, 0, 28), BackgroundTransparency = 1, TextWrapped = true,
 		Text = "Only — только совпавшие, Hide — скрыть совпавших. Работает для NPC.",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL,
 		TextYAlignment = Enum.TextYAlignment.Top, LayoutOrder = 5,
 	}, pe)
 
@@ -4646,10 +4630,9 @@ local function startMain()
     local modelBox = new("TextBox", {
         Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = 7,
         Text = CFG.ModelNames, PlaceholderText = "Все модели / имена через запятую", TextColor3 = C.W,
-        PlaceholderColor3 = C.Mut, Font = GM, TextSize = 12, ClearTextOnFocus = false,
+        PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
     }, pe)
-    rr(modelBox, 8)
-    outline(modelBox)
+    Skin.field(modelBox)
     new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, modelBox)
     on(modelBox.FocusLost, function()
         CFG.ModelNames = modelBox.Text
@@ -4687,7 +4670,7 @@ local function startMain()
     on(modelBox.FocusLost, paintModelPick)
     new("TextLabel", {Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 9,
         Text = "Кнопка перебирает найденные модели. Или введи имена/полный путь через запятую; пусто — все. Включи NPC отдельно в Aim и ESP.",
-        TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, pe)
+        TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, pe)
     local resetBtn = button(pe, "Reset settings", {Size = U(1, 0, 0, 40), LayoutOrder = 10}, {danger = true})
 	local rArmed = false
 	local function disarmReset()
@@ -4727,6 +4710,7 @@ local function startMain()
 
 	-- ===== Страница Color =====
 	local refreshPicker
+	sectionLabel(pages.Color, "PALETTE", 0)
 	local ctabRow = row(pages.Color, 30, 5, 1)
 	local ctab = {}
 	local function tabsPaint()
@@ -4825,6 +4809,7 @@ local function startMain()
 	end
 
 	-- ===== Страница Sizes =====
+	sectionLabel(pages.Sizes, "SIZE & OPACITY", 0)
 	local sOrd = 0
 	local function slider(title, key, min, max, pct, fmt)
 		sOrd += 1
@@ -4858,12 +4843,12 @@ local function startMain()
 	local head = row(listView, 26, 6, 1)
 	new("TextLabel", {
 		Size = U(1, -66, 1, 0), BackgroundTransparency = 1, Text = "Tap: Mark > Hide > Off",
-		TextColor3 = C.Mut, Font = GM, TextSize = 11, TextXAlignment = XL, LayoutOrder = 1,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = XL, LayoutOrder = 1,
 	}, head)
 	local clearBtn = button(head, "Clear", {Size = O(60, 26), TextSize = 11, TextColor3 = C.Mut, LayoutOrder = 2})
 	local listUI = new("ScrollingFrame", {
 		Size = U(1, 0, 1, -32), LayoutOrder = 2, BackgroundTransparency = 1, BorderSizePixel = 0,
-		ScrollBarThickness = 3, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.3,
+		ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.6,
 		CanvasSize = U(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	}, listView)
 	new("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.Name}, listUI)
@@ -4874,7 +4859,7 @@ local function startMain()
 	-- --- экран настроек одного игрока ---
 	local detail = new("ScrollingFrame", {
 		Size = S(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
-		ScrollBarThickness = 3, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.3,
+		ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.6,
 		CanvasSize = U(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	}, pp)
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, detail)
@@ -4887,7 +4872,7 @@ local function startMain()
 	local dHead = row(detail, 28, 6, 1)
 	local backBtn = button(dHead, "‹ Back", {Size = O(64, 28), TextSize = 11, LayoutOrder = 1})
 	local dName = new("TextLabel", {
-		Size = U(1, -70, 1, 0), BackgroundTransparency = 1, Text = "", TextColor3 = C.W, Font = GB,
+		Size = U(1, -70, 1, 0), BackgroundTransparency = 1, Text = "", TextColor3 = C.W, FontFace = GB,
 		TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, LayoutOrder = 2,
 	}, dHead)
 	sectionLabel(detail, "ЭЛЕМЕНТЫ (Auto = как в общих настройках)", 2)
@@ -4898,17 +4883,16 @@ local function startMain()
 	}
 	local triLbl = {}
 	for i, d in TRI do
-		local b = new("TextButton", {LayoutOrder = i, BackgroundColor3 = C.Card, Text = "", AutoButtonColor = false}, dgrid)
-		rr(b, 8)
-		hoverable(b, outline(b), {bg = C.Card, bgHover = C.Sel})
+		local b = Skin.setting(dgrid, i, true)
 		new("TextLabel", {
-			Size = U(1, -56, 1, 0), Position = O(10, 0), BackgroundTransparency = 1, Text = d[1],
-			TextColor3 = C.W, Font = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+			Size = U(1, -88, 1, 0), Position = O(Skin.Inset, 0), BackgroundTransparency = 1, Text = d[1],
+			TextColor3 = C.W, FontFace = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, b)
 		triLbl[d[2]] = new("TextLabel", {
-			Size = O(44, 34), AnchorPoint = V2(1, 0), Position = U(1, -8, 0, 0), BackgroundTransparency = 1,
-			Font = GB, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right, Text = "Auto", TextColor3 = C.Mut, Active = false,
+			Size = O(46, 24), AnchorPoint = V2(1, 0.5), Position = U(1, -Skin.Inset, 0.5, 0), BackgroundColor3 = C.Sel,
+			FontFace = GM, TextSize = 12, Text = "Auto", TextColor3 = C.Mut, Active = false,
 		}, b)
+		rr(triLbl[d[2]], 6)
 		on(b.Activated, function()
 			if not selP then return end
 			local id = tostring(selP.UserId)
@@ -5019,27 +5003,27 @@ local function startMain()
 	table.insert(repaints, function() refreshRows(); paintDetail() end)
 	local function addRow(p)
 		if p == LP or rowsUI[p] then return end
-		local b = button(listUI, "", {Size = U(1, 0, 0, 38), BackgroundColor3 = C.Card, Name = p.Name:lower()})
-		local acc = new("Frame", {Size = O(3, 20), Position = O(6, 9), BackgroundColor3 = C.W, BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, b)
+		local b = button(listUI, "", {Size = U(1, 0, 0, 48), BackgroundColor3 = C.Card, Name = p.Name:lower()})
+		local acc = new("Frame", {Size = O(3, 20), Position = O(6, 14), BackgroundColor3 = C.W, BackgroundTransparency = 1, BorderSizePixel = 0, Active = false}, b)
 		round(acc, 2)
-		local av = new("ImageLabel", {Size = O(28, 28), Position = O(14, 5), BackgroundColor3 = C.Input, Active = false}, b)
-		round(av, 14)
+		local av = new("ImageLabel", {Size = O(30, 30), Position = O(14, 9), BackgroundColor3 = C.Input, Active = false}, b)
+		rr(av, 7, 10)
 		local ring = stroke(av, RING, 0, 1.5)
 		new("TextLabel", {
-			Size = U(1, -140, 0, 18), Position = O(50, 4), BackgroundTransparency = 1, Text = p.DisplayName,
-			TextColor3 = C.W, Font = GB, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+			Size = U(1, -140, 0, 18), Position = O(54, 6), BackgroundTransparency = 1, Text = p.DisplayName,
+			TextColor3 = C.W, FontFace = GB, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, b)
 		local sub = new("TextLabel", {
-			Size = U(1, -140, 0, 12), Position = O(50, 21), BackgroundTransparency = 1, Text = "",
-			TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
+			Size = U(1, -150, 0, 14), Position = O(54, 25), BackgroundTransparency = 1, Text = "",
+			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, Active = false,
 		}, b)
 		local tag = new("TextLabel", {
-			Size = O(52, 38), AnchorPoint = V2(1, 0), Position = U(1, -40, 0, 0), BackgroundTransparency = 1,
-			Text = "Visible", TextColor3 = C.Mut, Font = GB, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right, Active = false,
+			Size = O(52, 48), AnchorPoint = V2(1, 0), Position = U(1, -40, 0, 0), BackgroundTransparency = 1,
+			Text = "Visible", TextColor3 = C.Mut, FontFace = GB, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right, Active = false,
 		}, b)
 		-- кнопка справа: персональные настройки подсветки
-		local gear = button(b, "›", {
-			Size = O(28, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -5, 0.5, 0), TextSize = 18, ZIndex = 2,
+		local gear = Skin.iconAction(b, "Next", 0, {
+			Name = "PlayerDetail", Size = O(28, 28), AnchorPoint = V2(1, 0.5), Position = U(1, -5, 0.5, 0), TextSize = 18, ZIndex = 2,
 		})
 		rowsUI[p] = {btn = b, tag = tag, acc = acc, ring = ring, sub = sub}
 		task.spawn(function()
@@ -5070,6 +5054,7 @@ local function startMain()
 
 	-- ===== Страница Performance =====
 	local pv2 = pages.Visual
+	sectionLabel(pv2, "PERFORMANCE", 0)
 	local paintCap
 	local perfChips = {
 		{"Team colors", "TeamColors", function() refreshHL(); refreshRows() end},
@@ -5103,7 +5088,7 @@ local function startMain()
 	new("TextLabel", {
 		Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 5,
 		Text = "Low-end: без анимаций, 12 ближайших целей, ESP 20 Гц. Чем ниже частота ESP, тем реже обновляются подписи и HP-бары.",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, pv2)
 
 	-- ===== Страница Appearance (настройки интерфейса) =====
@@ -5142,8 +5127,12 @@ local function startMain()
 	end
 	local function paintAccents()
 		applyAccent()
-		for inst, prop in accents do
-			if inst.Parent then inst[prop] = C.Acc else accents[inst] = nil end
+		for inst, props in accents do
+			if inst.Parent then
+				for prop, token in props do inst[prop] = C[token] end
+			else
+				accents[inst] = nil
+			end
 		end
 	end
 	local pend = false
@@ -5193,6 +5182,7 @@ local function startMain()
 		paintThemeTabs()
 	end
 	applyUIAll = function()
+		chrome.maximize(false)
 		setTheme(UICFG.Theme)
 		applyLook()
 		paintAccents()
@@ -5213,12 +5203,12 @@ local function startMain()
 	local winReset = button(pa, "Reset window size & position", {Size = U(1, 0, 0, 40), LayoutOrder = nextA()})
 	on(winReset.Activated, function()
 		UICFG.PanelW, UICFG.PanelH, UICFG.PanelCX, UICFG.PanelCY = PW, PH, -1, -1
-		applySize()
+		chrome.maximize(false)
 	end)
 	new("TextLabel", {
 		Size = U(1, 0, 0, 28), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextA(),
 		Text = "Размер окна: тяни за правый нижний угол. Двойное касание угла — сброс.",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, pa)
 	-- ----- фон окна: любая картинка по ссылке или ID -----
 	-- ID / rbxassetid:// / ссылка roblox.com работают везде. Прямая ссылка (png/jpg) скачивается через request/HttpGet,
@@ -5228,7 +5218,7 @@ local function startMain()
 	local function setBgStatus(msg, ok)
 		if bgStatus then
 			bgStatus.Text = msg
-			bgStatus.TextColor3 = ok == true and C.On or ok == false and C.Off or C.Mut
+			bgStatus.TextColor3 = ok == true and C.W or ok == false and C.Danger or C.Mut
 		end
 	end
 	applyBg = function(src, quiet)
@@ -5281,15 +5271,12 @@ local function startMain()
 	sectionLabel(pa, "BACKGROUND IMAGE", nextA())
 	local bgBox = new("TextBox", {
 		Size = U(1, 0, 0, 40), BackgroundColor3 = C.Input, LayoutOrder = nextA(), Text = UICFG.BgImage,
-		PlaceholderText = "ссылка на картинку или ID", TextColor3 = C.W, PlaceholderColor3 = C.Mut, Font = GM, TextSize = 12,
+		PlaceholderText = "ссылка на картинку или ID", TextColor3 = C.W, PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12,
 		ClearTextOnFocus = false, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd,
 	}, pa)
-	rr(bgBox, 8)
+	Skin.field(bgBox)
 	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, bgBox)
-	local bgBoxStroke = outline(bgBox)
-	on(bgBox.Focused, function() tween(bgBoxStroke, fast, {Transparency = OUT.Active}) end)
 	on(bgBox.FocusLost, function()
-		tween(bgBoxStroke, fast, {Transparency = OUT.Idle})
 		-- вставил ссылку и ушёл с поля — применяется сразу (Enter / Apply не обязательны)
 		if trimS(bgBox.Text) ~= trimS(UICFG.BgImage) then applyBg(bgBox.Text) end
 	end)
@@ -5301,7 +5288,7 @@ local function startMain()
 	bgStatus = new("TextLabel", {
 		Size = U(1, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextA(),
 		Text = UICFG.BgImage ~= "" and "Загрузка сохранённого фона…" or "Вставь ссылку на PNG/JPG или ID картинки и нажми Apply.",
-		TextColor3 = C.Mut, Font = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, pa)
 	aSlider("Image Transparency", "BgImgAlpha", 0, 0.95, 0.05, pct)
 	aSlider("Card Transparency (with image)", "CardAlpha", 0, 0.9, 0.05, pct)
@@ -5336,11 +5323,7 @@ local function startMain()
 	local accRow = row(pa, 40, 8, nextA())
 	local accPicker, accRefresh
 	for i, p in ACC_PRESETS do
-		local b = new("TextButton", {
-			Size = O(40, 40), BackgroundColor3 = Color3.fromHSV(p[1], p[2], p[3]), Text = "", AutoButtonColor = false, LayoutOrder = i,
-		}, accRow)
-		rr(b, 8)
-		outline(b, 0.4)
+		local b = Skin.swatch(accRow, i, #ACC_PRESETS, Color3.fromHSV(p[1], p[2], p[3]))
 		on(b.Activated, function()
 			UICFG.Accent = {h = p[1], s = p[2], v = p[3]}
 			accRefresh()
@@ -5367,87 +5350,53 @@ local function startMain()
 		warn("[Enkaisy] Aim init error: " .. tostring(resA))
 	end
 
-	-- Справка открывается поверх страницы, поэтому работает и на сенсорном экране.
-    local helpBox = new("Frame", {Size = U(1, -24, 0, 150), AnchorPoint = V2(0.5, 0.5),
-        Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Card, Visible = false, ZIndex = 50}, panel)
-    rr(helpBox, 10)
-    outline(helpBox, OUT.Active)
-    local helpTitle = new("TextLabel", {Size = U(1, -50, 0, 28), Position = O(12, 8), BackgroundTransparency = 1,
-        Text = "", TextColor3 = C.W, Font = GB, TextSize = 13, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 51}, helpBox)
-    local helpScroll = new("ScrollingFrame", {Size = U(1, -24, 1, -44), Position = O(12, 36),
-        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Mut,
-        CanvasSize = O(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 51}, helpBox)
-    local helpText = new("TextLabel", {Size = U(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
-        Text = "", TextColor3 = C.W, Font = GM, TextSize = 12, TextWrapped = true,
-        TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 52}, helpScroll)
-    local helpClose = new("TextButton", {Size = O(32, 32), AnchorPoint = V2(1, 0), Position = U(1, -6, 0, 6),
-        BackgroundColor3 = C.Input, Text = "×", TextColor3 = C.W, Font = GB, TextSize = 18, ZIndex = 51}, helpBox)
-    rr(helpClose, 8)
-    on(helpClose.Activated, function() helpBox.Visible = false end)
-    helpUI.open = function(title, desc)
-        local info = helpUI.info[title]
-        helpTitle.Text = title
-        helpText.Text = info and ("RU: " .. info[1] .. "\n\nEN: " .. info[2])
-            or (desc and ("RU: " .. desc .. "\n\nEN: Description not available yet.")
-            or "RU: Описание пока недоступно.\n\nEN: Description not available yet.")
-        helpScroll.CanvasPosition = V2(0, 0)
-        helpBox.Visible = true
-    end
-    -- Поиск по названиям папок и карточек, включая известные русские описания.
-    local function fold(s)
-        s = string.lower(s)
-        local upper, lower = {"А","Б","В","Г","Д","Е","Ё","Ж","З","И","Й","К","Л","М","Н","О","П","Р","С","Т","У","Ф","Х","Ц","Ч","Ш","Щ","Ъ","Ы","Ь","Э","Ю","Я"},
-            {"а","б","в","г","д","е","ё","ж","з","и","й","к","л","м","н","о","п","р","с","т","у","ф","х","ц","ч","ш","щ","ъ","ы","ь","э","ю","я"}
-        for i, c in upper do s = s:gsub(c, lower[i]) end
-        return s
-    end
-    local function filterTabs()
-        local q = fold(search.Text:match("^%s*(.-)%s*$"))
-        local matches = {}
-        for _, n in TABS do
-            local hay = n .. " " .. (DISP[n] or "") .. " " .. (SUB[n] or "")
-            for _, g in GROUPS do if table.find(g[2], n) then hay ..= " " .. g[1] end end
-            for _, item in helpUI.items do
-                if item.card:IsDescendantOf(pages[n]) then
-                    local info = helpUI.info[item.title]
-                    hay ..= " " .. item.title .. " " .. (item.desc or "") .. (info and (" " .. info[1] .. " " .. info[2]) or "")
-                end
-            end
-            matches[n] = q == "" or string.find(fold(hay), q, 1, true) ~= nil
-        end
-        local y = 0
-        for _, g in GROUPS do
-            local any = false
-            for _, n in g[2] do if matches[n] then any = true end end
-            groupLabels[g[1]].Visible = any
-            if any then
-                groupLabels[g[1]].Position = O(8, y + 2)
-                y += 20
-                for _, n in g[2] do
-                    ptabs[n].button.Visible = matches[n]
-                    if matches[n] then
-                        tabPos[n] = y
-                        ptabs[n].button.Position = O(2, y)
-                        y += TABH + TGAP
-                    end
-                end
-                y += 6
-            else
-                for _, n in g[2] do ptabs[n].button.Visible = false end
-            end
-        end
-        tabsHolder.CanvasSize = O(0, y)
-        tabsHolder.CanvasPosition = V2(0, 0)
-        pill.Visible = matches[curTab]
-        if pill.Visible then pill.Position = O(2, tabPos[curTab]) end
-    end
-    on(search:GetPropertyChangedSignal("Text"), filterTabs)
+	on(chrome.close.Activated, helpUI.mount(panel, stop))
+	-- Подсказки статичны после сборки страниц. Индекс строится только один раз,
+	-- поэтому набор текста на телефоне не обходит все карточки на каждую букву.
+	local function fold(s)
+		s = string.lower(s)
+		return (s:gsub("[\208\209][\128-\191]", function(c)
+			local n = utf8.codepoint(c)
+			if n == 0x401 then return "ё" end
+			if n >= 0x410 and n <= 0x42F then return utf8.char(n + 32) end
+			return c
+		end))
+	end
+	local searchIndex = {}
+	for _, folder in folders do
+		local n = folder.id
+		local words = {n, folder.title or n, folder.keywords}
+		for _, item in helpUI.items do
+			if item.card:IsDescendantOf(pages[n]) then
+				table.insert(words, item.title)
+				if item.desc then table.insert(words, item.desc) end
+				local info = helpUI.info[item.title]
+				if info then table.insert(words, info[1]); table.insert(words, info[2]) end
+			end
+		end
+		searchIndex[n] = fold(table.concat(words, " "))
+	end
+	local function filterTabs()
+		local q = fold(search.Text:match("^%s*(.-)%s*$"))
+		local y = 0
+		for _, folder in folders do
+			local n = folder.id
+			local tab = ptabs[n].button
+			tab.Visible = q == "" or string.find(searchIndex[n], q, 1, true) ~= nil
+			if tab.Visible then
+				tab.Position = O(2, y)
+				y += TABH + TGAP
+			end
+		end
+		empty.Visible = y == 0
+		tabsHolder.CanvasSize, tabsHolder.CanvasPosition = O(0, y), V2(0, 0)
+	end
+	on(search:GetPropertyChangedSignal("Text"), filterTabs)
 
 	-- ===== События =====
 	movable(openBtn, openBtn, function() setOpen(true) end, function() clampGui(openBtn) end)
-	movable(titleBar, panel, nil, commitPanel)
-	on(close.Activated, function() setOpen(false) end)
-	on(toggle.Activated, function() CFG.On = not CFG.On; updAll(); paintToggle(true) end)
+	movable(titleBar, panel, nil, commitPanel, function() return not chrome.maximized end)
+	on(chrome.min.Activated, function() setOpen(false) end)
 	on(LP:GetPropertyChangedSignal("Team"), function() if CFG.TeamCheck then updAll() else refreshHL() end end)
 	on(RS.Heartbeat, frame)
 	on(Players.PlayerAdded, track)
@@ -5462,7 +5411,7 @@ local function startMain()
 	paintToggle(false)
 	paintSeg(false)
 	refreshPicker()
-	show(table.find(TABS, UICFG.Tab) and UICFG.Tab or "Main")
+	show(UICFG.Tab)
 	applyLook()
 	if UICFG.BgImage ~= "" then applyBg(UICFG.BgImage, true) end
 	applyFps()
@@ -5480,57 +5429,55 @@ local function startMain()
 end
 
 -- ===== Экран ключа =====
--- Карточка строго по центру экрана, 380x296 (масштабируется под экран и UI Scale, не обрезается), 
--- поля 46 px под палец; при экранной клавиатуре карточка приподнимается ровно настолько, чтобы поле не скрылось.
+-- Та же шапка и материалы, что у основного окна. Масштаб и сдвиг под клавиатуру
+-- считаются от размеров карточки; логика проверки ключа от оформления не зависит.
 local function keyScreen(done)
-	local KW, KH = 380, 296
+	local KW, KH = 406, 302
 	pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end) -- центр = точный центр экрана, без отступа выреза
 	blur = new("BlurEffect", {Size = 0}, Lighting)
 	tween(blur, slow, {Size = KEY_BLUR})
 	local dim = new("Frame", {Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 1, Active = true, ZIndex = 10}, gui)
 	tween(dim, slow, {BackgroundTransparency = KEY_DIM})
 	local card = new("CanvasGroup", {
-		Size = O(KW, KH), AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0),
-		BackgroundColor3 = C.Side, GroupTransparency = 1,
+		Name = "KeyWindow", Size = O(KW, KH), AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0),
+		BackgroundColor3 = C.Win, GroupTransparency = 1,
 	}, dim)
-	rr(card, 16)
-	outline(card, 0.45)
+	rr(card, 14)
+	outline(card, OUT.Window)
 	local function keyScale()
 		local a = gui.AbsoluteSize
 		local maxK = math.max(0.4, math.min((a.X - 24) / KW, (a.Y - 24) / KH))
-		return math.min(maxK, 1.1 * UICFG.UIScale)
+		return math.min(maxK, UICFG.UIScale)
 	end
 	local sc = new("UIScale", {Scale = keyScale() * 0.92}, card)
 	tween(card, slow, {GroupTransparency = 0}) tween(sc, slow, {Scale = keyScale()})
 	local closed = false
-	local xBtn = new("TextButton", {
-		Size = O(36, 36), AnchorPoint = V2(1, 0), Position = U(1, -12, 0, 12),
-		BackgroundColor3 = C.Input, Text = "", AutoButtonColor = false, ZIndex = 5,
-	}, card)
-	rr(xBtn, 10)
-	hoverable(xBtn, outline(xBtn))
-	xMark(xBtn, C.W)
-	local lg = logo(60, 32, card)
-	lg.AnchorPoint, lg.Position = V2(0.5, 0), U(0.5, 0, 0, 24)
-	local function label(y, h, text, color, font, size)
-		return new("TextLabel", {
-			Size = U(1, 0, 0, h), Position = O(0, y), BackgroundTransparency = 1,
-			Text = text, TextColor3 = color, Font = font, TextSize = size,
-		}, card)
-	end
-	label(94, 28, "Enkaisy", C.W, GB, 22)
-	local sub = label(124, 20, "Введите ключ доступа", C.Mut, Enum.Font.Gotham, 14)
-	local status = label(268, 20, "", C.Off, GM, 13)
-	local box = new("TextBox", {
-		Size = U(1, -40, 0, 46), Position = O(20, 158), BackgroundColor3 = C.Input,
-		Text = "", PlaceholderText = "• • • • •", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
-		Font = GB, TextSize = 20, ClearTextOnFocus = false,
-	}, card)
-	rr(box, 10)
-	local boxStroke = outline(box, 0.5)
-	local btn = button(card, "Активировать", {
-		Size = U(1, -40, 0, 46), Position = O(20, 214), TextSize = 16,
-	}, {primary = true})
+	local header = Skin.header(card)
+	Skin.badge(header, "v4.2 · Mobile", 138, 78)
+	local xBtn = Skin.iconButton(header, "Close", 6)
+	local keyIcon = icon("Key", card, 18, C.W)
+	keyIcon.Position = O(24, Skin.Header + 23)
+	new("TextLabel", {Size = U(1, -60, 0, 24), Position = O(42, Skin.Header + 11), BackgroundTransparency = 1,
+		Text = "Ключ доступа", TextColor3 = C.W, FontFace = GB, TextSize = 18, TextXAlignment = XL}, card)
+	local section = sectionLabel(card, "АВТОРИЗАЦИЯ")
+	section.Size, section.Position = U(1, -28, 0, 18), O(14, 96)
+	local form = new("Frame", {Size = U(1, -28, 0, 97), Position = O(14, 120), BackgroundColor3 = C.Card}, card)
+	rr(form, Skin.Radius)
+	outline(form)
+	new("TextLabel", {Size = U(1, -28, 0, 18), Position = O(14, 8), BackgroundTransparency = 1,
+		Text = "Ключ активации", TextColor3 = C.W, FontFace = GM, TextSize = 14, TextXAlignment = XL}, form)
+	local sub = new("TextLabel", {Size = U(1, -28, 0, 16), Position = O(14, 26), BackgroundTransparency = 1,
+		Text = "Введите ключ, чтобы открыть меню Enkaisy.", TextColor3 = C.Mut, FontFace = GR, TextSize = 12, TextXAlignment = XL}, form)
+	local box = new("TextBox", {Name = "AccessKey", Size = U(1, -24, 0, 42), Position = O(12, 46), BackgroundColor3 = C.Side,
+		Text = "", PlaceholderText = "Ваш ключ", TextColor3 = C.W, PlaceholderColor3 = C.Mut,
+		FontFace = GM, TextSize = 15, TextXAlignment = XL, ClearTextOnFocus = false}, form)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12)}, box)
+	Skin.field(box)
+	local btn = button(card, "Активировать", {Size = U(1, -28, 0, 44), Position = O(14, 226), TextSize = 14}, {primary = true})
+	local nextIcon = icon("Next", btn, 14, C.AccTx)
+	nextIcon.Position = U(1, -18, 0.5, 0)
+	local status = new("TextLabel", {Name = "Status", Size = U(1, -28, 0, 18), Position = O(14, 276), BackgroundTransparency = 1,
+		Text = "Ожидание ключа", TextColor3 = C.Mut, FontFace = GM, TextSize = 12, TextXAlignment = XL}, card)
 
 	-- фон-картинка из Appearance: та же ссылка / ID, прозрачность картинки, режим и прозрачность карточек
 	do
@@ -5541,7 +5488,7 @@ local function keyScreen(done)
 				Name = "KeyBgImage", Size = S(1, 1), BackgroundTransparency = 1, Image = "", Visible = false, Active = false,
 				ZIndex = 0, ScaleType = FIT[UICFG.BgImgFit] or Enum.ScaleType.Crop, ImageTransparency = 1,
 			}, card)
-			local glassItems = {xBtn, lg, box, btn}
+			local glassItems = {form, box}
 			task.spawn(function()
 				local asset = bgFetch(src)
 				if not asset or closed or not img.Parent then return end
@@ -5550,6 +5497,7 @@ local function keyScreen(done)
 				if closed or not img.Parent then return end
 				if not img.IsLoaded then img.Visible, img.Image = false, "" return end
 				tween(img, slow, {ImageTransparency = UICFG.BgImgAlpha})
+				header.BackgroundTransparency = UICFG.BgAlpha
 				for _, o in glassItems do tween(o, slow, {BackgroundTransparency = UICFG.CardAlpha}) end
 				sub.TextColor3 = C.W
 			end)
@@ -5585,7 +5533,7 @@ local function keyScreen(done)
 		if busy then return end
 		busy = true
 		if hashKey((box.Text:gsub("%s", ""))) == KEY_HASH then
-			status.TextColor3, status.Text = C.On, "Ключ принят"
+			status.TextColor3, status.Text = C.W, "Ключ принят"
 			task.wait(0.4)
 			if closed then return end
 			tween(card, slow, {GroupTransparency = 1})
@@ -5599,7 +5547,7 @@ local function keyScreen(done)
 			return
 		end
 		tries += 1
-		status.TextColor3, status.Text = C.Off, "Неверный ключ"
+		status.TextColor3, status.Text = C.Danger, "Неверный ключ"
 		if CFG.Anim then
 			for _, dx in {-12, 12, -8, 8, -4, 4, 0} do
 				if closed then return end
@@ -5615,7 +5563,7 @@ local function keyScreen(done)
 				task.wait(1)
 			end
 			if closed then return end
-			tries, status.Text = 0, ""
+			tries, status.Text, status.TextColor3 = 0, "Ожидание ключа", C.Mut
 		end
 		box.Text, busy = "", false
 	end
@@ -5625,13 +5573,11 @@ local function keyScreen(done)
 	end)
 	on(btn.Activated, submit)
 	on(box.Focused, function()
-		tween(boxStroke, fast, {Transparency = OUT.Active})
 		task.delay(0.3, function()
 			if not closed and dim.Parent then place(true) end
 		end)
 	end)
 	on(box.FocusLost, function(enter)
-		tween(boxStroke, fast, {Transparency = 0.5})
 		if dim.Parent then place(true) end
 		if enter then submit() end
 	end)
