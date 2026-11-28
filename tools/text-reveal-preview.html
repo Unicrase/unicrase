@@ -38,14 +38,15 @@
 <body>
 <div class="wrap">
   <h1>Появление текста при клике на папку</h1>
-  <p class="hint">В скрипте включён вариант <b>2 — буквы по одной</b>. Остальные оставлены для сравнения.</p>
+  <p class="hint">В скрипте включён вариант <b>3 — частицы-искры</b>: каждая буква собирается из искр.</p>
 
   <div class="modes" id="modes">
     <div class="mode" data-mode="type">1 · печатная машинка</div>
-    <div class="mode on" data-mode="letters">2 · буквы по одной (вверх) — в скрипте</div>
-    <div class="mode" data-mode="wipe">3 · раскрытие маской</div>
-    <div class="mode" data-mode="glitch">4 · размытие + глитч</div>
-    <div class="mode" data-mode="word">5 · по словам</div>
+    <div class="mode" data-mode="letters">2 · буквы по одной (вверх)</div>
+    <div class="mode on" data-mode="particles">3 · частицы-искры — в скрипте</div>
+    <div class="mode" data-mode="wipe">4 · раскрытие маской</div>
+    <div class="mode" data-mode="glitch">5 · размытие + глитч</div>
+    <div class="mode" data-mode="word">6 · по словам</div>
   </div>
 
   <div class="panel" id="panel">
@@ -57,7 +58,7 @@
 </div>
 
 <div class="bar">
-  <span>эффект: <b id="name">буквы по одной (вверх)</b></span>
+  <span>эффект: <b id="name">частицы-искры</b></span>
   <span class="pill" id="replay">повторить</span>
   <span class="pill" id="slow">скорость 1×</span>
 </div>
@@ -68,7 +69,7 @@ const CARDS = ["Highlight", "Names", "ESP box"];
 const AXES = {title: document.getElementById('title'),
               cards: [document.getElementById('t1'), document.getElementById('t2'), document.getElementById('t3')]};
 const panel = document.getElementById('panel');
-let mode = 'letters', speed = 1, timers = [];
+let mode = 'particles', speed = 1, timers = [];
 
 const SPEED_STEPS = [1, 0.6, 0.35];
 const SPEED_LABELS = ["1×", "медленнее", "ещё медленнее"];
@@ -77,6 +78,7 @@ function clearTimers(){ timers.forEach(t => clearTimeout(t)); timers = []; }
 function later(ms, fn){ timers.push(setTimeout(fn, ms / speed)); }
 function reset(){
   clearTimers();
+  document.querySelectorAll('body > div[style*="border-radius:50%"]').forEach(n => n.remove());
   AXES.title.textContent = "";
   AXES.title.style.cssText = "";
   AXES.cards.forEach(c => { c.textContent = ""; c.style.cssText = ""; c.parentElement.style.opacity = "1"; c.parentElement.style.transform = "none"; });
@@ -138,7 +140,51 @@ function lettersMode(){
   }));
 }
 
-/* 3. раскрытие маской: текст выезжает из-под clip-path */
+/* 3. частицы-искры: у каждой буквы вспыхивают искры и слетаются к её месту */
+function particleMode(){
+  const targets = [[AXES.title, TITLE, 2.6, 0.026], ...AXES.cards.map((el, n) => [el, CARDS[n], 2, 0.012])];
+  targets.forEach(([el, txt, per, step], ti) => {
+    later(ti * 40, () => {
+      el.textContent = txt;
+      // прячем буквы: они проявятся, когда искры долетели
+      el.style.transition = 'opacity 280ms ease';
+      el.style.opacity = '0';
+      const rect = el.getBoundingClientRect();
+      const w = rect.width || txt.length * 9, hgt = rect.height || 18;
+      // на каждую букву — несколько искр, летящих к её центру
+      const perLetter = Math.max(1, Math.round(w / Math.max(1, txt.length)));
+      for (let i = 0; i < txt.length; i++){
+        const cx = rect.left + (i + 0.5) * perLetter;
+        const cy = rect.top + hgt / 2;
+        for (let k = 0; k < per; k++){
+          const spark = document.createElement('div');
+          const size = 2 + Math.random() * 2;
+          const a = Math.random() * Math.PI * 2;
+          const dist = Math.max(5, Math.min(hgt * 0.52, 14));
+          spark.style.cssText = `position:fixed;left:${cx + Math.cos(a) * dist}px;top:${cy + Math.sin(a) * dist}px;
+            width:${size}px;height:${size}px;border-radius:50%;pointer-events:none;z-index:50;
+            background:${k % 2 ? '#9fc0ff' : '#ffffff'};box-shadow:0 0 6px rgba(160,200,255,.8);
+            transition:transform 300ms cubic-bezier(.2,.8,.2,1), opacity 300ms ease`;
+          document.body.appendChild(spark);
+          const dx = cx - (cx + Math.cos(a) * dist), dy = cy - (cy + Math.sin(a) * dist);
+          const delay = i * step * 1000 + k * 18 + ti * 40;
+          setTimeout(() => {
+            spark.style.transform = `translate(${dx}px, ${dy}px) scale(.4)`;
+            spark.style.opacity = '0';
+          }, delay);
+          setTimeout(() => spark.remove(), delay + 420);
+        }
+        // буква проявляется, когда искры почти долетели
+        setTimeout(() => {
+          el.style.opacity = String((i + 1) / txt.length);
+        }, i * step * 1000 + 150 + ti * 40);
+      }
+      later(txt.length * step * 1000 + 500, () => { el.style.opacity = '1'; });
+    });
+  });
+}
+
+/* 4. раскрытие маской: текст выезжает из-под clip-path */
 function wipeMode(){
   [ [AXES.title, TITLE], ...AXES.cards.map((el, n) => [el, CARDS[n]]) ].forEach(([el, txt], n) => {
     later(n * 70, () => {
@@ -185,9 +231,10 @@ function wordMode(){
   }));
 }
 
-const RUNNERS = {type: typeMode, letters: lettersMode, wipe: wipeMode, glitch: glitchMode, word: wordMode};
-const NAMES = {type: "печатная машинка", letters: "буквы по одной (вверх)", wipe: "раскрытие маской",
-               glitch: "размытие + глитч", word: "по словам"};
+const RUNNERS = {type: typeMode, letters: lettersMode, particles: particleMode, wipe: wipeMode,
+                 glitch: glitchMode, word: wordMode};
+const NAMES = {type: "печатная машинка", letters: "буквы по одной (вверх)", particles: "частицы-искры",
+               wipe: "раскрытие маской", glitch: "размытие + глитч", word: "по словам"};
 
 function play(){
   reset();

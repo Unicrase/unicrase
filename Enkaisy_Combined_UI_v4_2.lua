@@ -45,7 +45,7 @@
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
 --       После верного ключа — заставка «осколки → UNICRASE» на 3.1 с: Michroma, градиентные осколки,
 --       кольца, блик по слову и подпись. Не пропускается — это часть открытия (AnimIntro).
---       Открытие папки: заголовок и названия карточек собираются из букв — каждая выпрыгивает снизу (AnimText).
+--       Открытие папки: заголовок и названия карточек собираются из частиц-искр, волной слева направо (AnimText).
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
 --       ESP: линии и скелет появляются и гаснут фейдом (твин стартует только на смене состояния).
@@ -919,11 +919,11 @@ local function popIn(o, on)
 		tween(sc, TWEEN.snap, {Scale = 0})
 	end
 end
--- Появление текста по буквам — «буквы по одной» из CapCut-пресетов.
--- Каждая буква — отдельный TextLabel: она выпрыгивает снизу с масштабом и пружиной (Back),
--- следующая стартует через stepDelay. Раскладка не прыгает: невидимые буквы уже занимают место,
--- поэтому ширина строки известна заранее и обрезка по краям (TextTruncate) продолжает работать.
--- Один твин на букву, никаких кадровых циклов; при выключенных анимациях текст ставится сразу.
+-- Появление текста из частиц: у каждой буквы вспыхивают искры и слетаются к её месту,
+-- буква проявляется в момент, когда они долетели. Читается как «текст собирается из пыли».
+-- Один твин на искру и на букву, без кадровых циклов; волна идёт слева направо.
+-- Ширина букв меряется TextService, поэтому волна ровная и на пропорциональном шрифте.
+-- Сам текст никуда не сдвигается: анимируются только прозрачность и масштаб на месте.
 local revealers = setmetatable({}, {__mode = "k"})
 local function revealText(label, text, opt)
 	opt = opt or {}
@@ -935,62 +935,93 @@ local function revealText(label, text, opt)
 		if layer then layer:Destroy() end
 		return
 	end
-	-- слой поверх строки: он перекрывает обычный текст, пока идёт анимация
 	if layer then layer:Destroy() end
-	label.Text = "" -- исходная строка пуста: видно только анимированные буквы
-	layer = new("Frame", {Name = "Reveal", Size = S(1, 1), BackgroundTransparency = 1, Active = false,
-		ZIndex = (label.ZIndex or 1) + 1, ClipsDescendants = false}, label)
+	label.Text = "" -- исходная строка пуста: видно только собирающиеся буквы
 
-	-- ширина каждой буквы нужна, чтобы расставить их без межбуквенных провалов
-	local function widthOf(str)
-		local ok, size = pcall(STS.GetTextSize, STS, str, label.TextSize, label.Font, V2(4000, label.AbsoluteSize.Y + 20))
-		return (ok and size and size.X) or (label.TextSize * 0.58 * #str)
-	end
-	-- utf8.graphemes отдаёт ДВА значения — начало и конец диапазона, а не символ:
-	-- символ берём из строки по этим индексам (иначе в ch окажется число)
+	-- utf8.graphemes отдаёт ДВА значения — начало и конец диапазона, а не символ
 	local glyphs, total = {}, 0
+	local font = label.FontFace
+	local size = label.TextSize
 	for first, last in utf8.graphemes(text) do
 		local ch = string.sub(text, first, last)
-		local w = math.max(1, widthOf(ch))
+		local ok, m = pcall(STS.GetTextSize, STS, ch, size, font, V2(4000, 400))
+		local w = math.max(1, (ok and m and m.X) or (size * 0.58))
 		table.insert(glyphs, {ch = ch, w = w, x = total})
 		total += w
 	end
 
-	local stepDelay = opt.step or 0.035 -- шаг старта букв
-	local rise = opt.rise or 10           -- на сколько пикселей поднимается буква
-	local dur = opt.dur or 0.3
-	if #glyphs > 28 then
-		-- очень длинное название: буквами получилось бы сотни инстансов — одной строкой, но с подъёмом
-		label.Text, label.TextTransparency = text, 1
-		label.Position = O(label.Position.X.Offset, label.Position.Y.Offset + rise)
-		if layer.Parent then layer:Destroy() end
-		tween(label, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-			{TextTransparency = 0, Position = O(label.Position.X.Offset, label.Position.Y.Offset - rise)})
-		return
-	end
-	local items = {}
+	-- слой ровно по строке: строки идут вплотную друг к другу, и слой побольше залез бы
+	-- на соседнюю настройку. Искры рождаются внутри слоя и слетаются к буквам изнутри.
+	local pad = math.max(2, math.floor(size * 0.12))
+	local h = math.max(12, label.AbsoluteSize.Y)
+	layer = new("Frame", {Name = "Reveal", Size = S(1, 1), BackgroundTransparency = 1, Active = false,
+		ZIndex = (label.ZIndex or 1) + 1}, label)
+
+	local dur = opt.dur or 0.34        -- сколько летит искра / проявляется буква
+	local stepDelay = opt.step or 0.028 -- волна слева направо
+	local per = opt.particles or 2      -- искр на букву
+	local sparks, items = {}, {}
+	local rnd = Random.new(#glyphs * 7 + math.floor(total))
+
+	-- длинную строку не разбираем на буквы: искры летят к её краям, текст проявляется целиком
+	local dense = #glyphs > 24
+
 	for i, g in ipairs(glyphs) do
-		-- один TextLabel на букву: ширину знаем, поэтому ставим его на место среза сразу
-		local lbl = new("TextLabel", {Size = O(g.w + 2, label.AbsoluteSize.Y), Position = O(math.floor(g.x), rise),
-			BackgroundTransparency = 1, Text = g.ch, TextColor3 = label.TextColor3, FontFace = label.FontFace,
-			TextSize = label.TextSize, TextXAlignment = XL, TextYAlignment = label.TextYAlignment,
-			TextTransparency = 1, TextScaled = false, ZIndex = label.ZIndex + 2, Active = false}, layer)
-		-- «выпрыгивание»: снизу + чуть меньше размером, затем пружина на место
-		local sc = new("UIScale", {Scale = 0.82}, lbl)
-		table.insert(items, {lbl = lbl, sc = sc, x = math.floor(g.x), y = label.AbsoluteSize.Y})
+		local cx = g.x + g.w * 0.5
+		local cy = h * 0.5
+		local delay = dense and (i / #glyphs) * 0.12 or (i - 1) * stepDelay
+		if not dense then
+			local lbl = new("TextLabel", {Size = O(g.w + 2, h), Position = O(math.floor(g.x), 0),
+				BackgroundTransparency = 1, Text = g.ch, TextColor3 = label.TextColor3, FontFace = font,
+				TextSize = size, TextXAlignment = XL, TextYAlignment = label.TextYAlignment,
+				TextTransparency = 1, TextScaled = false, ZIndex = label.ZIndex + 2, Active = false}, layer)
+			local sc = new("UIScale", {Scale = 1.22}, lbl)
+			table.insert(items, {lbl = lbl, sc = sc, delay = delay})
+		end
+		if not dense or i % 3 == 1 then
+			for k = 1, (dense and 2 or per) do
+				local s = rnd:NextNumber(2, 3.6)
+				-- разлёт внутри строки: смещение ограничено половиной высоты и шириной буквы
+				local a = rnd:NextNumber(0, math.pi * 2)
+				local dist = rnd:NextNumber(math.max(4, size * 0.3), math.max(6, math.min(h * 0.52, size * 1.1)))
+				local spark = new("Frame", {Name = "Spark", Size = O(s, s), AnchorPoint = V2(0.5, 0.5),
+					BackgroundColor3 = (k % 2 == 0) and C.AccTx or C.W, BackgroundTransparency = 0.15,
+					ZIndex = label.ZIndex + 3, Active = false,
+					Position = O(cx + math.cos(a) * dist, cy + math.sin(a) * dist)}, layer)
+				rr(spark, math.ceil(s))
+				table.insert(sparks, {f = spark, x = cx, y = cy, delay = delay + (k - 1) * 0.02,
+					dur = dur * rnd:NextNumber(0.8, 1.15)})
+			end
+		end
 	end
+
 	task.spawn(function()
+		-- искры: летят к центру буквы, по дороге уменьшаются и гаснут
+		for _, sp in sparks do
+			if revealers[label] ~= gen then return end
+			task.delay(sp.delay, function()
+				if revealers[label] ~= gen or not sp.f.Parent then return end
+				local from = sp.f.Position
+				local info = TweenInfo.new(sp.dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+				tween(sp.f, info, {Position = O(sp.x, sp.y), BackgroundTransparency = 0.9,
+					Size = O(1, 1), Rotation = rnd:NextInteger(-180, 180)})
+				task.delay(sp.dur, function() if sp.f.Parent then sp.f:Destroy() end end)
+			end)
+		end
+		-- буквы: проявляются, когда искры почти долетели; масштаб «садится» с 1.22 до 1
 		for _, it in items do
 			if revealers[label] ~= gen then return end
-			task.wait(stepDelay)
-			if revealers[label] ~= gen then return end
-			tween(it.lbl, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = O(it.x, 0), TextTransparency = 0})
-			spring(it.sc, {Scale = 1}, TWEEN.pop)
+			task.delay(it.delay + dur * 0.45, function()
+				if revealers[label] ~= gen or not it.lbl.Parent then return end
+				tween(it.lbl, TweenInfo.new(dur * 0.8, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0})
+				spring(it.sc, {Scale = 1}, TWEEN.pop)
+			end)
 		end
+		local wave = dense and 0.12 or math.max(0, #items - 1) * stepDelay
+		local wait = wave + dur * 1.3 + 0.12
+		task.wait(wait)
 		if revealers[label] ~= gen then return end
-		task.wait(dur + 0.1)
-		if revealers[label] ~= gen then return end
-		-- финал: возвращаем обычный текст (он уже с правильными цветами темы и обрезкой)
+		-- финал: возвращаем обычный текст (цвета темы и обрезка работают как раньше)
 		label.Text, label.TextTransparency = text, 0
 		if layer.Parent then layer:Destroy() end
 		if opt.onDone then opt.onDone() end
@@ -2573,7 +2604,7 @@ helpUI.info = {
  ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
  ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
  ["Intro after key"] = {"Заставка после верного ключа: осколки слетаются, собирается UNICRASE (шрифт Michroma), кольца и блик. Идёт 3 секунды и не пропускается; выключение — ключ сразу открывает меню.", "Intro after a valid key: shards converge, UNICRASE assembles in Michroma with rings and a shine sweep. Lasts 3 seconds and cannot be skipped; off means the key opens the menu at once."},
- ["Letters reveal"] = {"Собирает название папки и названия карточек из букв: каждая выпрыгивает снизу с пружиной; выключение — текст появляется целиком.", "Builds the folder title and card names from letters that pop up one by one with a spring; off means text appears at once."},
+ ["Particle text"] = {"Текст в папке собирается из частиц: у каждой буквы вспыхивают искры, слетаются к её месту, и буква проявляется. Выключение — текст появляется целиком.", "Folder text assembles from particles: sparks flash around each letter, converge into it, then the letter fades in. Off means text appears at once."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
@@ -5505,7 +5536,7 @@ local function startMain()
 					-- название карточки печатается одновременно с её появлением: текст «собирается» на глазах
 					local title = c:FindFirstChild("Title")
 					if title and title:IsA("TextLabel") and title.Text ~= "" then
-						revealText(title, title.Text, {step = 0.012, rise = 8, dur = 0.24})
+						revealText(title, title.Text, {step = 0.012, dur = 0.3, particles = 2})
 					end
 				end)
 			end
@@ -5823,7 +5854,7 @@ local function startMain()
 			pTitle:SetAttribute("Shown", newTitle)
 			-- Название папки печатается по буквам: короткое, поэтому успевает за 0.2–0.4 с.
 			-- Если анимации выключены, typeText просто ставит текст.
-			revealText(pTitle, newTitle, {step = 0.03, rise = 12, dur = 0.3})
+			revealText(pTitle, newTitle, {step = 0.026, dur = 0.36, particles = 3})
 			if CFG.Anim and UICFG.AnimText then
 				-- вместе с текстом мягко проявляется сама строка, чтобы смена папки читалась
 				pTitle.Position = U(RAIL - 4, Skin.RailBase + 42, 0, HDR + 9)
@@ -6438,7 +6469,7 @@ local function startMain()
 		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
 		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
 		{"Intro after key", "AnimIntro", "Заставка UNICRASE после ключа (3 с)."},
-		{"Letters reveal", "AnimText", "Буквы текста в папке выпрыгивают по одной."},
+		{"Particle text", "AnimText", "Текст в папке собирается из искр."},
 	} do
 		local key = d[2]
 		local card, paint = toggleCard(pv2, d[1], 3 + i * 0.1, function() return UICFG[key] end,

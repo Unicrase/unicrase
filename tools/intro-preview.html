@@ -25,8 +25,9 @@
   .shard{position:absolute;left:50%;top:50%;border-radius:3px;opacity:0;
     background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(91,140,255,.5));
     box-shadow:0 0 7px rgba(170,200,255,.5)}
-  #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);
-    display:flex;align-items:center;justify-content:flex-start;white-space:nowrap;
+  #stage{overflow:hidden}
+  #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);max-width:92vw;
+    display:flex;align-items:center;justify-content:center;white-space:nowrap;
     font-family:'Michroma','Gill Sans',"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff;z-index:3}
   #word span{display:inline-block;opacity:0;transform-origin:50% 50%;
     text-align:left;will-change:transform,opacity}
@@ -139,9 +140,11 @@
     wordEl.innerHTML = '';
     letters = [];
     const stageW = stage.clientWidth || window.innerWidth || 390;
-    const target = clamp(stageW * 0.84, 170, 780);
+    // потолок по ширине сцены: слово всегда влезает с полями 7% слева и справа
+    const maxW = Math.max(120, Math.min(stageW * 0.86, 820));
+    const target = maxW;
     // Michroma широкая: подбираем кегль так, чтобы слово заняло target по ширине
-    let h = clamp(Math.floor(target / (WORD.length * 0.82)), 18, 190);
+    let h = clamp(Math.floor(target / (WORD.length * 0.82)), 16, 190);
     wordEl.style.fontSize = h + 'px';
 
     for (let i = 0; i < WORD.length; i++) {
@@ -164,6 +167,29 @@
     // центрируем всю строку явно: последний margin компенсируем, чтобы слово стояло ровно по центру
     wordEl.style.width = total + 'px';
     if (letters.length) letters[letters.length - 1].style.marginRight = '0px';
+
+    // контрольный замер: если фактическая ширина больше потолка (другой шрифт/фолбэк),
+    // ужимаем кегль пропорционально и пересчитываем один раз
+    const realW = wordEl.getBoundingClientRect().width || total;
+    if (realW > maxW * 1.01 && h > 16) {
+      const k = maxW / realW;
+      h = Math.max(16, Math.floor(h * k));
+      wordEl.style.fontSize = h + 'px';
+      letters.forEach(function (s) {
+        s.style.width = 'auto';
+        s.style.marginRight = Math.max(1, Math.round(h * 0.03)) + 'px';
+      });
+      const wf = letters.map(function (s) { return s.offsetWidth || s.getBoundingClientRect().width || h * 0.82; });
+      const pad2 = Math.max(1, Math.round(h * 0.03));
+      let total2 = 0;
+      letters.forEach(function (s, i) {
+        const w = Math.ceil(wf[i]) + 1;
+        s.style.width = w + 'px';
+        s.style.marginRight = (i === letters.length - 1 ? 0 : pad2) + 'px';
+        total2 += w + (i === letters.length - 1 ? 0 : pad2);
+      });
+      wordEl.style.width = total2 + 'px';
+    }
     geo = {h: h, total: total, pad: pad};
 
     subEl.style.fontSize = clamp(Math.round(h * 0.2), 9, 20) + 'px';

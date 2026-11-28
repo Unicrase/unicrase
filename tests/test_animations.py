@@ -235,42 +235,38 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("afterIntro()", valid)
         self.assertEqual(SOURCE.count("playIntro"), 2)  # объявление + единственный вызов (через pcall)
 
-    def test_letters_reveal_opens_folder_text(self):
+    def test_particle_text_opens_folder(self):
         body = SOURCE.split("local function revealText(label, text, opt)", 1)[1].split("-- Анимация цифры", 1)[0]
         self.assertIn("UICFG.AnimText", body)
-        # каждая буква — отдельный TextLabel со своим UIScale, а не срез строки
+        # каждая буква — отдельный TextLabel, искры — отдельные фреймы, всё на твинах
         self.assertIn('new("TextLabel"', body)
-        self.assertIn('new("UIScale"', body)
-        # буквы стартуют по очереди и «выпрыгивают» снизу
-        self.assertIn("task.wait(stepDelay)", body)
-        self.assertIn("Position = O(math.floor(g.x), rise)", body)
-        self.assertIn("{Position = O(it.x, 0), TextTransparency = 0}", body)
+        self.assertIn('Name = "Spark"', body)
+        self.assertIn("tween(sp.f, info, {Position = O(sp.x, sp.y)", body)
         self.assertIn("spring(it.sc, {Scale = 1}, TWEEN.pop)", body)
         # выключено — текст ставится сразу, слой анимации снимается
         self.assertIn("label.Text, label.TextTransparency = text, 0", body)
-        # в конце обычный текст возвращается: цвета темы и обрезка работают как раньше
-        self.assertIn("label.Text, label.TextTransparency = text, 0\n", body + "\n")
         self.assertIn("layer:Destroy()", body)
         # поколение отменяет предыдущую анимацию (быстрые клики по папкам)
         self.assertIn("revealers[label] ~= gen", body)
+        # utf8.graphemes отдаёт диапазон (два числа), а не символ:
+        # старый `for _, ch in utf8.graphemes(text)` давал в ch число → «attempt to get length of a number value»
+        self.assertIn("for first, last in utf8.graphemes(text) do", body)
+        self.assertIn("string.sub(text, first, last)", body)
+        self.assertNotIn("for _, ch in utf8.graphemes", SOURCE)
+        # слой ровно по строке: искры не залезают на соседние настройки и текст не сдвигается
+        self.assertIn('Size = S(1, 1), BackgroundTransparency = 1, Active = false,', body)
+        self.assertIn("Position = O(math.floor(g.x), 0)", body)
+        # длинную строку не дробим на сотни инстансов
+        self.assertIn("local dense = #glyphs > 24", body)
         # заголовок папки и названия карточек используют один хелпер
         show = between("local function show(n)", "for i, folder in folders do")
         self.assertIn("revealText(pTitle, newTitle", show)
         cascade = between("local function cascade(f)", "local folders = {")
         self.assertIn('c:FindFirstChild("Title")', cascade)
         self.assertIn("revealText(title, title.Text", cascade)
-        # utf8.graphemes отдаёт диапазон (два числа), а не символ:
-        # старый `for _, ch in utf8.graphemes(text)` давал в ch число → «attempt to get length of a number value»
-        self.assertIn("for first, last in utf8.graphemes(text) do", body)
-        self.assertIn("string.sub(text, first, last)", body)
-        self.assertNotIn("for _, ch in utf8.graphemes", SOURCE)
-
-        # очень длинное название — без сотен инстансов
-        self.assertIn("if #glyphs > 28 then", body)
-
         # переключатель и справка
-        self.assertIn('{"Letters reveal", "AnimText"', SOURCE)
-        self.assertIn('["Letters reveal"]', SOURCE)
+        self.assertIn('{"Particle text", "AnimText"', SOURCE)
+        self.assertIn('["Particle text"]', SOURCE)
 
     def test_intro_can_be_disabled_and_is_in_effects_list(self):
         self.assertIn('{"Intro after key", "AnimIntro"', SOURCE)
