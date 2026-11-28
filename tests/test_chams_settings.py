@@ -114,6 +114,14 @@ class ChamsDeclarationOrder(unittest.TestCase):
         refresh = between(SOURCE, "local function refreshHL()", "local function unhl")
         self.assertIn("cs.MatOn == false", refresh, "refreshHL обязан видеть выключенный режим")
 
+    def test_failure_is_visible_on_screen(self):
+        # на телефоне консоли нет: ошибка сборки панели должна быть видна в самой вкладке
+        block = SOURCE[SOURCE.index("local function CHAMS_PAGE"):SOURCE.index("local function startMain")]
+        self.assertIn("панель не собралась", block, "нет сообщения об ошибке в интерфейсе")
+        self.assertIn("to string", block.replace("tostring", "to string"))
+        self.assertIn("DangerBg", block, "сообщение должно быть заметным")
+        self.assertIn("ChamsDiag", block, "нужна строка диагностики, что панель построена")
+
     def test_legacy_switch_persists_and_repaints(self):
         block = SOURCE[SOURCE.index('toggleCard(pm, "Материалы и эффекты Chams"'):]
         block = block[:block.index("CHAMS_PAGE(pages, api)")]

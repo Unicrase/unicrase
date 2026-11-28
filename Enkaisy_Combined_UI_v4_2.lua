@@ -28,6 +28,9 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.5.2: телефонная диагностика: если панель Chams не собралась, причина пишется красной
+--         карточкой ПРЯМО во вкладке (на телефоне консоли нет), а при успехе сверху видна
+--         строка «CHAMS · N блоков · v4.5.2». Название переключателя в ESP уточнено.
 -- v4.5.1: ИСПРАВЛЕНО ГЛАВНОЕ — вкладка CHAMS снова заполняется. Панель звала sectionLabel,
 --         объявленную ниже по файлу: вызов падал на nil, а pcall молча превращал это
 --         в пустую страницу с одним заголовком. Теперь все внешние функции берутся через
@@ -119,7 +122,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.5.1" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.5.2" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -7115,14 +7118,44 @@ end
 
 -- Вкладка CHAMS: вынесена из startMain, чтобы главная функция не упиралась в лимит локалей.
 local function CHAMS_PAGE(pages, api)
+	-- Ошибку видно НА ЭКРАНЕ, а не только в консоли: на телефоне консоли нет,
+	-- а пустая вкладка без объяснения — худший вариант.
+	local page = pages.Chams
+	local function fail(reason)
+		if not page then return end
+		local box = new("Frame", {Size = U(1, 0, 0, 96), BackgroundColor3 = C.DangerBg,
+			BackgroundTransparency = 0.15, LayoutOrder = -100}, page)
+		rr(box, 10)
+		outline(box, C.Danger)
+		new("TextLabel", {Size = U(1, -20, 0, 20), Position = O(10, 8), BackgroundTransparency = 1,
+			Text = "CHAMS: панель не собралась", TextColor3 = C.Danger, FontFace = GB,
+			TextSize = 13, TextXAlignment = XL}, box)
+		new("TextLabel", {Size = U(1, -20, 0, 60), Position = O(10, 30), BackgroundTransparency = 1,
+			Text = reason, TextColor3 = C.W, FontFace = GM, TextSize = 11,
+			TextWrapped = true, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top}, box)
+		new("TextLabel", {Size = U(1, -20, 0, 14), Position = O(10, 0.5, 0, 4), BackgroundTransparency = 1,
+			Text = "версия " .. tostring(GLB.BUILD), TextColor3 = C.Mut, FontFace = GM,
+			TextSize = 9, TextXAlignment = Enum.TextXAlignment.Right}, box)
+	end
 	if not CHCTX.buildChamsPage then
-		warn("[Enkaisy] панель Chams не зарегистрирована")
+		fail("движок Chams не зарегистрирован в CHCTX (buildChamsPage == nil)")
 		return
 	end
-	local ok, err = pcall(CHCTX.buildChamsPage, pages.Chams, api)
-	if not ok then
-		-- пустая вкладка без причины — худший вариант: говорим, что именно упало
+	local ok, err = pcall(CHCTX.buildChamsPage, page, api)
+	if ok then
+		-- короткая строка диагностики: видно, что панель построена и сколько в ней элементов
+		local n = 0
+		for _, ch in page:GetChildren() do
+			if ch:IsA("GuiObject") then n += 1 end
+		end
+		local info = new("TextLabel", {Size = U(1, 0, 0, 14), BackgroundTransparency = 1,
+			LayoutOrder = -99, Text = "CHAMS · " .. n .. " блоков · v" .. tostring(GLB.BUILD),
+			TextColor3 = C.Mut, FontFace = GM, TextSize = 9, TextXAlignment = XL}, page)
+		info.Name = "ChamsDiag"
+	else
+		-- пустая вкладка без причины — худший вариант: объясняем прямо в интерфейсе
 		warn("[Enkaisy] панель Chams не собралась: " .. tostring(err))
+		fail(tostring(err))
 	end
 end
 

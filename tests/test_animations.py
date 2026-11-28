@@ -367,7 +367,7 @@ class ChamsAndFov(unittest.TestCase):
         # панель собрана из данных и подключена к отдельной вкладке
         self.assertIn("local function buildChamsPage(parent, api)", SOURCE)
         self.assertIn("CHAMS_PAGE(pages, api)", SOURCE)
-        self.assertIn("CHCTX.buildChamsPage, pages.Chams, api", SOURCE)
+        self.assertIn("pcall(CHCTX.buildChamsPage, page, api)", SOURCE)
         for table in ("CH_MATS", "CH_TEX", "CH_TEX_ORDER", "CH_FX", "CH_PAT", "CH_DEF"):
             self.assertIn(table, SOURCE)
         # каждый слой движка настоящий: материал, узор, свет, обводка, частицы
