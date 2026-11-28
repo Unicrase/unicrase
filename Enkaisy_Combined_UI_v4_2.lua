@@ -5775,7 +5775,8 @@ local function startMain()
 		local dot = new("Frame", {Size = O(4, 4), AnchorPoint = V2(1, 0.5), Position = U(1, -6, 0.5, 0),
 			BackgroundColor3 = C.W, BackgroundTransparency = 1, Active = false}, tb)
 		round(dot, 2)
-		local hitsBadge = new("TextLabel", {Name = "Hits", Size = O(26, 16), AnchorPoint = V2(1, 0.5), Position = U(1, -6, 0.5, 0),
+		-- бейдж стоит левее точки «включено» (та занимает правые 4 px), поэтому они не перекрываются
+		local hitsBadge = new("TextLabel", {Name = "Hits", Size = O(26, 16), AnchorPoint = V2(1, 0.5), Position = U(1, -14, 0.5, 0),
 			BackgroundColor3 = C.Sel, BackgroundTransparency = 1, Text = "", TextColor3 = C.Mut, FontFace = GM,
 			TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Visible = false, Active = false}, tb)
 		rr(hitsBadge, 5)
