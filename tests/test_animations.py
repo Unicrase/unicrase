@@ -416,7 +416,7 @@ class ChamsActuallyApplies(unittest.TestCase):
         import re
         table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
         rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
-        self.assertEqual(len(rows), 21)
+        self.assertEqual(len(rows), 22)
         fills = [float(f) for f, _ in rows]
         outlines = [float(o) for _, o in rows]
         # Solid и Soft (0.25 против 0.80 по заливке) обязаны отличаться заметно,
@@ -434,7 +434,7 @@ class ChamsActuallyApplies(unittest.TestCase):
         f_a, f_b, o_a, o_b = (float(v) for v in m.groups())
         table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
         rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
-        self.assertEqual(len(rows), 21)
+        self.assertEqual(len(rows), 22)
 
         def fill_alpha(f):
             return min(1.0, 0.45 * (f_a - f * f_b))
@@ -463,6 +463,88 @@ class ChamsActuallyApplies(unittest.TestCase):
         body = SOURCE[start:start + 300]
         self.assertIn("saveNow()", body, "выбор стиля должен сохраняться между запусками")
 
+
+
+class ChamsTextures(unittest.TestCase):
+    """Chams Look — это ТЕКСТУРА тела, а не только плотность подсветки.
+
+    Highlight умеет только заливку и контур, поэтому стиль дополнительно меняет
+    материал частей тела: Neon светится, CrackedLava — лава, ForceField — сетка и т.д.
+    """
+
+    TEX = {
+        "Neon": "Enum.Material.Neon", "Lava": "Enum.Material.CrackedLava",
+        "Ice": "Enum.Material.Ice", "Glass": "Enum.Material.Glass",
+        "ForceField": "Enum.Material.ForceField", "Metal": "Enum.Material.Foil",
+        "Chrome": "Enum.Material.Foil", "Water Flow": "Enum.Material.Water",
+    }
+
+    def test_styles_carry_materials(self):
+        from pathlib import Path
+        import re
+        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
+        # запись стиля может занимать две строки: берём блок от "{key" до "}," включительно
+        blocks = re.findall(r'\{key = "([^"]+)"(.*?)\},(?=\n)', table, re.S)
+        self.assertGreater(len(blocks), 15, "не удалось разобрать таблицу стилей")
+        by_key = dict(blocks)
+        for key, mat in self.TEX.items():
+            self.assertIn(key, by_key, "%s нет в таблице стилей" % key)
+            self.assertIn(mat, by_key[key], "%s должен ставить материал %s" % (key, mat))
+
+    def test_texture_is_applied_and_restored(self):
+        self.assertIn("local function chamsTexture(", SOURCE)
+        self.assertIn("local function chamsClear(", SOURCE)
+        # texture вызывается из refreshHL
+        body = between("local function refreshHL()", "local function unhl(")
+        self.assertIn("chamsTexture", body)
+        # и снимается при снятии подсветки/выгрузке, иначе игроки останутся неоновыми
+        unhl = between("local function unhl(", "local function dohl(")
+        self.assertIn("chamsClear", unhl)
+        stop = SOURCE[SOURCE.index("stop = function()"):]
+        self.assertIn("chamsClear", stop[:1500])
+
+    def test_original_material_is_remembered(self):
+        self.assertIn("chamsOrig[part] = {mat = part.Material, col = part.Color}", SOURCE)
+        self.assertIn("part.Material = orig.mat", SOURCE)
+        self.assertIn("part.Color = orig.col", SOURCE)
+
+    def test_light_for_glowing_styles(self):
+        self.assertIn("PointLight", SOURCE)
+        self.assertIn("st.glow", SOURCE)
+
+
+class FovCircleStyles(unittest.TestCase):
+    """Стили круга FOV должны быть детьми самого круга, а не оверлея.
+
+    Первая версия создавала сегменты пунктира в оверлее и считала позицию в долях ЭКРАНА —
+    пунктир уезжал от круга, и все стили выглядели одинаково.
+    """
+
+    def test_style_objects_are_children_of_circle(self):
+        import re
+        m = re.search(r'local fovGlow = new\("Frame", \{[^}]*\}, (\w+)\)', SOURCE)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), "fov", "ореол должен быть ребёнком круга")
+        m2 = re.search(r'local d = new\("Frame", \{[^}]*\}, (\w+)\)', SOURCE)
+        self.assertIsNotNone(m2)
+        self.assertEqual(m2.group(1), "fov", "сегменты пунктира должны быть детьми круга")
+
+    def test_dashed_positions_are_circle_relative(self):
+        body = between('elseif style == "Dashed" then', "elseif style == \"Gradient\"")
+        self.assertIn("seg.Position = U(0.5 + math.cos(ang) * 0.5, 0.5 + math.sin(ang) * 0.5)", body)
+        # вращение включается только при Animation
+        self.assertIn("local spin = animate and (now * 0.6) or 0", body)
+
+    def test_gradient_actually_animates(self):
+        body = between('elseif style == "Gradient" then', "else\n\t\t\t\t-- Classic")
+        self.assertIn("fovGrad.Rotation = animate and ((now * 125) % 360) or 45", body)
+        # градиент из трёх и более цветов, иначе «перелива» не видно
+        self.assertIn("ColorSequenceKeypoint.new(0.35", SOURCE)
+
+    def test_glow_has_halo(self):
+        self.assertIn("local fovHalo = {}", SOURCE)
+        body = between('if style == "Glow" then', 'elseif style == "Dashed" then')
+        self.assertIn("math.sin(now * 2.2)", body, "у свечения должно быть «дыхание»")
 
 
 if __name__ == "__main__":

@@ -26,8 +26,14 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
--- ВЕРСИЯ СБОРКИ: v4.3.3 (константа BUILD). Она видна в шапке меню и на экране ключа —
+-- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.4.0: CHAMS LOOK стал текстурой: материал частей тела (Neon светится, CrackedLava — лава,
+--         ForceField — сетка, Glass/Ice, Foil-хром) + PointLight для светящихся стилей; исходные
+--         материалы возвращаются при снятии подсветки и выгрузке.
+--         Круг FOV: стили получили настоящую разницу — ореол и «дыхание» у Glow, вращающийся
+--         градиент у Gradient, вращающийся пунктир у Dashed; элементы стиля перенесены ВНУТРЬ круга
+--         (раньше считались в долях экрана и «улетали»).
 -- v4.3.3: стиль Chams теперь РЕАЛЬНО применяется: chamsApply вызывается из refreshHL,
 --         прозрачности считаются по таблице стилей, оттенок стиля живёт поверх цвета темы
 --         и не стирается цветом по здоровью / радугой. В строке списка — превью стиля.
@@ -77,7 +83,7 @@
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BUILD = "4.3.3" -- версия сборки: показывается в меню и на экране ключа
+local BUILD = "4.4.0" -- версия сборки: показывается в меню и на экране ключа
 local REMOTE_NAME = "EnkaisyAimFire"
 local CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2073,27 +2079,50 @@ end
 -- «металл», «стекло», «лава» и прочее собраны из цвета и прозрачности: у каждого стиля свой
 -- характер — плотный контур, мягкая заливка, свечение, тёмный низ под светлый верх.
 CHAMS = {
+	-- mat  — текстура тела: материал частей (Neon светится, CrackedLava — лава, Foil — металл…)
+	-- col  — цвет материала; nil = цвет берётся из темы (папка Color)
+	-- glow — яркость настройки, 0 = без света; light = цвет точечного источника
+	-- spin — материал переливается со временем (неон, иридец, вода)
 	{key = "Outline", name = "Outline", fill = 0.90, outline = 0.05, thick = 1.0, col = nil},
 	{key = "Soft", name = "Soft", fill = 0.80, outline = 0.45, thick = 0.8, col = nil},
 	{key = "Solid", name = "Solid", fill = 0.25, outline = 0.10, thick = 0.9, col = nil},
-	{key = "Glow", name = "Glow", fill = 0.65, outline = 0.20, thick = 1.6, col = Color3.fromRGB(120, 200, 255)},
+	{key = "Neon", name = "Neon", fill = 0.35, outline = 0.00, thick = 1.8, col = Color3.fromRGB(60, 220, 255),
+		mat = Enum.Material.Neon, glow = 1.1, light = Color3.fromRGB(80, 220, 255)},
+	{key = "Lava", name = "Lava", fill = 0.40, outline = 0.05, thick = 1.3, col = Color3.fromRGB(255, 96, 24),
+		mat = Enum.Material.CrackedLava, glow = 0.9, light = Color3.fromRGB(255, 120, 40)},
+	{key = "Ice", name = "Ice", fill = 0.55, outline = 0.20, thick = 1.0, col = Color3.fromRGB(185, 230, 255),
+		mat = Enum.Material.Ice, glow = 0.2, light = Color3.fromRGB(200, 235, 255)},
+	{key = "Glass", name = "Glass", fill = 0.80, outline = 0.35, thick = 1.0, col = Color3.fromRGB(210, 240, 255),
+		mat = Enum.Material.Glass, glow = 0},
+	{key = "ForceField", name = "ForceField", fill = 0.55, outline = 0.10, thick = 1.2,
+		col = Color3.fromRGB(120, 210, 255), mat = Enum.Material.ForceField, glow = 0.5,
+		light = Color3.fromRGB(140, 190, 255)},
+	{key = "Metal", name = "Metal", fill = 0.40, outline = 0.06, thick = 1.2, col = Color3.fromRGB(168, 176, 190),
+		mat = Enum.Material.Foil, glow = 0},
+	{key = "Chrome", name = "Chrome", fill = 0.22, outline = 0.02, thick = 1.6, col = Color3.fromRGB(245, 248, 255),
+		mat = Enum.Material.Foil, glow = 0.3, light = Color3.fromRGB(230, 240, 255)},
+	{key = "Metallic", name = "Metallic", fill = 0.30, outline = 0.04, thick = 1.4, col = Color3.fromRGB(198, 208, 226),
+		mat = Enum.Material.Metal, glow = 0},
+	{key = "Diamond", name = "Diamond", fill = 0.45, outline = 0.10, thick = 1.3, col = Color3.fromRGB(170, 240, 255),
+		mat = Enum.Material.Glass, glow = 0.4, light = Color3.fromRGB(180, 240, 255)},
+	{key = "Ghost", name = "Ghost", fill = 0.86, outline = 0.50, thick = 0.9, col = Color3.fromRGB(220, 225, 235),
+		mat = Enum.Material.ForceField, glow = 0},
+	{key = "Water Flow", name = "Water Flow", fill = 0.55, outline = 0.18, thick = 1.1, col = Color3.fromRGB(60, 150, 255),
+		mat = Enum.Material.Water, glow = 0.2, light = Color3.fromRGB(80, 150, 255), spin = true},
+	{key = "Iridescent", name = "Iridescent", fill = 0.45, outline = 0.10, thick = 1.3, col = Color3.fromRGB(225, 190, 255),
+		mat = Enum.Material.Foil, glow = 0.5, light = Color3.fromRGB(210, 170, 255), spin = true},
+	{key = "Wireframe", name = "Wireframe", fill = 0.97, outline = 0.00, thick = 1.0, col = Color3.fromRGB(90, 220, 140),
+		mat = Enum.Material.Neon, glow = 0.3, light = Color3.fromRGB(100, 230, 150), spin = true},
+	{key = "Glow", name = "Glow", fill = 0.45, outline = 0.10, thick = 1.6, col = Color3.fromRGB(140, 200, 255),
+		mat = Enum.Material.Neon, glow = 0.7, light = Color3.fromRGB(150, 200, 255)},
 	{key = "Shaded", name = "Shaded", fill = 0.55, outline = 0.30, thick = 1.1, col = Color3.fromRGB(150, 158, 175)},
-	{key = "Metallic", name = "Metallic", fill = 0.35, outline = 0.05, thick = 1.4, col = Color3.fromRGB(205, 214, 230)},
-	{key = "Metal", name = "Metal", fill = 0.55, outline = 0.10, thick = 1.2, col = Color3.fromRGB(150, 158, 172)},
-	{key = "Chrome", name = "Chrome", fill = 0.20, outline = 0.02, thick = 1.6, col = Color3.fromRGB(255, 255, 255)},
-	{key = "Glossy", name = "Glossy", fill = 0.30, outline = 0.08, thick = 1.3, col = Color3.fromRGB(235, 245, 255)},
-	{key = "Glass", name = "Glass", fill = 0.80, outline = 0.35, thick = 1.0, col = Color3.fromRGB(190, 225, 245)},
-	{key = "Crystal", name = "Crystal", fill = 0.62, outline = 0.15, thick = 1.2, col = Color3.fromRGB(170, 215, 255)},
-	{key = "Ice", name = "Ice", fill = 0.72, outline = 0.20, thick = 1.0, col = Color3.fromRGB(185, 230, 255)},
-	{key = "Lava", name = "Lava", fill = 0.45, outline = 0.05, thick = 1.3, col = Color3.fromRGB(255, 140, 60)},
-	{key = "Neon", name = "Neon", fill = 0.70, outline = 0.00, thick = 1.8, col = Color3.fromRGB(60, 220, 255)},
-	{key = "Neon Rim", name = "Neon Rim", fill = 0.94, outline = 0.00, thick = 2.0, col = Color3.fromRGB(90, 255, 200)},
-	{key = "Iridescent", name = "Iridescent", fill = 0.55, outline = 0.12, thick = 1.3, col = Color3.fromRGB(225, 190, 255)},
-	{key = "Water Flow", name = "Water Flow", fill = 0.62, outline = 0.18, thick = 1.1, col = Color3.fromRGB(70, 160, 255)},
-	{key = "ForceField", name = "ForceField", fill = 0.72, outline = 0.10, thick = 1.2, col = Color3.fromRGB(150, 150, 255)},
+	{key = "Glossy", name = "Glossy", fill = 0.25, outline = 0.06, thick = 1.3, col = Color3.fromRGB(235, 245, 255),
+		mat = Enum.Material.SmoothPlastic, glow = 0.2, light = Color3.fromRGB(225, 240, 255)},
+	{key = "Crystal", name = "Crystal", fill = 0.40, outline = 0.12, thick = 1.2, col = Color3.fromRGB(170, 215, 255),
+		mat = Enum.Material.Glass, glow = 0.6, light = Color3.fromRGB(170, 215, 255)},
+	{key = "Neon Rim", name = "Neon Rim", fill = 0.88, outline = 0.00, thick = 2.0, col = Color3.fromRGB(90, 255, 200),
+		mat = Enum.Material.Neon, glow = 0.6, light = Color3.fromRGB(90, 255, 200)},
 	{key = "Gradient", name = "Gradient", fill = 0.50, outline = 0.10, thick = 1.3, col = nil},
-	{key = "Ghost", name = "Ghost", fill = 0.86, outline = 0.50, thick = 0.9, col = Color3.fromRGB(220, 225, 235)},
-	{key = "Wireframe", name = "Wireframe", fill = 0.97, outline = 0.00, thick = 1.0, col = Color3.fromRGB(90, 220, 140)},
 }
 CHAMS_BY_KEY = {}
 for i, c in CHAMS do c.idx, CHAMS_BY_KEY[c.key] = i, c end
@@ -2121,6 +2150,92 @@ local function chamsAlpha(o, key, base, minOn, strength)
 	local k = (key == "Fill") and (2.0 - strength * 1.9) or (1.35 - strength * 1.1)
 	local a = alphaFor(o.plr, key, base, minOn) * k
 	return math.clamp(a, 0, 1)
+end
+
+-- ===== ТЕКСТУРА СТИЛЯ НА ТЕЛЕ =====
+-- Highlight в Roblox умеет ТОЛЬКО заливку и контур — настоящую текстуру он не рисует.
+-- Поэтому Chams Look меняет ещё и материал частей тела: Neon светится, CrackedLava даёт лаву,
+-- ForceField — синеву, Glass/Ice — прозрачность, Foil — металлический блик.
+-- Исходные BasePart.Material/Color запоминаются, чтобы при снятии вернуть тело как было.
+local chamsOrig = setmetatable({}, {__mode = "k"}) -- part -> {mat = ..., col = ...}
+local chamsLights = setmetatable({}, {__mode = "k"}) -- char -> PointLight
+
+local function chamsParts(char)
+	local list = {}
+	for _, d in char:GetDescendants() do
+		if d:IsA("BasePart") and not d:FindFirstAncestorOfClass("Accessory") and not d:FindFirstAncestorOfClass("Tool") then
+			table.insert(list, d)
+		end
+	end
+	return list
+end
+
+-- снимает текстуру со всех частей персонажа (материалы и цвета возвращаются как были)
+local function chamsClear(char)
+	if not char then return end
+	-- chamsOrig хранит запись по КАЖДОЙ части, поэтому идём по частям персонажа,
+	-- а не по таблице целиком (иначе у чужих моделей сбрасывались бы материалы)
+	local list = (char.Parent and char:IsDescendantOf(Workspace)) and chamsParts(char) or {}
+	for _, part in list do
+		local orig = chamsOrig[part]
+		if orig then
+			pcall(function()
+				part.Material = orig.mat
+				part.Color = orig.col
+			end)
+		end
+		chamsOrig[part] = nil
+	end
+	local light = chamsLights[char]
+	if light then
+		light:Destroy()
+		chamsLights[char] = nil
+	end
+end
+
+-- накладывает текстуру стиля: tint — цвет темы, чтобы стиль без своего цвета не был белым
+local function chamsTexture(char, st, tint, animate)
+	st = st or chamsStyle()
+	if not char then return end
+	if not st.mat then
+		-- стиль без материала (Outline/Solid/Gradient): только Highlight, тело не трогаем
+		chamsClear(char)
+		return
+	end
+	local base = st.col or tint or Color3.new(1, 1, 1)
+	local now = os.clock()
+	-- перелив: неон, вода и иридец медленно меняют оттенок; при выключенных анимациях — статично
+	local hue = base:ToHSV()
+	local col = base
+	if st.spin and animate then
+		col = Color3.fromHSV((hue + now * 0.08) % 1, (select(2, base:ToHSV()) * 0.85) + 0.15, select(3, base:ToHSV()))
+	elseif st.spin then
+		col = base
+	end
+	for _, part in chamsParts(char) do
+		if not chamsOrig[part] then
+			chamsOrig[part] = {mat = part.Material, col = part.Color}
+		end
+		pcall(function()
+			part.Material = st.mat
+			part.Color = col
+		end)
+	end
+	-- свет: стили с glow реально светятся в тёмных местах (Neon/Lava/Chrome и т.п.)
+	if st.glow and st.glow > 0 then
+		local light = chamsLights[char]
+		if not light or not light.Parent then
+			local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+			if not root then return end
+			light = new("PointLight", {Name = "EnkaisyChamsLight", Range = 9, Brightness = 0}, root)
+			chamsLights[char] = light
+		end
+		light.Color = st.light or col
+		light.Brightness = st.glow * (animate and (0.85 + 0.15 * math.sin(now * 3)) or 1)
+	elseif chamsLights[char] then
+		chamsLights[char]:Destroy()
+		chamsLights[char] = nil
+	end
 end
 
 -- Применяет стиль к хайлайту: цвет (с оттенком стиля) и обе прозрачности.
@@ -2167,6 +2282,10 @@ local function refreshHL()
 		local oc = pcol(o.plr, "Outline") or TC.get(o.plr, "Box") or hsv(col.Outline)
 		local ownOutline = pcol(o.plr, "Outline") ~= nil
 		chamsApply(o, fc, oc, not (ownFill or ownOutline))
+		-- текстура (материал тела) — вторая половина стиля; для Outline/Solid/Gradient это no-op
+		if o.char then
+			pcall(chamsTexture, o.char, st, fc, CFG.Anim)
+		end
 	end
 	return st
 end
@@ -2176,6 +2295,8 @@ local function unhl(char, fade)
 	local o = esp[char]
 	if not o then return end
 	esp[char] = nil
+	-- тело возвращаем к исходным материалам: иначе скрипт оставит игроков неоновыми
+	pcall(chamsClear, char)
 	restoreNative(o)
 	if o.nb then o.nb:Destroy() end
 	if o.hb then o.hb:Destroy() end
@@ -2195,7 +2316,7 @@ local function dohl(char, plr)
 	if not char then return end
 	unhl(char)
 	if not allowed(plr, char) then return end
-	local o = {plr = plr}
+	local o = {plr = plr, char = char}
 	esp[char] = o
 	o.h = new("Highlight", {
 		Name = "TH", Adornee = char, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
@@ -3054,16 +3175,29 @@ local function buildAim(page, api)
 	local fovStroke = stroke(fov, C.W, 0.35, 1.5)
 	-- Стили круга: Glow — мягкий ореол, Dashed — пунктир из сегментов, Gradient — градиентная обводка.
 	-- Объекты создаются один раз и только показываются/прячутся, чтобы не плодить инстансы каждый кадр.
-	local fovGlow = new("Frame", {Name = "FovGlow", Size = S(1, 1), BackgroundTransparency = 1, Visible = false}, og)
+	-- Стили живут ВНУТРИ круга и двигаются вместе с ним: раньше сегменты и ореол были отдельными
+	-- объектами в оверлее и считались в долях экрана — из-за этого пунктир «улетал» от круга.
+	local fovGlow = new("Frame", {Name = "FovGlow", Size = S(1, 1), BackgroundTransparency = 1,
+		Visible = false, Active = false}, fov)
 	new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, fovGlow)
 	local fovGlowStroke = stroke(fovGlow, C.W, 0.8, 5)
 	pcall(function() fovGlowStroke.LineJoinMode = Enum.LineJoinMode.Round end)
-	local fovStrokeGrad -- градиентная обводка стиля Gradient (создаётся лениво, один раз)
+	-- мягкое свечение: несколько концентрических контуров с падающей непрозрачностью (2..6 px)
+	local fovHalo = {}
+	for i = 1, 5 do
+		local ring = new("Frame", {Name = "FovHalo" .. i, Size = S(1, 1), BackgroundTransparency = 1,
+			Visible = false, Active = false}, fov)
+		new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, ring)
+		local st = stroke(ring, C.W, 0.9, i * 1.1)
+		table.insert(fovHalo, {f = ring, st = st, k = i})
+	end
+	local fovGrad -- градиент обводки стиля Gradient (создаётся один раз)
+	-- пунктир: сегменты — ДЕТИ круга, координаты в его долях (0.5 ± радиус)
 	local fovDash = {}
 	local DASH_N = 24
 	for i = 1, DASH_N do
 		local d = new("Frame", {Name = "FovDash" .. i, AnchorPoint = V2(0.5, 0.5), Size = O(7, 2.5),
-			BackgroundColor3 = C.W, BackgroundTransparency = 0.2, Visible = false}, og)
+			BackgroundColor3 = C.W, BackgroundTransparency = 0.2, Visible = false, Active = false}, fov)
 		rr(d, 2)
 		table.insert(fovDash, d)
 	end
@@ -4343,58 +4477,82 @@ local function buildAim(page, api)
 			setp(fov, "Size", O(d, d))
 			setp(fov, "Position", S(SP.circle.X / v.X, SP.circle.Y / v.Y))
 			if fovSc and fovSc.Scale > 1.001 then fovSc.Scale = 1 end
-			-- выбранный стиль: Glow / Gradient / Dashed / Classic
+			-- ===== стиль круга: Glow / Gradient / Dashed / Classic =====
+			-- Все элементы стиля — дети круга, поэтому двигаются и масштабируются вместе с ним.
 			local style = A.FovStyle or "Gradient"
 			local accent = A.FovTarget and currentTarget and C.Acc or nil
 			local line = accent or A.FovCol and hsv(A.FovCol) or C.W
 			local thick = math.max(0.5, A.CircleThick or 1.5)
 			local alpha = math.clamp(1 - (A.FovAlpha or 0.35), 0, 1)
+			local animate = (A.FovAnim and CFG.Anim) and true or false
+
+			-- сначала гасим всё, что относится к другим стилям: лишние объекты не должны мигать
+			fovGlow.Visible = (style == "Glow")
+			for _, ring in fovHalo do ring.f.Visible = (style == "Glow") end
+			local dashed = (style == "Dashed")
+			for _, seg in fovDash do seg.Visible = dashed end
+			if fovGrad then fovGrad.Enabled = (style == "Gradient") end
+
 			if style == "Glow" then
-				setp(fovStroke, "Transparency", 0.85)
-				setp(fov, "BackgroundTransparency", math.clamp(1 - alpha * 0.35, 0, 1))
-				fovGlow.Visible = true
-				fovGlow.Size, fovGlow.Position = O(d, d), fov.Position
+				-- Glow: тонкая яркая линия + мягкий ореол из концентрических контуров,
+				-- «дыхание» яркости — видно, что это свечение, а не просто рамка
+				local breathe = animate and (0.82 + 0.18 * math.sin(now * 2.2)) or 1
+				setp(fov, "BackgroundTransparency", 1)
+				fovStroke.Color = line
+				fovStroke.Thickness = math.max(1, thick * 0.8)
+				fovStroke.Transparency = math.clamp(1 - alpha * 0.55 * breathe, 0, 1)
 				fovGlowStroke.Color = line
-				fovGlowStroke.Thickness = thick * 4
-				fovGlowStroke.Transparency = math.clamp(1 - alpha * 1.2, 0.15, 1)
+				fovGlowStroke.Thickness = thick * 3
+				fovGlowStroke.Transparency = math.clamp(1 - alpha * 0.85 * breathe, 0.1, 1)
+				for _, ring in fovHalo do
+					ring.st.Color = line
+					ring.st.Thickness = thick * (1.6 + ring.k * 1.5)
+					ring.st.Transparency = math.clamp(1 - alpha * (0.34 - ring.k * 0.055) * breathe, 0.25, 1)
+				end
 			elseif style == "Dashed" then
-				fovGlow.Visible = false
+				-- Dashed: 24 сегмента по окружности, вращаются; линия и заливка круга выключены
 				setp(fovStroke, "Transparency", 1)
 				setp(fov, "BackgroundTransparency", 1)
-				local r = d * 0.5
-				local spin = (A.FovAnim and CFG.Anim) and (now * 0.6) or 0
+				local spin = animate and (now * 0.6) or 0
 				for i, seg in fovDash do
-					local ang = (i / DASH_N) * math.pi * 2 + spin
-					seg.Visible = true
+					local ang = ((i - 1) / DASH_N) * math.pi * 2 + spin
 					seg.Size = O(math.max(3, thick * 4), math.max(1.5, thick))
-					seg.Position = U(SP.circle.X / v.X, math.cos(ang) * r, SP.circle.Y / v.Y, math.sin(ang) * r)
+					seg.Position = U(0.5 + math.cos(ang) * 0.5, 0.5 + math.sin(ang) * 0.5)
 					seg.Rotation = math.deg(ang) + 90
 					seg.BackgroundColor3 = line
 					seg.BackgroundTransparency = math.clamp(1 - alpha, 0, 1)
 				end
+			elseif style == "Gradient" then
+				-- Gradient: обводка переливается — цвет бежит по кругу (вращение градиента)
+				local showFill = A.FovFill
+				setp(fov, "BackgroundTransparency", showFill and math.clamp(1 - (A.FovFillAlpha or 0.9), 0, 1) or 1)
+				setp(fovStroke, "Transparency", math.clamp(1 - alpha, 0, 1))
+				fovStroke.Thickness = thick
+				fovStroke.Color = Color3.new(1, 1, 1)
+				fovStrokeGrad = fovStrokeGrad or new("UIGradient", {Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, line),
+					ColorSequenceKeypoint.new(0.35, Color3.new(1, 1, 1)),
+					ColorSequenceKeypoint.new(0.6, line),
+					ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)),
+				})}, fovStroke)
+				fovGrad = fovStrokeGrad
+				fovGrad.Enabled = true
+				-- вращение: угол растёт со временем (0.35 оборота в секунду), при выключенной
+				-- анимации — фиксированные 45°, чтобы круг не «дёргался»
+				fovGrad.Rotation = animate and ((now * 125) % 360) or 45
 			else
-				fovGlow.Visible = false
-				for _, seg in fovDash do seg.Visible = false end
+				-- Classic: ровная линия выбранного цвета, без переливов и сегментов
 				local showFill = A.FovFill
 				setp(fov, "BackgroundTransparency", showFill and math.clamp(1 - (A.FovFillAlpha or 0.9), 0, 1) or 1)
 				setp(fovStroke, "Transparency", math.clamp(1 - alpha, 0, 1))
 				fovStroke.Thickness = thick
 				fovStroke.Color = line
-				if style == "Gradient" then
-					if not fovStrokeGrad then
-						fovStrokeGrad = new("UIGradient", {Color = ColorSequence.new(C.Acc, C.W)}, fovStroke)
-					end
-					fovStrokeGrad.Enabled = true
-					fovStrokeGrad.Rotation = (A.FovAnim and CFG.Anim) and (now * 40) % 360 or 45
-					fovStroke.Color = Color3.new(1, 1, 1)
-				elseif fovStrokeGrad then
-					fovStrokeGrad.Enabled = false
-				end
 			end
-			if style ~= "Glow" then fovGlow.Visible = false end
 		else
 			fovGlow.Visible = false
+			for _, ring in fovHalo do ring.f.Visible = false end
 			for _, seg in fovDash do seg.Visible = false end
+			if fovGrad then fovGrad.Enabled = false end
 		end
 		local showMark = editing or (A.Enabled and A.ShowFOV and not A.CircleFollow) or now < testUntil
 		aimMark.Visible = showMark
@@ -6350,9 +6508,22 @@ local function startMain()
 				BackgroundTransparency = 1 - pvFillA}, r)
 			rr(swatch, 5)
 			stroke(swatch, st.col or PURE, 1 - pvEdgeA, math.clamp(0.9 + st.thick, 1, 2.6))
-			new("TextLabel", {Size = U(1, -76, 1, 0), Position = O(64, 0), BackgroundTransparency = 1,
+			-- что именно делает стиль: материал тела, а не только плотность подсветки
+			local MAT_TAG = {
+				Neon = "neon glow", Lava = "lava", Ice = "ice", Glass = "glass", ForceField = "force field",
+				Metal = "foil", Chrome = "chrome", Metallic = "metal", Diamond = "glass shine",
+				Ghost = "phantom", ["Water Flow"] = "water", Iridescent = "shift", Wireframe = "neon mesh",
+				Glow = "glow", Glossy = "gloss", Crystal = "crystal",
+			}
+			local tag = MAT_TAG[st.key]
+			new("TextLabel", {Size = U(1, -110, 1, 0), Position = O(64, 0), BackgroundTransparency = 1,
 				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
 				Active = false}, r)
+			if tag then
+				new("TextLabel", {Size = O(70, 1), Position = U(1, -74, 0, 0), BackgroundTransparency = 1,
+					Text = tag, TextColor3 = st.col or C.Mut, FontFace = GM, TextSize = 10,
+					TextXAlignment = Enum.TextXAlignment.Right, Active = false}, r)
+			end
 			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel")}
 			-- bind — файловый хелпер: не зависит от того, виден ли connect в этой области
 			local function pick()
@@ -8136,6 +8307,11 @@ stop = function()
 	table.clear(npcs)
 	for p in pconn do untrack(p) end
 	for ch in esp do unhl(ch) end
+	-- подстраховка: тела всех целей возвращаются к исходным материалам
+	for char in chamsLights do
+		if char and char.Parent then pcall(chamsClear, char) end
+	end
+	chamsOrig, chamsLights = setmetatable({}, {__mode = "k"}), setmetatable({}, {__mode = "k"})
 	-- Выгрузка с «затуханием»: интерфейс тает за 0.2 с, а не исчезает одним кадром.
 	-- При выключенных анимациях удаление происходит сразу.
 	if CFG.Anim and gui.Parent then
