@@ -839,7 +839,7 @@ local function tween(o, i, g)
 end
 -- Опережающие локали: анимационные хелперы (pulse/popIn/notify) создают элементы и обводки,
 -- а фабрики new/rr/outline объявлены ниже — без этих строк обращения ушли бы в глобалы (nil).
-local new, rr, outline
+local new, rr, outline, gui
 -- Пружина: короткий «доезд» с перелётом — так оживают переключатели и кнопки
 local function spring(o, goal, info)
 	if not CFG.Anim then
@@ -866,30 +866,34 @@ local function shake(o, amp, times)
 end
 -- Мягкая пульсация: элемент «дышит» масштабом, пока pulse(o, nil) не остановит.
 -- Так подсвечивается то, на что игроку стоит нажать (кнопка активации, активная вкладка).
+-- Состояние анимаций живёт в слабых таблицах, а не в свойствах Instance:
+-- Roblox не разрешает записывать неизвестные поля в объекты («X is not a valid member of Frame»).
+local pulseState = setmetatable({}, {__mode = "k"})
+local function isPulsing(o) return pulseState[o] ~= nil end
 local function pulse(o, amp)
-	if o.pulseOn == amp then return end
-	o.pulseOn = amp
+	if pulseState[o] == amp then return end
+	pulseState[o] = amp or nil
 	local sc = o:FindFirstChild("PulseScale")
 	if not amp or not (UICFG.AnimPulse and CFG.Anim) then
 		if sc then
 			tween(sc, TWEEN.ui, {Scale = 1})
-			task.delay(0.3, function() if sc.Parent and not o.pulseOn then sc:Destroy() end end)
+			task.delay(0.3, function() if sc.Parent and not pulseState[o] then sc:Destroy() end end)
 		end
 		return
 	end
 	sc = sc or new("UIScale", {Name = "PulseScale", Scale = 1}, o)
 	local info = TweenInfo.new(0.75, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 	task.spawn(function()
-		while o.pulseOn == amp and o.Parent and sc.Parent do
+		while pulseState[o] == amp and o.Parent and sc.Parent do
 			local up = TS:Create(sc, info, {Scale = 1 + amp})
 			up:Play()
 			up.Completed:Wait()
-			if o.pulseOn ~= amp or not sc.Parent then break end
+			if pulseState[o] ~= amp or not sc.Parent then break end
 			local down = TS:Create(sc, info, {Scale = 1})
 			down:Play()
 			down.Completed:Wait()
 		end
-		if sc.Parent and not o.pulseOn then tween(sc, TWEEN.ui, {Scale = 1}) end
+		if sc.Parent and not pulseState[o] then tween(sc, TWEEN.ui, {Scale = 1}) end
 	end)
 end
 -- Появление «точки включённой функции»: вырастает из нуля, при выключении схлопывается
@@ -1093,13 +1097,13 @@ local function button(parent, text, props, opt)
 	-- при двух UIScale на одном объекте Roblox учитывает только первый.
 	local bs = new("UIScale", {Name = "PulseScale", Scale = 1}, b)
 	local function pressScale(k, info, hard)
-		if b.pulseOn and not hard then return end -- во время пульсации масштабом владеет она
+		if isPulsing(b) and not hard then return end -- во время пульсации масштабом владеет она
 		tween(bs, info, {Scale = k})
 	end
 	on(b.InputBegan, function(i) if press(i) then pressScale(0.96, TWEEN.snap, true) end end)
 	on(b.InputEnded, function(i) if press(i) then spring(bs, {Scale = 1}, TWEEN.pop) end end)
 	on(b.MouseEnter, function() pressScale(1.02, TWEEN.ui) end)
-	on(b.MouseLeave, function() if not b.pulseOn then spring(bs, {Scale = 1}, TWEEN.pop) end end)
+	on(b.MouseLeave, function() if not isPulsing(b) then spring(bs, {Scale = 1}, TWEEN.pop) end end)
 	return b
 end
 
@@ -1143,7 +1147,7 @@ local function makeSwitch(parent)
 	return track, paint
 end
 
-local gui = new("ScreenGui", {
+gui = new("ScreenGui", {
 	Name = "EnkaisyGui", ResetOnSpawn = false, DisplayOrder = 100,
 	IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, LP:WaitForChild("PlayerGui"))
@@ -1729,10 +1733,11 @@ function TC.bar()
 	return new("Frame", {BorderSizePixel = 0, Visible = false, Active = false}, TC.gui)
 end
 -- Появление и исчезновение линии: короткий фейд вместо мгновенного включения.
--- Вызывается только при СМЕНЕ состояния (f.fadeOn), поэтому в кадре ESP лишних твинов нет.
+-- Вызывается только при СМЕНЕ состояния (TC.faded[f]), поэтому в кадре ESP лишних твинов нет.
+TC.faded = setmetatable({}, {__mode = "k"})
 function TC.fade(f, on)
-	if f.fadeOn == on then return end
-	f.fadeOn = on
+	if TC.faded[f] == on then return end
+	TC.faded[f] = on
 	if not CFG.Anim then
 		f.Visible, f.BackgroundTransparency = on, 0
 		return
@@ -1745,7 +1750,7 @@ function TC.fade(f, on)
 		TS:Create(f, TWEEN.snap, {BackgroundTransparency = 1}):Play()
 		task.delay(0.14, function()
 			-- цель могла вернуться: гасим, только если линия всё ещё «выключена»
-			if f.Parent and not f.fadeOn then
+			if f.Parent and not TC.faded[f] then
 				f.Visible, f.BackgroundTransparency = false, 0
 			end
 		end)

@@ -43,12 +43,21 @@ class TweenCurves(unittest.TestCase):
 class ForwardLocals(unittest.TestCase):
     def test_helpers_never_call_globals(self):
         """pulse/popIn/notify создают элементы до объявления new/rr/outline — нужны опережающие локали."""
-        forward = SOURCE.split("local new, rr, outline", 1)
+        forward = SOURCE.split("local new, rr, outline, gui", 1)
         self.assertEqual(len(forward), 2, "нет строки опережающих локалей")
         for decl in ("function new(class, props, parent)", "function rr(o, r, cap)",
                      "function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end"):
             self.assertIn(decl, SOURCE, decl)
             self.assertNotIn("local " + decl, SOURCE, "повторный local перекрывает опережающую локаль")
+        self.assertIn("\ngui = new(\"ScreenGui\"", SOURCE, "gui объявлен как опережающая локаль")
+
+    def test_no_state_written_into_instances(self):
+        """Roblox бросает ошибку при записи неизвестного поля в Instance — состояние только в таблицах."""
+        for pattern in (r"\w+\.pulseOn\s*=", r"\bf\.fadeOn\s*=", r"\w+\.(fadeOn|pulseOn)\b"):
+            for hit in re.findall(pattern, SOURCE):
+                self.fail("состояние пишется в Instance: " + str(hit))
+        self.assertIn('local pulseState = setmetatable({}, {__mode = "k"})', SOURCE)
+        self.assertIn('TC.faded = setmetatable({}, {__mode = "k"})', SOURCE)
 
     def test_pulse_scale_names_are_unique_per_element(self):
         """Второй UIScale на объекте Roblox игнорирует: helper обязан переиспользовать существующий."""
@@ -84,7 +93,7 @@ class AnimHelpers(unittest.TestCase):
     def test_pulse_is_single_scale_per_element(self):
         body = func_body("pulse")
         self.assertIn('o:FindFirstChild("PulseScale")', body)
-        self.assertIn("o.pulseOn == amp", body)  # остановка без «двойного» запуска
+        self.assertIn("pulseState[o] == amp", body)  # остановка без «двойного» запуска
         self.assertIn("UICFG.AnimPulse", body)
 
     def test_pop_in_removes_scale_when_off(self):
@@ -147,7 +156,7 @@ class AnimWiring(unittest.TestCase):
 
     def test_esp_lines_fade_without_per_frame_tweens(self):
         body = SOURCE.split("function TC.fade(", 1)[1].split("\nfunction TC.line", 1)[0]
-        self.assertIn("f.fadeOn == on", body)  # твин стартует только на смене состояния
+        self.assertIn("TC.faded[f] == on", body)  # твин стартует только на смене состояния
         self.assertIn("if not CFG.Anim then", body)
         line = SOURCE.split("function TC.line(", 1)[1].split("\nend", 1)[0]
         self.assertIn("TC.fade(f, true)", line)
