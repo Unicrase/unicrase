@@ -34,20 +34,20 @@ class AimQuality(unittest.TestCase):
         self.assertIn("os.clock() - targetSince < A.StickTime", pick)
 
     def test_dead_zone_is_in_screen_pixels(self):
-        step = between("local smooth = math.clamp(A.Smoothness", "end)")
-        self.assertIn("local deadPx = smooth < 1 and 0.6 or 0.2", step)
+        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
+        self.assertIn("local deadPx = smooth < 1 and A.SmoothDeadPx or 0.2", step)
         self.assertIn("WorldToViewportPoint(aimPt)", step)
         self.assertNotIn("math.rad(0.08)", step, "старая угловая мёртвая зона слишком грубая")
 
     def test_camera_lag_does_not_snap(self):
-        step = between("local smooth = math.clamp(A.Smoothness", "end)")
-        self.assertIn("camLag = camLag:Lerp(cf,", step)
+        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
+        self.assertIn("camLag = camLag:Lerp(cf, follow)", step)
         self.assertIn("if not aimPt then camLag = nil end", TEXT, "лаг сбрасывается вместе с целью")
 
     def test_shake_is_optional_and_applied_over_aim(self):
-        step = between("local smooth = math.clamp(A.Smoothness", "end)")
+        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
         self.assertIn("if A.Shake > 0 then", step)
-        self.assertIn("camera.CFrame = stepCF * shakeOff", step)
+        self.assertIn("camera.CFrame = stepCF * shakeOff", TEXT)
 
     def test_lead_multiplier_is_used(self):
         self.assertEqual(TEXT.count("getLead() * (A.LeadMul / 100)"), 2, "простое и продвинутое упреждение")

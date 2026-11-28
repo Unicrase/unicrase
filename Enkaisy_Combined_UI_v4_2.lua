@@ -31,6 +31,8 @@
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
 --       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
 --       ESP update rate теперь реально ограничивает частоту (в т.ч. 60 Гц на 120-Гц экране).
+--       Плавность (папка Aim, раздел SMOOTHNESS): Smooth curve (Linear / Ease / Human), Max turn speed,
+--       Dead zone в пикселях, Camera follow %; тряска Shake фильтруется по кадру и не скачет.
 --       Качество наводки: Stick time (удержание цели по времени), Predict multiplier, Shake (мягкое дрожание),
 --       мёртвая зона в экранных пикселях, плавное догоняние камеры, сплайн-трекер скорости по истории позиций.
 --       Silent aim: сначала цель самой наводки, иначе — по реальной точке попадания; Multipoint — ближние точки первыми.
@@ -446,6 +448,8 @@ ShowFOV = true, DebugHUD = true,
 Smoothness = 0.16, Prediction = 0.1, MaxDistance = 500, Sticky = 0.7,
 -- RCS (Recoil Control System): возвращает камеру к точке прицела после отдачи и (по желанию) гасит её
 Rcs = false, RcsStrength = 1, RcsSmooth = 0.35, RcsSuppress = false,
+-- Плавность (Smoothness): кривая сглаживания, предел угловой скорости, мёртвая зона и подмешивание камеры
+SmoothMode = "Linear", SmoothMaxSpeed = 900, SmoothDeadPx = 0.6, SmoothCamFollow = 65,
 -- качество наводки: StickTime — сколько цель остаётся «своей» после выхода из круга (сек),
 -- Shake — дрожание прицела в долях градуса, LeadMul — множитель упреждения (%)
 StickTime = 0.25, Shake = 0, LeadMul = 100,
@@ -721,6 +725,10 @@ AIMCFG.MaxDistance = math.clamp(AIMCFG.MaxDistance, 50, 2000)
 AIMCFG.Sticky = math.clamp(AIMCFG.Sticky, 0.2, 1)
 AIMCFG.RcsStrength = math.clamp(tonumber(AIMCFG.RcsStrength) or 1, 0, 1)
 AIMCFG.RcsSmooth = math.clamp(tonumber(AIMCFG.RcsSmooth) or 0.35, 0, 1)
+if not table.find({"Linear", "Ease", "Human"}, AIMCFG.SmoothMode) then AIMCFG.SmoothMode = "Linear" end
+AIMCFG.SmoothMaxSpeed = math.clamp(tonumber(AIMCFG.SmoothMaxSpeed) or 900, 100, 3600)
+AIMCFG.SmoothDeadPx = math.clamp(tonumber(AIMCFG.SmoothDeadPx) or 0.6, 0, 6)
+AIMCFG.SmoothCamFollow = math.clamp(tonumber(AIMCFG.SmoothCamFollow) or 65, 0, 100)
 AIMCFG.StickTime = math.clamp(tonumber(AIMCFG.StickTime) or 0.25, 0, 2)
 AIMCFG.Shake = math.clamp(tonumber(AIMCFG.Shake) or 0, 0, 3)
 AIMCFG.LeadMul = math.clamp(tonumber(AIMCFG.LeadMul) or 100, 0, 200)
@@ -2190,6 +2198,10 @@ helpUI.info = {
  ["RCS strength"] = {"Насколько сильно RCS гасит отдачу: 100% — полностью, 50% — половину, 0% — RCS выключен.", "How much recoil RCS removes: 100% — all of it, 50% — half, 0% — RCS off."},
  ["RCS smoothness"] = {"Скорость выравнивания: 0 — мгновенно, выше — плавнее и мягче.", "How fast recoil is levelled out: 0 — instantly, higher — smoother."},
  ["RCS suppress (no kick)"] = {"Не даёт камере уходить вверх при выстреле: отдача не отрисовывается, ствол не задран.", "Stops the camera from kicking up while shooting: recoil is not shown and the barrel never climbs."},
+ ["Smooth curve"] = {"Форма плавности: Linear — ровно, Ease — мягче ближе к цели, Human — с живой неровностью.", "Smoothing shape: Linear — even, Ease — softer near the target, Human — with a lifelike unevenness."},
+ ["Max turn speed, deg/s"] = {"Предел скорости поворота камеры: не даёт резко «щёлкнуть» на далёкую цель.", "Camera turn speed limit: prevents snapping to a distant target."},
+ ["Dead zone, px"] = {"Зона, внутри которой прицел не двигается — убирает микро-дрожь на цели.", "Zone where the aim does not move — removes micro-jitter on the target."},
+ ["Camera follow, %"] = {"Насколько наводка следует за реальной камерой за кадр: меньше — плавнее, но медленнее реакция.", "How much the aim follows the real camera per frame: lower — smoother but slower to react."},
  ["Stick time (sec)"] = {"Сколько секунд захваченная цель остаётся главной, даже если рядом появилась другая.", "How many seconds the captured target stays primary even if another one appears nearby."},
  ["Predict multiplier, %"] = {"Множитель упреждения: меньше — стрелять ближе к текущей позиции цели, больше — дальше вперёд.", "Prediction multiplier: lower shoots closer to the target's current position, higher shoots further ahead."},
  ["Shake (soft aim), deg"] = {"Небольшое дрожание прицела при наводке, чтобы она не выглядела идеально ровной. 0 — выключено.", "Small aim jitter while aiming so it does not look perfectly linear. 0 — off."},
@@ -2606,6 +2618,7 @@ local function buildAim(page, api)
 	local currentTarget = nil
 	local targetSince = nil -- когда текущая цель захвачена: даёт липкость по времени и антидребезг
 	local camLag, shakeOff = nil, CFrame.new() -- сглаженный «свой» поворот камеры и текущая тряска
+	local shakePrev = 0 -- прошлый сэмпл шума: тряска без «памяти» кадра
 	local lastPingT, autoLead = 0, 0.1
 	local editing = false
 	local previewFov = false -- живой предпросмотр круга, пока открыта вкладка FOV
@@ -2857,6 +2870,35 @@ local function buildAim(page, api)
 	local function clampN(x) return math.clamp(x, 0.02, 0.98) end
 	local function circleN() return V2(SP.circle.X / SP.vp.X, SP.circle.Y / SP.vp.Y) end
 	local function aimN() return V2(SP.aim.X / SP.vp.X, SP.aim.Y / SP.vp.Y) end
+
+	-- ===== Плавность наводки (Smoothness) =====
+	-- Число A.Smoothness (0.01..1) — общая скорость, а форма задаётся отдельно:
+	--   Linear — ровное сглаживание (как раньше);
+	--   Ease   — мягко в начале, точнее у цели (лучше для мелких поправок);
+	--   Human  — кривая с живой неровностью, движение не выглядит механическим.
+	-- Плюс три предохранителя: предел угловой скорости, мёртвая зона в пикселях и доля догоняния камеры.
+	local function smoothAlpha(angle, dt)
+		local smooth = math.clamp(A.Smoothness, 0.01, 1)
+		local alpha = 1 - (1 - smooth) ^ (math.clamp(dt, 0, 0.1) * 60)
+		if A.SmoothMode == "Ease" then
+			-- ease-out: большие углы берём быстрее, остаток добираем точнее
+			alpha = alpha * (0.6 + 0.4 * math.clamp(angle / 0.5, 0, 1))
+		elseif A.SmoothMode == "Human" then
+			-- неровность задаётся шумом по времени: рука «дышит», но линия не дрожит
+			local t = os.clock()
+			alpha = alpha * (0.75 + 0.5 * (math.noise(t * 2.3) * 0.5 + 0.5))
+		end
+		return math.clamp(alpha, 0, 1)
+	end
+	-- предел скорости поворота: degree per second, как у настоящей руки, а не телепорт
+	local function clampStep(step, dt)
+		local maxDeg = math.clamp(A.SmoothMaxSpeed, 100, 3600)
+		return math.min(step, math.rad(maxDeg) * math.clamp(dt, 0, 0.1))
+	end
+	-- доля, с которой камера догоняет реальный поворот за кадр (100% = мгновенно)
+	local function camFollow()
+		return math.clamp(A.SmoothCamFollow / 100, 0.05, 1)
+	end
 
 	-- ===== RCS (Recoil Control System) =====
 	-- Игра может сама двигать камеру вверх при выстреле (Tool.Attributes RecoilPitch / RecoilYaw
@@ -3137,6 +3179,12 @@ local function buildAim(page, api)
 	-- Smoothness и Sticky — две части одного ощущения наводки, поэтому стоят подряд
 	slider("Smoothness (higher = faster)", "Smoothness", 0.01, 1, 0.01, 2)
 	slider("Sticky (lower = stickier)", "Sticky", 0.2, 1, 0.05, 2)
+	-- ===== Плавность: форма кривой и предохранители относятся к той же наводке =====
+	section("SMOOTHNESS — ПЛАВНОСТЬ")
+	cycleKeep("Smooth curve", "SmoothMode", {"Linear", "Ease", "Human"})
+	slider("Max turn speed, deg/s", "SmoothMaxSpeed", 100, 3600, 50, 0)
+	slider("Dead zone, px", "SmoothDeadPx", 0, 6, 0.1, 1)
+	slider("Camera follow, %", "SmoothCamFollow", 5, 100, 5, 0)
 	chips({
 		{"Auto predict", "AutoPredict"},
 		{"Adv predict", "AdvPredict", nil, "Скорость, ускорение, прыжок/падение цели и падение пули (нужны BulletSpeed + BulletGravity)"},
@@ -4789,26 +4837,31 @@ local function buildAim(page, api)
 		local axis = dirNow:Cross(dirWant)
 		if angle < 1e-4 or axis.Magnitude < 1e-6 then return end
 		local smooth = math.clamp(A.Smoothness, 0.01, 1)
-		local alpha = 1 - (1 - smooth) ^ (math.clamp(dt, 0, 0.1) * 60)
-		local step = angle * alpha
-		-- качество: мёртвая зона в ЭКРАННЫХ пикселях (раньше угол в градусах — на телефоне это была заметная дрожь),
-		-- ограничение угловой скорости и плавное «догоняние» реальной камеры (камера игры не прыгает мгновенно)
-		local deadPx = smooth < 1 and 0.6 or 0.2
+		local step = angle * smoothAlpha(angle, dt)
+		-- качество: мёртвая зона в ЭКРАННЫХ пикселях, предел скорости и плавное догоняние камеры.
+		-- При Smoothness = 1 движение остаётся мгновенным, как раньше.
+		local deadPx = smooth < 1 and A.SmoothDeadPx or 0.2
 		if smooth < 1 then
 			local sp, on = camera:WorldToViewportPoint(aimPt)
 			if on and (V2(sp.X, sp.Y) - SP.aim).Magnitude < deadPx then return end
-			step = math.min(step, math.rad(900) * math.clamp(dt, 0, 0.1))
+			step = clampStep(step, dt)
 		end
 		local cf = camera.CFrame
 		if not camLag then camLag = cf end
 		-- лаг обновляем долей от кадра: при Smoothness 1 камера идёт за мышью/игрой почти мгновенно
-		camLag = camLag:Lerp(cf, math.clamp((1 - smooth) * 0.35 + 0.65, 0, 1))
+		-- при Smoothness < 1 камера догоняет реальный поворот долей SmoothCamFollow
+		local follow = smooth < 1 and camFollow() or 1
+		camLag = camLag:Lerp(cf, follow)
 		-- Shake: продолжение того же поворота (камера уже на цели) плюс небольшое дрожание.
 		-- Дрожание сидит поверх поворота, поэтому при Shake = 0 прицел идёт ровно по цели.
 		local stepCF = camLag * CFrame.fromAxisAngle(axis.Unit, step)
 		if A.Shake > 0 then
 			local amp = math.rad(A.Shake)
-			shakeOff = CFrame.fromEulerAnglesYXZ((math.noise(os.clock() * 7) - 0.5) * amp, (math.noise(os.clock() * 9 + 13) - 0.5) * amp, 0)
+			local t = os.clock()
+			-- шум фильтруем по кадру: резких скачков нет, прицел «дышит» а не дёргается
+			local k = 1 - math.exp(-math.clamp(dt, 0, 0.1) / 0.12)
+			shakePrev = shakePrev + ((math.noise(t * 7) * 0.5 + math.noise(t * 9 + 13) * 0.5) - shakePrev) * k
+			shakeOff = CFrame.fromEulerAnglesYXZ(shakePrev * amp, (math.noise(t * 5 + 31) - 0.5) * amp * 0.6, 0)
 		elseif shakeOff ~= CFrame.new() then
 			shakeOff = CFrame.new()
 		end
