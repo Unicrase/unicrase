@@ -28,7 +28,13 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
--- v4.4.1: ИСПРАВЛЕНО ГЛАВНОЕ — скрипт снова загружается. В buildAim и в главном блоке файла было
+-- v4.4.1: CHAMS LOOK: заливка Highlight рисуется ПОВЕРХ тела и была почти непрозрачной —
+--         материал и свет под ней не видны, поэтому все стили выглядели одинаковым силуэтом.
+--         Заливка ограничена 55%, свет ярче (1.5..2.2 вместо 0.3..1.1), добавлена поддержка
+--         настоящих текстур Roblox (CHAMS_TEX), исходная текстура возвращается при снятии.
+--         Круг FOV: gradient-обводка больше не теряется (fovStrokeGrad объявлен), а анимация
+--         (вращение градиента, пунктир, «дыхание») не выключается из-за неполного сохранения.
+--         ИСПРАВЛЕНО ГЛАВНОЕ — скрипт снова загружается. В buildAim и в главном блоке файла было
 --         больше 200 локальных переменных: Lua/Luau отказывался компилировать файл, и не появлялось
 --         даже окно ключа. Редкие константы и ссылки переехали в таблицы GLB / AIM (обращения вида
 --         GLB.BUILD), число локалей упало ниже предела. В тесты добавлена проверка компиляции.
@@ -88,7 +94,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.4.0" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.4.1" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2132,6 +2138,14 @@ CHAMS = {
 CHAMS_BY_KEY = {}
 for i, c in CHAMS do c.idx, CHAMS_BY_KEY[c.key] = i, c end
 
+-- Текстуры для стилей (необязательно). Одного материала мало: CrackedLava почти не реагирует
+-- на Color, Glass/Ice/Foil выглядят как пластик. Если вписать сюда id текстуры, она ляжет
+-- на тело, и стиль станет по-настоящему «текстурным».
+-- Как взять id: в Studio положить на деталь Texture с нужной картинкой (лава, лёд, сетка),
+-- скопировать его свойство Texture и вписать сюда: CHAMS_TEX.Lava = "rbxassetid://<число>".
+local CHAMS_TEX = {} -- пусто по умолчанию: выдуманный id текстуры ничего не нарисует
+
+
 -- Стиль Chams: и ключ для списка, и его параметры в одном месте.
 local function chamsStyle()
 	return CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
@@ -2187,6 +2201,7 @@ local function chamsClear(char)
 			pcall(function()
 				part.Material = orig.mat
 				part.Color = orig.col
+				part.TextureID = orig.tex or ""
 			end)
 		end
 		chamsOrig[part] = nil
@@ -2220,25 +2235,39 @@ local function chamsTexture(char, st, tint, animate)
 	for _, part in chamsParts(char) do
 		if not chamsOrig[part] then
 			chamsOrig[part] = {mat = part.Material, col = part.Color}
+			chamsOrig[part].tex = part.TextureID or ""
 		end
 		pcall(function()
 			part.Material = st.mat
 			part.Color = col
 		end)
 	end
+	-- Настоящая текстура Roblox поверх материала: CrackedLava почти не реагирует на Color,
+	-- Glass/Ice/Foil выглядят как пластик. Текстура берётся из CHAMS_TEX (по умолчанию пусто:
+	-- id текстур задаются вручную, придуманный id просто ничего не нарисует).
+	local tex = CHAMS_TEX[st.key] or CHAMS_TEX[st.mat and st.mat.Name or ""]
+	for _, part in chamsParts(char) do
+		if tex then
+			if part.TextureID ~= tex then pcall(function() part.TextureID = tex end) end
+		elseif part.TextureID ~= "" then
+			-- стиль без своей текстуры: убираем чужую, чтобы тело выглядело штатно
+			pcall(function() part.TextureID = "" end)
+		end
+	end
 	-- свет: стили с glow реально светятся в тёмных местах (Neon/Lava/Chrome и т.п.)
-	if st.glow and st.glow > 0 then
-		local light = chamsLights[char]
+	local light = chamsLights[char]
+	if (st.glow or 0) > 0 then
 		if not light or not light.Parent then
 			local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
 			if not root then return end
-			light = new("PointLight", {Name = "EnkaisyChamsLight", Range = 9, Brightness = 0}, root)
+			-- яркость 1.5 + Range 9: при меньшей свет не виден днём и стили «не светятся»
+			light = new("PointLight", {Name = "EnkaisyChamsLight", Range = 9, Brightness = 1.5}, root)
 			chamsLights[char] = light
 		end
 		light.Color = st.light or col
-		light.Brightness = st.glow * (animate and (0.85 + 0.15 * math.sin(now * 3)) or 1)
-	elseif chamsLights[char] then
-		chamsLights[char]:Destroy()
+		light.Brightness = math.max(1.5, st.glow * 2.2) * (animate and (0.85 + 0.15 * math.sin(now * 3)) or 1)
+	elseif light then
+		light:Destroy()
 		chamsLights[char] = nil
 	end
 end
@@ -2253,7 +2282,10 @@ local function chamsApply(o, fillColor, outlineColor, tintable)
 	if outlineColor then
 		o.h.OutlineColor = (tintable == false) and outlineColor or chamsTint(outlineColor, st, 0.7)
 	end
-	o.h.FillTransparency = 1 - chamsAlpha(o, "Fill", CFG.Fill, 0.45, st.fill)
+	-- Заливка Highlight рисуется ПОВЕРХ тела (DepthMode.AlwaysOnTop), поэтому плотная заливка
+	-- прячет материал и свет — снаружи все стили выглядели одинаково серым силуэтом.
+	-- Ограничиваем заливку 55%: тело (лава, неон, стекло) остаётся видимым, стиль читается.
+	o.h.FillTransparency = 1 - math.min(0.55, chamsAlpha(o, "Fill", CFG.Fill, 0.45, st.fill))
 	o.h.OutlineTransparency = 1 - chamsAlpha(o, "Outline", CFG.Outline, 0.8, st.outline)
 	return st
 end
@@ -3198,6 +3230,7 @@ local function buildAim(page, api)
 		table.insert(fovHalo, {f = ring, st = st, k = i})
 	end
 	local fovGrad -- градиент обводки стиля Gradient (создаётся один раз)
+	local fovStrokeGrad -- сам UIGradient: без объявления он уходил в глобал (переменная = nil)
 	-- пунктир: сегменты — ДЕТИ круга, координаты в его долях (0.5 ± радиус)
 	AIM.fovDash = {}
 	local DASH_N = 24
@@ -4490,7 +4523,9 @@ local function buildAim(page, api)
 			local line = accent or A.FovCol and hsv(A.FovCol) or C.W
 			local thick = math.max(0.5, A.CircleThick or 1.5)
 			local alpha = math.clamp(1 - (A.FovAlpha or 0.35), 0, 1)
-			local animate = (A.FovAnim and CFG.Anim) and true or false
+			-- если настройки сохранились неполными, ключа может не быть: тогда анимация ДОЛЖНА быть включена,
+			-- иначе градиент замирает под 45° и стили выглядят одинаково
+			local animate = (A.FovAnim ~= false) and (CFG.Anim ~= false)
 
 			-- сначала гасим всё, что относится к другим стилям: лишние объекты не должны мигать
 			fovGlow.Visible = (style == "Glow")
