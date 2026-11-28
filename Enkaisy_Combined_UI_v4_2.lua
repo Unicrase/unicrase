@@ -44,6 +44,8 @@
 --       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
+--       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
+--       ESP: линии и скелет появляются и гаснут фейдом (твин стартует только на смене состояния).
 --       Поиск: запрос ищется по словам (порядок не важен), папки без совпадений скрываются;
 --       клик по папке прокручивает страницу к ближайшей настройке, дальше — стрелки ▲▼ справа от страницы.
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
@@ -1671,7 +1673,7 @@ function TC.box(o, char, vis, cam, color)
 		o.bxT = os.clock()
 	end
 	if not (vis and cam and #parts > 0) then
-		for _, f in o.bx or {} do f.Visible = false end
+		for _, f in o.bx or {} do TC.fade(f, false) end
 		return
 	end
 	-- частота задаётся кадром ESP (EspHz): отдельный таймер молча съедал бы половину обновлений
@@ -1693,7 +1695,7 @@ function TC.box(o, char, vis, cam, color)
 		end
 	end
 	if not any or maxX - minX < 2 or maxY - minY < 2 then
-		for _, f in o.bx or {} do f.Visible = false end
+		for _, f in o.bx or {} do TC.fade(f, false) end
 		return
 	end
 	-- поля вокруг модели: узкая рамка не прилипает к силуэту
@@ -1726,17 +1728,41 @@ function TC.bar()
 	end
 	return new("Frame", {BorderSizePixel = 0, Visible = false, Active = false}, TC.gui)
 end
+-- Появление и исчезновение линии: короткий фейд вместо мгновенного включения.
+-- Вызывается только при СМЕНЕ состояния (f.fadeOn), поэтому в кадре ESP лишних твинов нет.
+function TC.fade(f, on)
+	if f.fadeOn == on then return end
+	f.fadeOn = on
+	if not CFG.Anim then
+		f.Visible, f.BackgroundTransparency = on, 0
+		return
+	end
+	if on then
+		f.Visible = true
+		f.BackgroundTransparency = 1
+		TS:Create(f, TWEEN.ui, {BackgroundTransparency = 0}):Play()
+	else
+		TS:Create(f, TWEEN.snap, {BackgroundTransparency = 1}):Play()
+		task.delay(0.14, function()
+			-- цель могла вернуться: гасим, только если линия всё ещё «выключена»
+			if f.Parent and not f.fadeOn then
+				f.Visible, f.BackgroundTransparency = false, 0
+			end
+		end)
+	end
+end
 function TC.line(f, a, b, c)
 	local d = b - a
 	f.Position, f.Size, f.Rotation = O((a.X + b.X) / 2, (a.Y + b.Y) / 2), O(d.Magnitude, 1.5), math.deg(math.atan2(d.Y, d.X))
-	f.BackgroundColor3, f.Visible = c, true
+	f.BackgroundColor3 = c
+	TC.fade(f, true)
 end
 -- четыре полосы = периметр рамки; толщина одинаковая, стыки не просвечивают
 function TC.rect(bx, x, y, w, h, th, color)
 	local bars = {{x, y, w + th, th}, {x, y + h, w + th, th}, {x, y, th, h + th}, {x + w, y, th, h + th}}
 	for i, b in bars do
 		local f = bx[i]
-		f.Visible = true
+		TC.fade(f, true)
 		f.Position = U(0, b[1], 0, b[2])
 		f.Size = O(math.max(1, b[3]), math.max(1, b[4]))
 		f.BackgroundColor3 = color
@@ -1752,10 +1778,10 @@ function TC.draw(o, char, vis, cam)
 			local sz = cam.ViewportSize
 			TC.line(o.tr, V2(sz.X / 2, sz.Y), V2(p.X, p.Y), TC.get(o.plr, "Tracer") or fill)
 		elseif o.tr then
-			o.tr.Visible = false
+			TC.fade(o.tr, false)
 		end
 	elseif o.tr then
-		o.tr.Visible = false
+		TC.fade(o.tr, false)
 	end
 	if CFG.Skeleton and vis and cam then
 		o.sk = o.sk or {}
@@ -1772,10 +1798,10 @@ function TC.draw(o, char, vis, cam)
 					drawn = true
 				end
 			end
-			if not drawn and f then f.Visible = false end
+			if not drawn and f then TC.fade(f, false) end
 		end
 	elseif o.sk then
-		for _, f in o.sk do f.Visible = false end
+		for _, f in o.sk do TC.fade(f, false) end
 	end
 end
 
@@ -2534,13 +2560,23 @@ local function cycleCard(parent, text, order, getv, nextv, isOn)
 	end
 	on(pill:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
 	on(b:GetPropertyChangedSignal("AbsoluteSize"), fitLabel)
-	local function paint()
-		pill.Text = tostring(getv()) .. "  ›"
-		pill.TextColor3 = (isOn == nil or isOn()) and C.W or C.Mut
+	local function paint(anim)
+		local txt = tostring(getv()) .. "  ›"
+		local dim = not (isOn == nil or isOn())
+		pill.Text, pill.TextColor3 = txt, dim and C.Mut or C.W
+		if anim and CFG.Anim and UICFG.AnimCounters then
+			-- значение «перещёлкивается»: короткий масштаб и фейд, видно, что нажатие сработало
+			local sc = pill:FindFirstChild("PopScale")
+			if not sc then sc = new("UIScale", {Name = "PopScale", Scale = 1}, pill) end
+			sc.Scale = 0.86
+			spring(sc, {Scale = 1}, TWEEN.pop)
+			pill.TextTransparency = 0.35
+			tween(pill, TWEEN.ui, {TextTransparency = 0})
+		end
 	end
 	paint()
 	fitLabel()
-	on(b.Activated, function() nextv(); paint() end)
+	on(b.Activated, function() nextv(); paint(true) end)
 	return b, paint
 end
 
@@ -5718,7 +5754,12 @@ local function startMain()
 		local dot = new("Frame", {Size = O(4, 4), AnchorPoint = V2(1, 0.5), Position = U(1, -6, 0.5, 0),
 			BackgroundColor3 = C.W, BackgroundTransparency = 1, Active = false}, tb)
 		round(dot, 2)
-		ptabs[n] = {button = tb, st = st, tile = tile, label = lbl, dot = dot, headIcon = headIcon, paintIcon = icPaint, h = hoverable(tb, st, {base = 1})}
+		local hitsBadge = new("TextLabel", {Name = "Hits", Size = O(26, 16), AnchorPoint = V2(1, 0.5), Position = U(1, -6, 0.5, 0),
+			BackgroundColor3 = C.Sel, BackgroundTransparency = 1, Text = "", TextColor3 = C.Mut, FontFace = GM,
+			TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Visible = false, Active = false}, tb)
+		rr(hitsBadge, 5)
+		ptabs[n] = {button = tb, st = st, tile = tile, label = lbl, dot = dot, headIcon = headIcon, paintIcon = icPaint,
+			hits = hitsBadge, h = hoverable(tb, st, {base = 1})}
 		local pg
 		if not folder.ownScroll then
 			pg = new("ScrollingFrame", {
@@ -5761,9 +5802,26 @@ local function startMain()
 		flag("hESP", CFG.On, function(o) espDot.BackgroundColor3 = o and C.W or C.Mut end)
 		flag("hAIM", AIMCFG.Enabled, function(o) aimDot.BackgroundColor3 = o and C.W or C.Mut end)
 		-- точки не мигают прозрачностью, а «вырастают»: включённая функция заметна боковым зрением
-		flag("tMain", CFG.On, function(o) local d = ptabs.Main.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
-		flag("tAim", AIMCFG.Enabled, function(o) local d = ptabs.Aim.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
-		flag("tFOV", AIMCFG.Enabled and AIMCFG.ShowFOV, function(o) local d = ptabs.FOV.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
+		-- точка «вырастает» и коротко подсвечивается: включённую функцию видно и без чтения подписей
+		local function dotFlag(key, on_)
+			flag(key, on_, function(o)
+				local d = ptabs[key == "tMain" and "Main" or key == "tAim" and "Aim" or "FOV"].dot
+				d.BackgroundTransparency = 0
+				popIn(d, o)
+				if o and CFG.Anim and UICFG.AnimPulse then
+					-- вспышка цвета: точка «моргает» один раз, затем возвращается к обычному цвету
+					d.BackgroundColor3 = C.Acc
+					task.delay(0.4, function()
+						if d.Parent and d.BackgroundTransparency == 0 then
+							tween(d, TWEEN.ui, {BackgroundColor3 = C.W})
+						end
+					end)
+				end
+			end)
+		end
+		dotFlag("tMain", CFG.On)
+		dotFlag("tAim", AIMCFG.Enabled)
+		dotFlag("tFOV", AIMCFG.Enabled and AIMCFG.ShowFOV)
 	end
 
 	new("Frame", {Size = U(1, -20, 0, 1), Position = U(0, 10, 1, -41), BackgroundColor3 = C.Line}, side)
@@ -6793,6 +6851,21 @@ local function startMain()
 					if not string.find(searchIndex[n], w, 1, true) then visible = false break end
 				end
 			end
+			-- сколько совпадений внутри папки: видно, куда идти за ответом, ещё до клика
+			local badge = ptabs[n].hits
+			local cnt = 0
+			if visible and #terms > 0 then
+				for _, sig in hits do if sig[1] == n then cnt += 1 end end
+			end
+			local badgeText = cnt > 0 and tostring(cnt) or ""
+			if badge.Text ~= badgeText then
+				badge.Text = badgeText
+				if CFG.Anim and cnt > 0 then
+					badge.BackgroundTransparency = 0.7
+					tween(badge, TWEEN.ui, {BackgroundTransparency = 0.55})
+				end
+			end
+			badge.Visible = cnt > 0
 			local wasHidden = not tab.Visible
 			tab.Visible = visible
 			if visible then
@@ -6815,8 +6888,8 @@ local function startMain()
 
 	-- новое совпадение по мере ввода — к нему и ведём (после того как список папок ужался)
 	local function onQueryChanged()
+		refreshSearch() -- сначала считаем совпадения: по ним filterTabs рисует бейджи на папках
 		filterTabs()
-		refreshSearch()
 		-- крестик очистки виден только при непустом запросе и появляется с лёгким «прыжком»
 		local has = #searchTerms() > 0
 		if has ~= clearBtn.Visible then

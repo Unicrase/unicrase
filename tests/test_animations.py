@@ -145,6 +145,23 @@ class AnimWiring(unittest.TestCase):
         complete = dialog.split("local function complete()", 1)[1].split("end\n", 1)[0]
         self.assertIn("hide()", complete)
 
+    def test_esp_lines_fade_without_per_frame_tweens(self):
+        body = SOURCE.split("function TC.fade(", 1)[1].split("\nfunction TC.line", 1)[0]
+        self.assertIn("f.fadeOn == on", body)  # твин стартует только на смене состояния
+        self.assertIn("if not CFG.Anim then", body)
+        line = SOURCE.split("function TC.line(", 1)[1].split("\nend", 1)[0]
+        self.assertIn("TC.fade(f, true)", line)
+        self.assertNotIn("Visible, f.BackgroundColor3", line)
+        # выключение линий/скелета тоже проходит через фейд
+        self.assertNotIn("f.Visible = false", SOURCE.split("function TC.draw(", 1)[1].split("\nlocal function alphaFor", 1)[0])
+
+    def test_search_clear_button_and_hit_badges(self):
+        self.assertIn("Name = \"SearchClear\"", SOURCE)
+        self.assertIn('Name = "Hits"', SOURCE)
+        changed = SOURCE.split("local function onQueryChanged()", 1)[1].split("on(search:GetPropertyChangedSignal", 1)[0]
+        self.assertLess(changed.index("refreshSearch()"), changed.index("filterTabs()"), "бейджи считаются после совпадений")
+        self.assertIn("clearBtn.Visible", changed)
+
     def test_overlay_circle_pops_in_and_mark_reacts_to_target(self):
         body = between("local function drawOverlay(now)", "runSelfTest = function")
         self.assertIn("fovSc", body)
