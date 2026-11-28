@@ -5922,20 +5922,28 @@ local function startMain()
 	-- размеры и прозрачность подсветки: раньше жили в отдельной папке, теперь рядом с самим ESP
 	sectionLabel(pm, "РАЗМЕР И ПРОЗРАЧНОСТЬ", 6)
 	local sOrd = 6
-	local function slider(title, key, min, max, pct, fmt)
+	-- Ползунки панели ESP. Аргументы: pct = значение в долях (0..1) и проценты в подписи,
+	-- fmt = своя подпись значения, step = шаг, если подпись не процентная.
+	-- fmt приходит из длинного списка вызовов, поэтому неверный тип (число вместо функции)
+	-- трактуем как шаг: панель не должна падать с "attempt to call a number value".
+	local function slider(title, key, min, max, pct, fmt, step)
 		sOrd += 1
+		if type(fmt) == "number" and step == nil then fmt, step = nil, fmt end
+		if type(fmt) ~= "function" then fmt = nil end
+		if type(step) ~= "number" then step = nil end
+		local function label(v)
+			if fmt then return fmt(v) end
+			if pct then return math.floor(v * 100 + 0.5) .. "%" end
+			return tostring(math.floor(v + 0.5))
+		end
 		local _, paint = sliderCard(pm, title, sOrd, min, max,
 			function() return CFG[key] end,
 			function(v)
 				CFG[key] = pct and v or math.floor(v + 0.5)
 				refreshHL()
 			end,
-			function(v)
-				if fmt then return fmt(v) end
-				if pct then return math.floor(v * 100 + 0.5) .. "%" end
-				return tostring(v)
-			end,
-			not pct and 1 or nil)
+			label,
+			step or (not pct and 1 or nil))
 		table.insert(repaints, function() paint() end)
 	end
 	slider("Fill strength", "Fill", 0, 1, true)
@@ -5945,7 +5953,7 @@ local function startMain()
 	slider("ESP max distance", "MaxDist", 50, DIST_MAX, false, function(v) return v >= DIST_MAX and "∞" or v .. "m" end)
 	slider("Limit count", "LimitN", 1, 31)
 	-- Min dist: ближе этого ESP не рисуется — вплотную рамка и подписи только мешают
-	slider("Min distance (studs)", "MinDist", 0, 500, 5, 0)
+	slider("Min distance (studs)", "MinDist", 0, 500, false, function(v) return v .. " m" end)
 
 	-- фильтры целей: рядом с размерами, потому что тоже влияют только на подсветку
 	sectionLabel(pm, "ФИЛЬТРЫ", 13)
