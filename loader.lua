@@ -1,4 +1,4 @@
--- Enkaisy 4.5.3 — загрузчик: скачивает полный скрипт и запускает его.
+-- Enkaisy 4.6.0 — загрузчик: скачивает полный скрипт и запускает его.
 -- Нужен интернет и исполнитель с loadstring (вы писали, что loadstring есть).
 local URL = "https://raw.githubusercontent.com/Unicrase/unicrase/arena/ee6c5c73-unicrase/loadstring.lua"
 
