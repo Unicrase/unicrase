@@ -75,6 +75,17 @@ class ForwardLocals(unittest.TestCase):
         self.assertIn('local pulseState = setmetatable({}, {__mode = "k"})', SOURCE)
         self.assertIn('TC.faded = setmetatable({}, {__mode = "k"})', SOURCE)
 
+    def test_shake_never_stacks(self):
+        body = SOURCE.split("local function shake(o, amp, times)", 1)[1].split("local function pulse(", 1)[0]
+        self.assertIn('setmetatable({}, {__mode = "k"})', SOURCE.split("local function shake(", 1)[0].rsplit("\n", 2)[-2])
+        self.assertIn("shaking[o] then return end", body)
+        self.assertIn("shaking[o] = nil", body)
+
+    def test_esp_fade_does_not_flash_when_already_visible(self):
+        body = SOURCE.split("function TC.fade(f, on)", 1)[1].split("\nend", 1)[0]
+        self.assertIn("local wasHidden = not f.Visible", body)
+        self.assertIn("if wasHidden then f.BackgroundTransparency = 1 end", body)
+
     def test_pulse_scale_names_are_unique_per_element(self):
         """Второй UIScale на объекте Roblox игнорирует: helper обязан переиспользовать существующий."""
         body = func_body("pulse")

@@ -849,8 +849,10 @@ local function spring(o, goal, info)
 	TS:Create(o, info or TWEEN.pop, goal):Play()
 end
 -- Тряска элемента (ошибка ввода, неверный ключ): амплитуда гаснет к концу
+local shaking = setmetatable({}, {__mode = "k"})
 local function shake(o, amp, times)
-	if not CFG.Anim then return end
+	if not CFG.Anim or shaking[o] then return end
+	shaking[o] = true
 	task.spawn(function()
 		local base = o.Position
 		for i = 1, times or 5 do
@@ -862,6 +864,7 @@ local function shake(o, amp, times)
 			t.Completed:Wait()
 		end
 		o.Position = base
+		shaking[o] = nil
 	end)
 end
 -- Мягкая пульсация: элемент «дышит» масштабом, пока pulse(o, nil) не остановит.
@@ -1742,8 +1745,11 @@ function TC.fade(f, on)
 		return
 	end
 	if on then
+		-- линия уже могла быть видимой (скелет мигнул на кадр): тогда досвечиваем с текущей прозрачности,
+		-- а не начинаем заново с нуля — иначе получится мерцание
+		local wasHidden = not f.Visible
 		f.Visible = true
-		f.BackgroundTransparency = 1
+		if wasHidden then f.BackgroundTransparency = 1 end
 		TS:Create(f, TWEEN.ui, {BackgroundTransparency = 0}):Play()
 	else
 		TS:Create(f, TWEEN.snap, {BackgroundTransparency = 1}):Play()
@@ -6195,7 +6201,7 @@ local function startMain()
 	-- старый коротко уходит влево. Видно, что мы внутри одной папки, а не в другом разделе.
 	local function slideIn(o)
 		if not (CFG.Anim and UICFG.AnimPages) then return end
-		o.Position, o.Visible = U(0.06, 0, 0, 0), true -- сдвиг только по X: AbsoluteSize не меняется
+		o.Position, o.Visible = U(0.03, 0, 0, 0), true -- сдвиг только по X: AbsoluteSize не меняется
 		tween(o, TWEEN.ui, {Position = U(0, 0, 0, 0)})
 	end
 	local function slideOut(o, after)
@@ -6205,7 +6211,7 @@ local function startMain()
 			if after then after() end
 			return
 		end
-		local t = TS:Create(o, TWEEN.snap, {Position = U(-0.06, 0, 0, 0)})
+		local t = TS:Create(o, TWEEN.snap, {Position = U(-0.03, 0, 0, 0)})
 		t:Play()
 		t.Completed:Once(function()
 			o.Visible, o.Position = false, U(0, 0, 0, 0)
