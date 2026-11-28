@@ -550,6 +550,7 @@ FovPx = 240, -- диаметр круга FOV в пикселях (FovR оста
 FovStyle = "Gradient", -- вид круга: Glow / Gradient / Dashed / Classic
 FovAnim = true, -- круг «дышит» и подсвечивается, когда цель захвачена
 	Trigger = false, TriggerDelay = 0.05, Multipoint = false, AdvPredict = false,
+	TrigMode = "Auto", TrigRange = 0, WallCheck = true, TrigAimFirst = false,
 	TriggerR = 3, LeadBias = 40, -- TriggerR: допуск триггера при включённой наводке (% короткой стороны); LeadBias: запас авто-предикта, мс
 	Hitbox = false, HitboxSize = 1.5, HeadHitbox = false, HeadHitboxSize = 1.5, HitboxShow = false, -- расширение хитбоксов, студы
 	MPEdges = true, MPHead = true, MPTorso = true, MPArms = false, MPLegs = false,
@@ -877,6 +878,8 @@ AIMCFG.LeadMul = math.clamp(tonumber(AIMCFG.LeadMul) or 100, 0, 200)
 AIMCFG.SilentR = math.clamp(AIMCFG.SilentR, 2, 60)
 AIMCFG.LockR = math.clamp(AIMCFG.LockR, 5, 90)
 AIMCFG.TriggerDelay = math.clamp(AIMCFG.TriggerDelay, 0, 0.5)
+if not table.find({"Auto", "Single"}, AIMCFG.TrigMode) then AIMCFG.TrigMode = "Auto" end
+AIMCFG.TrigRange = math.clamp(tonumber(AIMCFG.TrigRange) or 0, 0, 2000)
 AIMCFG.HitboxSize = math.clamp(AIMCFG.HitboxSize, 0, HB_BODY_MAX)
 AIMCFG.HeadHitboxSize = math.clamp(AIMCFG.HeadHitboxSize, 0, HB_HEAD_MAX)
 AIMCFG.StepPx = math.clamp(AIMCFG.StepPx, 0.5, 500)
@@ -2575,6 +2578,11 @@ helpUI.info = {
  ["FPS cap"] = {"Ограничивает частоту кадров, если доступно.", "Limits the frame rate when supported."},
  ["ESP update rate"] = {"Изменяет частоту обновления ESP.", "Changes the ESP update rate."},
  ["Image fit"] = {"Выбирает способ размещения фоновой картинки.", "Chooses how the background image fits."},
+ ["Fire mode"] = {"Auto — стреляет на кулдауне оружия, пока цель в прицеле. Single — один выстрел на цель: следующий только после того, как цель уйдёт.", "Auto keeps firing on the weapon cooldown; Single fires once per target."},
+ ["Trigger distance (0 = weapon)"] = {"Своя дальность триггера в студах. 0 — брать Range самого оружия.", "Custom trigger range in studs; 0 uses the weapon's own Range."},
+ ["CHECKS / ПРОВЕРКИ"] = {"Условия, без которых триггер не стреляет: видимость цели и готовая наводка.", "Conditions required before the trigger fires: line of sight and settled aim."},
+ ["Line of sight"] = {"Стреляет только когда до цели есть прямая видимость. Выключи, если оружие стреляет сквозь укрытия.", "Fires only with a clear line of sight; turn off for weapons that shoot through cover."},
+ ["Aim first"] = {"Ждёт, пока наводка сама придёт на цель, и только потом стреляет — меньше промахов в начале боя.", "Waits until the aim has settled on the target before firing."},
  ["Triggerbot"] = {"Автоматически стреляет, когда цель попадает в прицел или допуск.", "Automatically fires when a target is in the crosshair or tolerance area."},
  ["Multipoint"] = {"Ищет видимую точку на краях хитбокса.", "Searches for a visible point around the hitbox edges."},
  ["Adv predict"] = {"Учитывает движение цели и падение пули; нужны атрибуты BulletSpeed и BulletGravity.", "Accounts for target motion and bullet drop; requires BulletSpeed and BulletGravity."},
@@ -2595,7 +2603,7 @@ helpUI.info = {
  ["Auto fallback"] = {"Переходит к следующей доступной части тела.", "Falls back to the next available body part."},
  ["Return to main"] = {"Возвращается к основной части, когда она доступна.", "Returns to the main body part when available."},
  ["Debug HUD"] = {"Показывает диагностическую информацию.", "Shows diagnostic information."},
- ["Trigger delay (sec)"] = {"Задержка автоматического выстрела в секундах.", "Delay before an automatic shot, in seconds."},
+ ["Reaction delay (sec)"] = {"Задержка автоматического выстрела в секундах.", "Delay before an automatic shot, in seconds."},
  ["RCS (recoil control)"] = {"Возвращает камеру в точку прицела после отдачи и гасит увод ствола.", "Pulls the camera back to the aim point after recoil and cancels the muzzle climb."},
  ["RCS strength"] = {"Насколько сильно RCS гасит отдачу: 100% — полностью, 50% — половину, 0% — RCS выключен.", "How much recoil RCS removes: 100% — all of it, 50% — half, 0% — RCS off."},
  ["RCS smoothness"] = {"Скорость выравнивания: 0 — мгновенно, выше — плавнее и мягче.", "How fast recoil is levelled out: 0 — instantly, higher — smoother."},
@@ -2633,7 +2641,7 @@ helpUI.info = {
  ["Visibility from head"] = {"Проверяет видимость от головы персонажа вместо камеры.", "Checks visibility from the character's head instead of the camera."},
  ["Main part"] = {"Выбирает основную часть тела в очереди приоритетов.", "Selects the primary body part in the priority order."},
  ["Lock release radius, %"] = {"Расстояние от центра наведения, после которого захват отпускается, в процентах короткой стороны экрана.", "Distance from the aim center at which a target lock is released, as a percentage of the shorter screen side."},
- ["Trigger tolerance (% of screen)"] = {"Допуск триггера вокруг прицела в процентах короткой стороны экрана.", "Trigger tolerance around the crosshair as a percentage of the shorter screen side."},
+ ["Aim tolerance (% of screen)"] = {"Допуск триггера вокруг прицела в процентах короткой стороны экрана.", "Trigger tolerance around the crosshair as a percentage of the shorter screen side."},
  ["FOV Size (diameter, px)"] = {"Диаметр круга и области выбора цели в пикселях: одинаковый на любом экране.", "Circle and target selection diameter in pixels: the same on any screen."},
  ["FOV Transparency"] = {"Прозрачность контура круга FOV.", "Transparency of the FOV circle outline."},
  ["FOV Thickness"] = {"Толщина контура круга FOV.", "Thickness of the FOV circle outline."},
@@ -3770,8 +3778,19 @@ local function buildAim(page, api)
 	chips({
 		{"Triggerbot", "Trigger", nil, "Стреляет сам, когда цель в прицеле, в хитбоксе или рядом с прицелом (Aim не нужен). Статус — в Debug HUD"},
 	})
-	slider("Trigger delay (sec)", "TriggerDelay", 0, 0.5, 0.01, 2)
-	slider("Trigger tolerance (% of screen)", "TriggerR", 0.5, 15, 0.5, 1)
+	-- Режим стрельбы: Auto повторяет выстрелы на кулдауне оружия, Single даёт один выстрел
+	-- на цель и ждёт, пока цель уйдёт — так триггер не «залипает» очередью.
+	cycle("Fire mode", "TrigMode", {"Auto", "Single"})
+	slider("Reaction delay (sec)", "TriggerDelay", 0, 0.5, 0.01, 2)
+	slider("Aim tolerance (% of screen)", "TriggerR", 0.5, 15, 0.5, 1)
+	slider("Trigger distance (0 = weapon)", "TrigRange", 0, 2000, 25, 0)
+	section("CHECKS / ПРОВЕРКИ")
+	chips({
+		{"Line of sight", "WallCheck", nil, "Стреляет только когда до цели есть прямая видимость. Выкл. — попадает и по цели за укрытием"},
+		{"Aim first", "TrigAimFirst", nil, "Ждёт, пока наводка сама придёт на цель, и только потом стреляет"},
+	})
+	note("Что именно считается целью: тело под прицелом, расширенный хитбокс или точка в пределах допуска. " ..
+		"Порядок и причина отказа видны в Debug HUD (Aim > DIAGNOSTICS).", 40)
 
 	section("MULTIPOINT")
 	chips({{"Multipoint", "Multipoint", nil, "Ищет видимую точку по краям хитбокса"}})
@@ -4935,6 +4954,11 @@ local function buildAim(page, api)
 	-- При включённом Silent Aim стреляем, когда цель есть в радиусе Silent.
 	local pickMs, pickWarned = 0, false
 	local lastTrigger, seenSince, seenModel, lastWarm = setmetatable({}, {__mode = "k"}), nil, nil, 0
+	local firedFor -- цель, по которой в режиме Single уже был выстрел
+	-- фильтр «только персонажи»: нужен, чтобы при выключенном Wall check луч не упирался в стену
+	local charRP = RaycastParams.new()
+	charRP.FilterType = Enum.RaycastFilterType.Exclude
+	charRP.FilterDescendantsInstances = {LP.Character}
 	local trigStatus = "off"
 	local fireTool -- присваивается ниже (= shoot)
 	local function trigValid(model)
@@ -4970,24 +4994,30 @@ local function buildAim(page, api)
 	local function triggerStep(now)
 		local ch = LP.Character
 		local tool = ch and ch:FindFirstChildOfClass("Tool")
-		if not tool then seenSince, seenModel = nil, nil trigStatus = "no tool (equip weapon)" return end
-		-- дальность триггера = Range самого оружия (Aim max distance к триггеру больше не применяется:
-		-- из-за него оружие с Range 800 молча не стреляло дальше 500 студов)
-		local range = tool:GetAttribute("Range")
+		if not tool then seenSince, seenModel, firedFor = nil, nil, nil trigStatus = "no tool (equip weapon)" return end
+		-- дальность: 0 = брать Range оружия. Раньше сюда подмешивался Aim max distance, из-за чего
+		-- оружие с Range 800 молча не стреляло дальше 500 студов.
+		local range = A.TrigRange
+		if not (type(range) == "number" and range > 0) then
+			range = tool:GetAttribute("Range")
+		end
 		if type(range) ~= "number" or range ~= range or range <= 0 or range == math.huge then range = 500 end
 		range = math.clamp(range, 1, 5000)
 		local tolPx = math.min(SP.vp.X, SP.vp.Y) * A.TriggerR * 0.01
 		local model, aimPart, how, why
 		local ray = camera:ViewportPointToRay(SP.aim.X, SP.aim.Y)
 		local dirU = ray.Direction.Unit
+		-- Wall check выключен: луч ищет цель сквозь стены (фильтр персонажей, без мировых деталей)
+		local probe = Workspace:Raycast(ray.Origin, dirU * range, (not A.WallCheck) and charRP or rayParams)
 		local real = Workspace:Raycast(ray.Origin, dirU * range, rayParams)
-		-- 1) луч попал прямо в цель
-		local hitModel = real and humModel(real.Instance)
+		-- 1) луч попал прямо в цель (при выключенном Wall check смотрим, кого луч встретил первым)
+		local hitModel = humModel((probe or real).Instance)
 		if hitModel then
 			local ok, w = trigValid(hitModel)
 			if ok then model, how = hitModel, "ray" else why = w end
 		else
-			why = real and ("no humanoid: " .. real.Instance.Name) or "nothing in sight"
+			local blocker = real or probe
+			why = blocker and ("no humanoid: " .. blocker.Instance.Name) or "nothing in sight"
 		end
 		-- 2) луч проходит через расширенный хитбокс
 		if not model then
@@ -5008,7 +5038,17 @@ local function buildAim(page, api)
 			if ct and ct.Parent and humModel(ct) == model then aimPart = ct end
 		end
 		if not model then seenSince, seenModel = nil, nil trigStatus = why or "no target" return end
-		if seenModel ~= model then seenModel, seenSince = model, now end
+		if seenModel ~= model then seenModel, seenSince, firedFor = model, now, nil end
+		if A.TrigAimFirst then
+			-- ждём, пока наводка сама придёт на цель: иначе триггер стреляет раньше, чем камера довернула
+			local sp, vis = camera:WorldToViewportPoint(getAimPoint(aimPart or getTargetPart(model)))
+			if vis and (V2(sp.X, sp.Y) - SP.aim).Magnitude > math.min(SP.vp.X, SP.vp.Y) * 0.02 then
+				trigStatus = "waiting for aim"
+				return
+			end
+		end
+		-- Single: один выстрел на цель. Ждём, пока цель уйдёт из прицела, и только потом стреляем снова.
+		if A.TrigMode == "Single" and firedFor == model then trigStatus = "already fired" return end
 		local cd = tool:GetAttribute("Cooldown")
 		cd = type(cd) == "number" and cd or 0.15
 		if now - seenSince < A.TriggerDelay then trigStatus = "aiming" return end
@@ -5017,10 +5057,15 @@ local function buildAim(page, api)
 		if tool:GetAttribute("Damage") ~= nil and fireRemote then
 			-- встроенное оружие (Damage + ремоут): выстрел через сервер
 			local ok, w = fireTool(tool, aimPart)
-			if ok then lastTrigger[tool] = now trigStatus = "FIRE (" .. how .. ")" else trigStatus = w or "blocked" end
+			if ok then
+				lastTrigger[tool], firedFor = now, model
+				trigStatus = "FIRE (" .. how .. ")"
+			else
+				trigStatus = w or "blocked"
+			end
 		else
 			-- у оружия нет Damage или нет ремоута: нажимаем родное действие инструмента
-			lastTrigger[tool] = now
+			lastTrigger[tool], firedFor = now, model
 			local okA = pcall(tool.Activate, tool)
 			trigStatus = okA and ("FIRE Activate (" .. how .. ")") or "Activate failed"
 		end
