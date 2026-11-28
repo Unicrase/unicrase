@@ -945,8 +945,11 @@ local function revealText(label, text, opt)
 		local ok, size = pcall(STS.GetTextSize, STS, str, label.TextSize, label.Font, V2(4000, label.AbsoluteSize.Y + 20))
 		return (ok and size and size.X) or (label.TextSize * 0.58 * #str)
 	end
+	-- utf8.graphemes отдаёт ДВА значения — начало и конец диапазона, а не символ:
+	-- символ берём из строки по этим индексам (иначе в ch окажется число)
 	local glyphs, total = {}, 0
-	for _, ch in utf8.graphemes(text) do
+	for first, last in utf8.graphemes(text) do
+		local ch = string.sub(text, first, last)
 		local w = math.max(1, widthOf(ch))
 		table.insert(glyphs, {ch = ch, w = w, x = total})
 		total += w
@@ -955,25 +958,32 @@ local function revealText(label, text, opt)
 	local stepDelay = opt.step or 0.035 -- шаг старта букв
 	local rise = opt.rise or 10           -- на сколько пикселей поднимается буква
 	local dur = opt.dur or 0.3
+	if #glyphs > 28 then
+		-- очень длинное название: буквами получилось бы сотни инстансов — одной строкой, но с подъёмом
+		label.Text, label.TextTransparency = text, 1
+		label.Position = O(label.Position.X.Offset, label.Position.Y.Offset + rise)
+		if layer.Parent then layer:Destroy() end
+		tween(label, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+			{TextTransparency = 0, Position = O(label.Position.X.Offset, label.Position.Y.Offset - rise)})
+		return
+	end
 	local items = {}
 	for i, g in ipairs(glyphs) do
-		local box = new("Frame", {Size = O(g.w + 1, label.AbsoluteSize.Y), Position = O(math.floor(g.x), 0),
-			BackgroundTransparency = 1, Active = false, ZIndex = label.ZIndex + 1, ClipsDescendants = false}, layer)
-		local lbl = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = g.ch, TextColor3 = label.TextColor3,
-			FontFace = label.FontFace, TextSize = label.TextSize, TextXAlignment = XL, TextYAlignment = label.TextYAlignment,
-			TextTransparency = 1, TextScaled = false, ZIndex = label.ZIndex + 2, Active = false}, box)
+		-- один TextLabel на букву: ширину знаем, поэтому ставим его на место среза сразу
+		local lbl = new("TextLabel", {Size = O(g.w + 2, label.AbsoluteSize.Y), Position = O(math.floor(g.x), rise),
+			BackgroundTransparency = 1, Text = g.ch, TextColor3 = label.TextColor3, FontFace = label.FontFace,
+			TextSize = label.TextSize, TextXAlignment = XL, TextYAlignment = label.TextYAlignment,
+			TextTransparency = 1, TextScaled = false, ZIndex = label.ZIndex + 2, Active = false}, layer)
 		-- «выпрыгивание»: снизу + чуть меньше размером, затем пружина на место
-		lbl.Position = O(0, rise)
 		local sc = new("UIScale", {Scale = 0.82}, lbl)
-		table.insert(items, {box = box, lbl = lbl, sc = sc, i = i})
+		table.insert(items, {lbl = lbl, sc = sc, x = math.floor(g.x), y = label.AbsoluteSize.Y})
 	end
-	-- слой больше не нужен: буквы держим прямо в нём до конца анимации
 	task.spawn(function()
 		for _, it in items do
 			if revealers[label] ~= gen then return end
 			task.wait(stepDelay)
 			if revealers[label] ~= gen then return end
-			tween(it.lbl, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = O(0, 0), TextTransparency = 0})
+			tween(it.lbl, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = O(it.x, 0), TextTransparency = 0})
 			spring(it.sc, {Scale = 1}, TWEEN.pop)
 		end
 		if revealers[label] ~= gen then return end

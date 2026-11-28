@@ -222,7 +222,8 @@ class AnimWiring(unittest.TestCase):
         self.assertIn('new("UIScale"', body)
         # буквы стартуют по очереди и «выпрыгивают» снизу
         self.assertIn("task.wait(stepDelay)", body)
-        self.assertIn("Position = O(0, rise)", body)
+        self.assertIn("Position = O(math.floor(g.x), rise)", body)
+        self.assertIn("{Position = O(it.x, 0), TextTransparency = 0}", body)
         self.assertIn("spring(it.sc, {Scale = 1}, TWEEN.pop)", body)
         # выключено — текст ставится сразу, слой анимации снимается
         self.assertIn("label.Text, label.TextTransparency = text, 0", body)
@@ -237,6 +238,15 @@ class AnimWiring(unittest.TestCase):
         cascade = between("local function cascade(f)", "local folders = {")
         self.assertIn('c:FindFirstChild("Title")', cascade)
         self.assertIn("revealText(title, title.Text", cascade)
+        # utf8.graphemes отдаёт диапазон (два числа), а не символ:
+        # старый `for _, ch in utf8.graphemes(text)` давал в ch число → «attempt to get length of a number value»
+        self.assertIn("for first, last in utf8.graphemes(text) do", body)
+        self.assertIn("string.sub(text, first, last)", body)
+        self.assertNotIn("for _, ch in utf8.graphemes", SOURCE)
+
+        # очень длинное название — без сотен инстансов
+        self.assertIn("if #glyphs > 28 then", body)
+
         # переключатель и справка
         self.assertIn('{"Letters reveal", "AnimText"', SOURCE)
         self.assertIn('["Letters reveal"]', SOURCE)
