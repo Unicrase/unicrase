@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enkaisy — появление текста при открытии папки</title>
+<style>
+  :root{--bg:#0b0b0d;--card:#17181c;--line:#2a2c33;--w:#fff;--mut:#8b929d;--acc:#9aa4b2}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#070708;color:#e9ecf1;
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:18px 16px 90px}
+  h1{font-size:15px;font-weight:600;color:#c9ced8;margin:0 0 4px}
+  p.hint{font-size:12px;color:#6f7681;margin:0 0 16px}
+  /* «окно» меню */
+  .panel{position:relative;background:#111216;border:1px solid var(--line);border-radius:14px;
+    padding:16px 16px 18px;overflow:hidden;min-height:290px}
+  .title{font-size:19px;font-weight:700;letter-spacing:.01em;margin:0 0 14px;min-height:26px;color:#fff}
+  .title .caret,.card .t .caret{display:inline-block;width:2px;height:1em;background:#dfe4ec;
+    vertical-align:-2px;margin-left:2px;border-radius:1px;animation:blink 440ms steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:9px}
+  .card .t{font-size:14px;color:#fff;min-height:19px}
+  .card .c{font-size:11px;color:var(--mut);margin-top:4px}
+  /* варианты */
+  .modes{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+  .mode{border:1px solid var(--line);background:#121318;color:#c6ccd6;padding:8px 12px;border-radius:9px;
+    font-size:12px;cursor:pointer}
+  .mode.on{border-color:#5c6577;background:#1b1d23;color:#fff}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(10,10,12,.94);border-top:1px solid #1d1f25;
+    display:flex;gap:10px;align-items:center;justify-content:center;padding:11px;font-size:12px;color:#8b929d}
+  .pill{border:1px solid #2a2c33;background:#15161b;color:#dfe3ea;padding:6px 11px;border-radius:8px;cursor:pointer}
+  .pill:hover{background:#1d1f26}
+  .impact{animation:impact 260ms cubic-bezier(.2,1.6,.4,1)}
+  @keyframes impact{0%{transform:scale(1)}40%{transform:scale(1.045)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Появление текста при клике на папку</h1>
+  <p class="hint">Сейчас в скрипте включён вариант <b>1 — печатная машинка</b>. Переключи и посмотри, какой ближе к видео.</p>
+
+  <div class="modes" id="modes">
+    <div class="mode on" data-mode="type">1 · печатная машинка</div>
+    <div class="mode" data-mode="letters">2 · буквы по одной (вверх)</div>
+    <div class="mode" data-mode="wipe">3 · раскрытие маской</div>
+    <div class="mode" data-mode="glitch">4 · размытие + глитч</div>
+    <div class="mode" data-mode="word">5 · по словам</div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="title" id="title"></div>
+    <div class="card"><div class="t" id="t1"></div><div class="c">Включает подсветку игроков и NPC.</div></div>
+    <div class="card"><div class="t" id="t2"></div><div class="c">Показывает имена над целями.</div></div>
+    <div class="card"><div class="t" id="t3"></div><div class="c">Рамка по границам модели.</div></div>
+  </div>
+</div>
+
+<div class="bar">
+  <span>эффект: <b id="name">печатная машинка</b></span>
+  <span class="pill" id="replay">повторить</span>
+  <span class="pill" id="slow">скорость 1×</span>
+</div>
+
+<script>
+const TITLE = "ОТОБРАЖЕНИЕ";
+const CARDS = ["Highlight", "Names", "ESP box"];
+const AXES = {title: document.getElementById('title'),
+              cards: [document.getElementById('t1'), document.getElementById('t2'), document.getElementById('t3')]};
+const panel = document.getElementById('panel');
+let mode = 'type', speed = 1, timers = [];
+
+const SPEED_STEPS = [1, 0.6, 0.35];
+const SPEED_LABELS = ["1×", "медленнее", "ещё медленнее"];
+
+function clearTimers(){ timers.forEach(t => clearTimeout(t)); timers = []; }
+function later(ms, fn){ timers.push(setTimeout(fn, ms / speed)); }
+function reset(){
+  clearTimers();
+  AXES.title.textContent = "";
+  AXES.title.style.cssText = "";
+  AXES.cards.forEach(c => { c.textContent = ""; c.style.cssText = ""; c.parentElement.style.opacity = "1"; c.parentElement.style.transform = "none"; });
+  panel.classList.remove('impact');
+}
+
+/* 1. печатная машинка: буква за буквой + мигающий курсор (как в скрипте) */
+function typeMode(){
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  AXES.title.textContent = "";
+  AXES.title.appendChild(caret);
+  let i = 0;
+  (function tick(){
+    if (i >= TITLE.length) { later(220, () => caret.remove()); return; }
+    caret.before(TITLE[i++]);
+    later(35, tick);
+  })();
+  AXES.cards.forEach((el, n) => {
+    later(110 + n * 55, () => {
+      const c2 = document.createElement('span');
+      c2.className = 'caret';
+      el.textContent = "";
+      el.appendChild(c2);
+      let k = 0;
+      (function tick2(){
+        if (k >= CARDS[n].length) { later(180, () => c2.remove()); return; }
+        c2.before(CARDS[n][k++]);
+        later(20, tick2);
+      })();
+    });
+  });
+}
+
+/* 2. буквы по одной: каждая выпрыгивает снизу с масштабом */
+function lettersMode(){
+  const spans = [...TITLE].map(ch => {
+    const s = document.createElement('span');
+    s.textContent = ch === " " ? "\u00a0" : ch;
+    s.style.cssText = "display:inline-block;opacity:0;transform:translateY(14px) scale(.8)";
+    AXES.title.appendChild(s);
+    return s;
+  });
+  AXES.title.textContent = "";
+  spans.forEach(s => AXES.title.appendChild(s));
+  spans.forEach((s, i) => later(i * 38, () => {
+    s.style.transition = "opacity 220ms ease, transform 320ms cubic-bezier(.2,1.5,.35,1)";
+    s.style.opacity = "1";
+    s.style.transform = "translateY(0) scale(1)";
+  }));
+  AXES.cards.forEach((el, n) => later(120 + n * 60, () => {
+    el.textContent = CARDS[n];
+    el.style.cssText = "opacity:0;transform:translateY(12px) scale(.86)";
+    later(16, () => {
+      el.style.transition = "opacity 240ms ease, transform 340ms cubic-bezier(.2,1.5,.35,1)";
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0) scale(1)";
+    });
+  }));
+}
+
+/* 3. раскрытие маской: текст выезжает из-под clip-path */
+function wipeMode(){
+  [ [AXES.title, TITLE], ...AXES.cards.map((el, n) => [el, CARDS[n]]) ].forEach(([el, txt], n) => {
+    later(n * 70, () => {
+      el.textContent = txt;
+      el.style.clipPath = "inset(0 100% 0 0)";
+      el.style.transform = "translateX(-8px)";
+      later(16, () => {
+        el.style.transition = "clip-path 420ms cubic-bezier(.25,.9,.2,1), transform 420ms cubic-bezier(.25,.9,.2,1)";
+        el.style.clipPath = "inset(0 0 0 0)";
+        el.style.transform = "translateX(0)";
+      });
+    });
+  });
+}
+
+/* 4. размытие + глитч */
+function glitchMode(){
+  const targets = [[AXES.title, TITLE], ...AXES.cards.map((el, n) => [el, CARDS[n]])];
+  targets.forEach(([el, txt], n) => later(n * 60, () => {
+    el.textContent = txt;
+    el.style.textShadow = "2px 0 rgba(255,80,80,.6), -2px 0 rgba(80,180,255,.6)";
+    el.style.filter = "blur(7px)";
+    el.style.opacity = ".2";
+    el.style.transition = "filter 380ms ease, opacity 320ms ease, text-shadow 420ms ease";
+    later(20, () => { el.style.filter = "blur(0)"; el.style.opacity = "1"; el.style.textShadow = "0 0 0 transparent"; });
+  }));
+}
+
+/* 5. по словам */
+function wordMode(){
+  const words = TITLE.split(" ");
+  AXES.title.textContent = "";
+  words.forEach((w, i) => {
+    const s = document.createElement('span');
+    s.textContent = (i ? " " : "") + w;
+    s.style.cssText = "display:inline-block;opacity:0;transform:translateY(10px)";
+    AXES.title.appendChild(s);
+    later(i * 120, () => { s.style.transition = "opacity 260ms ease, transform 300ms cubic-bezier(.2,1.4,.4,1)"; s.style.opacity = "1"; s.style.transform = "translateY(0)"; });
+  });
+  AXES.cards.forEach((el, n) => later(150 + n * 90, () => {
+    el.textContent = CARDS[n];
+    el.style.cssText = "opacity:0;transform:translateY(10px)";
+    later(16, () => { el.style.transition = "opacity 260ms ease, transform 300ms ease"; el.style.opacity = "1"; el.style.transform = "translateY(0)"; });
+  }));
+}
+
+const RUNNERS = {type: typeMode, letters: lettersMode, wipe: wipeMode, glitch: glitchMode, word: wordMode};
+const NAMES = {type: "печатная машинка", letters: "буквы по одной (вверх)", wipe: "раскрытие маской",
+               glitch: "размытие + глитч", word: "по словам"};
+
+function play(){
+  reset();
+  panel.classList.add('impact');
+  later(30, RUNNERS[mode]);
+  timers.push(setTimeout(() => panel.classList.remove('impact'), 400));
+}
+
+document.getElementById('modes').addEventListener('click', e => {
+  const b = e.target.closest('.mode');
+  if (!b) return;
+  document.querySelectorAll('.mode').forEach(m => m.classList.toggle('on', m === b));
+  mode = b.dataset.mode;
+  document.getElementById('name').textContent = NAMES[mode];
+  play();
+});
+document.getElementById('replay').addEventListener('click', play);
+let si = 0;
+document.getElementById('slow').addEventListener('click', e => {
+  si = (si + 1) % SPEED_STEPS.length;
+  speed = SPEED_STEPS[si];
+  e.currentTarget.textContent = "скорость " + SPEED_LABELS[si];
+  play();
+});
+panel.addEventListener('pointerdown', play);
+
+play();
+</script>
+</body>
+</html>
