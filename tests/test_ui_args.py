@@ -280,3 +280,39 @@ class HelperVisibility(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NumericConstants(unittest.TestCase):
+    """OUT и подобные таблицы хранят ЧИСЛА (прозрачности), а не цвета.
+
+    Классическая ошибка: написать OUT.Hover.Color вместо PURE — в рантайме это
+    "attempt to index number with 'Color'". Тест ловит обращения к полям у чисел.
+    """
+
+    NUMERIC_TABLES = ("OUT", "TWEEN", "STS")
+
+    def test_no_field_access_on_numeric_constants(self):
+        import re
+        bad = []
+        for name in self.NUMERIC_TABLES:
+            for m in re.finditer(r"\b" + name + r"\.\w+\.(\w+)", SOURCE):
+                bad.append((name, m.group(0)))
+        self.assertEqual(bad, [], "у числовых констант нет полей: цвет обводки — PURE")
+
+    def test_out_is_a_table_of_numbers(self):
+        import re
+        m = re.search(r"local OUT = \{([^}]*)\}", SOURCE)
+        self.assertIsNotNone(m)
+        self.assertNotIn("Color3", m.group(1), "OUT должен хранить только прозрачности")
+
+    def test_outline_returns_a_stroke(self):
+        # обводку сохраняют как edge/st и меняют .Color/.Transparency — значит нужен UIStroke.
+        # Второй аргумент — прозрачность (число): цвет внутри всегда PURE.
+        import re
+        m = re.search(r"function outline\(o, t\).*", SOURCE)
+        self.assertIsNotNone(m, "outline(o, t) должна оставаться с двумя аргументами")
+        self.assertIn("return stroke(o, PURE, t or OUT.Idle", m.group(0))
+
+
+
+if __name__ == "__main__":
+    unittest.main()

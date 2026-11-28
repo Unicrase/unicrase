@@ -26,8 +26,10 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
--- ВЕРСИЯ СБОРКИ: v4.3.1 (константа BUILD). Она видна в шапке меню и на экране ключа —
+-- ВЕРСИЯ СБОРКИ: v4.3.2 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.3.2: исправлено падение списка CHAMS LOOK и карточек CIRCLE STYLE
+--         (цвет обводки брался из OUT.Hover — это число-прозрачность, а не цвет; теперь PURE).
 -- v4.3.1: круг FOV: размер в пикселях и стили Glow / Gradient / Dashed / Classic; список CHAMS LOOK
 --         (21 стиль подсветки) в папке ESP; заставка после ключа с защитой от падения.
 -- v4.3: Ключ доступа снова проверяется в клиенте по хешу (KEY_HASH), серверной авторизации нет.
@@ -72,7 +74,7 @@
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BUILD = "4.3.1" -- версия сборки: показывается в меню и на экране ключа
+local BUILD = "4.3.2" -- версия сборки: показывается в меню и на экране ключа
 local REMOTE_NAME = "EnkaisyAimFire"
 local CLIENT_NAME = "EnkaisyAimClient"
 
@@ -1193,7 +1195,9 @@ local function stroke(o, c, t, w)
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, LineJoinMode = Enum.LineJoinMode.Round,
 	}, o)
 end
--- тонкая белая обводка: единый стиль кнопок, меню и карточек
+-- тонкая белая обводка: единый стиль кнопок, меню и карточек.
+-- Возвращает сам UIStroke, поэтому результат можно менять (.Color / .Transparency / .Thickness).
+-- ВАЖНО: второй аргумент — ПРОЗРАЧНОСТЬ (число), а не цвет. Цвет обводки всегда PURE.
 function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end
 local function on(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); return c end
 -- Надёжное подключение для кода, которому не видно локальные хелперы других модулей:
@@ -4114,8 +4118,8 @@ local function buildAim(page, api)
 			paintStyle = function()
 				for k, c in cards do
 					local on = (A.FovStyle == k)
-					c.stroke.Color = on and C.Acc or OUT.Hover.Color
-					c.stroke.Transparency = on and 0 or OUT.Hover.Transparency
+					c.stroke.Color = on and C.Acc or PURE
+					c.stroke.Transparency = on and 0 or OUT.Hover
 					c.stroke.Thickness = on and 2 or 1
 					c.label.TextColor3 = on and C.W or C.Mut
 				end
@@ -6335,8 +6339,8 @@ local function startMain()
 				updAll()
 				for k, rr2 in rows do
 					local sel = (k == CFG.Chams)
-					rr2.edge.Color = sel and C.Acc or OUT.Hover.Color
-					rr2.edge.Transparency = sel and 0 or OUT.Hover.Transparency
+					rr2.edge.Color = sel and C.Acc or PURE
+					rr2.edge.Transparency = sel and 0 or OUT.Hover
 					rr2.edge.Thickness = sel and 2 or 1
 					rr2.row.BackgroundColor3 = sel and C.Acc or C.Side
 					rr2.row.BackgroundTransparency = sel and 0.86 or 0.55
@@ -6348,8 +6352,8 @@ local function startMain()
 		local function paintChams()
 			for k, r in rows do
 				local on = (k == (CFG.Chams or "Outline"))
-				r.edge.Color = on and C.Acc or OUT.Hover.Color
-				r.edge.Transparency = on and 0 or OUT.Hover.Transparency
+				r.edge.Color = on and C.Acc or PURE
+				r.edge.Transparency = on and 0 or OUT.Hover
 				r.edge.Thickness = on and 2 or 1
 				r.row.BackgroundColor3 = on and C.Acc or C.Side
 				r.row.BackgroundTransparency = on and 0.86 or 0.55
