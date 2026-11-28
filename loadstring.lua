@@ -28,6 +28,11 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.6.2: ИСПРАВЛЕНО «скрипт не запускается»: при удалении движка Chams вырезалась строка
+--         `CH = {}`, а `function CH.apply(...)` осталась — падение ПРИ ЗАГРУЗКЕ
+--         (attempt to index global 'CH', a nil value). Таблица объявлена снова.
+--         Добавлена проверка tools/declared_before_use.py + тест: присваивание метода
+--         несуществующей таблице больше не пройдёт (компилятор такое не ловит).
 -- v4.6.1: после удаления Chams убран последний хвост — неиспользуемая переменная chWarn.
 --         Скрипт проверен на отсутствие обращений к удалённым функциям (тест «CHAMS удалён»).
 -- v4.6.0: ПАПКА CHAMS УДАЛЕНА ПОЛНОСТЬЮ по просьбе пользователя:
@@ -137,7 +142,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.6.1" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.6.2" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2130,7 +2135,10 @@ end
 
 
 -- приоритет цвета: персональный > отметка > друг > цвет команды > обычный
--- Применение цвета к Highlight: только цвет и прозрачность ESP (стилей Chams больше нет).
+-- Таблица цветового API ESP. Раньше здесь жил движок Chams и объявлял её;
+-- после его удаления объявление обязательно, иначе `function CH.apply` падает при загрузке.
+CH = {}
+-- Применение цвета к Highlight: только цвет и прозрачность ESP.
 function CH.apply(o, fillColor, outlineColor)
 	if fillColor then o.h.FillColor = fillColor end
 	if outlineColor then o.h.OutlineColor = outlineColor end
