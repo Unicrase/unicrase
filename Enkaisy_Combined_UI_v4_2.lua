@@ -666,7 +666,13 @@ end
 -- Внешний вид меню (вкладка Appearance). MenuScale/MenuAlpha/BgAlpha — окно; UIScale — плавающие элементы.
 local UICFG = {
 	MenuScale = 1, MenuAlpha = 0, BgAlpha = 0, UIScale = 1, Corner = 8,
-	Theme = "Dark", Accent = {h = 0, s = 0, v = 0.94},
+	Theme = "Custom", Accent = {h = 0, s = 0, v = 0.94},
+	-- Своя палитра: Theme = "Custom" включает цвета ниже вместо готовой темы.
+	-- Ключи совпадают с GLB.PAL (поверхности меню). Хранится как HEX: цвет читаем глазами,
+	-- а восстановление из файла не зависит от округления HSV.
+	Pal = {},
+	-- Контуры: толщина и прозрачность обводок кнопок/карточек и меню.
+	BtnStroke = 1, BtnStrokeAlpha = 95, MenuStroke = 1, MenuStrokeAlpha = 89, FieldStroke = 1,
 	-- окно: размер (логические px до UIScale), центр в долях экрана (-1 = по умолчанию: справа по центру), вкладка
 	PanelW = 672, PanelH = 448, PanelCX = -1, PanelCY = -1, Tab = "Main",
 	BgImage = "", BgImgAlpha = 0.25, BgImgFit = "Crop", CardAlpha = 0.5, -- фон окна: ссылка / ID картинки, прозрачность, режим
@@ -678,11 +684,20 @@ local WIN_MIN_W, WIN_MIN_H, WIN_MAX_W, WIN_MAX_H = 440, 320, 900, 700
 -- Общая геометрия панели, окна ключа и оверлеев (логические px, до UIScale).
 -- Цвета поверхностей задаются только в THEMES; цвета мира / палитр игроков независимы.
 local Skin = {Header = 54, Rail = 0.125, RailBase = 88, Tab = 30, Gap = 6, Inset = 14, Row = 56, Radius = 11}
-local C = {
-	On = Color3.fromRGB(120, 225, 155), Off = Color3.fromRGB(215, 85, 85),
-	Danger = Color3.fromRGB(226, 159, 159), DangerBg = Color3.fromRGB(70, 43, 46), B = Color3.new(),
-}
+local C = {B = Color3.new()}
 local PURE = Color3.new(1, 1, 1)
+-- Статусы FPS/пинга — тоже токены палитры (Good / Mid / Bad), объявлены до applyPalette
+local GOOD, MID, BAD
+-- Остальные цвета интерфейса тоже живут в палитре: раньше это были фиксированные константы,
+-- теперь их можно красить в Appearance. Значения по умолчанию совпадают с прежними.
+GLB.EXTRA = {
+	On = {120, 225, 155}, Off = {215, 85, 85}, Danger = {226, 159, 159}, DangerBg = {70, 43, 46},
+	Good = {226, 226, 230}, Mid = {214, 190, 120}, Bad = {222, 100, 100},
+}
+GLB.EXTRA_RU = {
+	On = "Включено (ON)", Off = "Выключено (OFF)", Danger = "Текст ошибки", DangerBg = "Фон ошибки",
+	Good = "FPS: хорошо", Mid = "FPS: средне", Bad = "FPS: плохо",
+}
 -- Палитры тем (Dark / Midnight / Amoled / Forest / Crimson). Win всегда равен Dark (тёмный текст на акценте).
 local THEMES = {
 	Dark = {Win = {14, 14, 16}, Side = {12, 12, 14}, Card = {25, 25, 28}, Input = {30, 30, 34}, Line = {33, 33, 37}, Sel = {36, 36, 40}, Hi = {47, 47, 53}, Mut = {158, 158, 167}, W = {240, 240, 243}},
@@ -693,12 +708,41 @@ local THEMES = {
 }
 GLB.THEME_ORDER = {"Dark", "Midnight", "Amoled", "Forest", "Crimson"}
 GLB.PAL = {"Win", "Side", "Card", "Input", "Line", "Sel", "Hi", "Mut", "W"}
+-- Полный список токенов, которые можно покрасить: поверхности меню + служебные цвета
+GLB.PAL_ALL = {}
+for _, k in GLB.PAL do table.insert(GLB.PAL_ALL, k) end
+for k in GLB.EXTRA do table.insert(GLB.PAL_ALL, k) end
+-- Человеческие подписи поверхностей: в палитре видно, что красишь, а не «Card»/«Hi».
+GLB.PAL_RU = {
+	Win = "Окно (фон меню)", Side = "Панель вкладок", Card = "Карточки", Input = "Поля и кнопки",
+	Line = "Разделители", Sel = "Выбранное", Hi = "Наведение", Mut = "Второстепенный текст", W = "Основной текст",
+}
+-- Своя палитра: строка "#RRGGBB" -> Color3. Мусор и старые сохранения не ломают меню.
+local function palColor(hex, fallback)
+	local ok, c = pcall(Color3.fromHex, tostring(hex or ""))
+	if ok and typeof(c) == "Color3" then return c end
+	return fallback
+end
+local function defaultPal(k)
+	local t = THEMES.Dark[k] or GLB.EXTRA[k]
+	if t then return Color3.fromRGB(t[1], t[2], t[3]) end
+	return PURE
+end
 local function applyPalette(name)
 	local t = THEMES[name] or THEMES.Dark
 	for _, k in GLB.PAL do
-		C[k] = Color3.fromRGB(t[k][1], t[k][2], t[k][3])
+		if name == "Custom" then
+			C[k] = palColor(UICFG.Pal[k], defaultPal(k))
+		else
+			C[k] = Color3.fromRGB(t[k][1], t[k][2], t[k][3])
+		end
+	end
+	for k, rgb in GLB.EXTRA do
+		C[k] = name == "Custom" and palColor(UICFG.Pal[k], Color3.fromRGB(rgb[1], rgb[2], rgb[3]))
+			or Color3.fromRGB(rgb[1], rgb[2], rgb[3])
 	end
 	C.Dark = C.Win
+	GOOD, MID, BAD = C.Good, C.Mid, C.Bad
 end
 local function applyAccent()
 	local a = UICFG.Accent
@@ -716,7 +760,6 @@ local OUT = {Idle = 0.95, Hover = 0.84, Active = 0.74, Soft = 0.96, Window = 0.8
 GLB.KEY_DIM = 0.50
 GLB.KEY_BLUR = 10
 -- статусы FPS / пинга: белый = хорошо, приглушённые жёлтый и красный = хуже
-local GOOD, MID, BAD = Color3.fromRGB(226, 226, 230), Color3.fromRGB(214, 190, 120), Color3.fromRGB(222, 100, 100)
 
 -- FPS unlocker (нужен executor с setfpscap; 0 = без лимита)
 GLB.canFps = type(setfpscap) == "function"
@@ -895,7 +938,12 @@ UICFG.PanelH = math.clamp(math.floor(UICFG.PanelH), WIN_MIN_H, WIN_MAX_H)
 if not (UICFG.PanelCX >= 0 and UICFG.PanelCX <= 1 and UICFG.PanelCY >= 0 and UICFG.PanelCY <= 1) then
 	UICFG.PanelCX, UICFG.PanelCY = -1, -1
 end
-if not THEMES[UICFG.Theme] then UICFG.Theme = "Dark" end
+if UICFG.Theme ~= "Custom" and not THEMES[UICFG.Theme] then UICFG.Theme = "Dark" end
+-- Старые сейвы: Pal может быть пустым/битым — подставляем цвета Dark только на чтении (см. palColor)
+if type(UICFG.Pal) ~= "table" then UICFG.Pal = {} end
+for _, k in GLB.PAL_ALL do
+	if type(UICFG.Pal[k]) ~= "string" then UICFG.Pal[k] = "#" .. defaultPal(k):ToHex():upper() end
+end
 applyPalette(UICFG.Theme)
 applyAccent()
 local function parseWords()
@@ -1045,6 +1093,24 @@ end
 -- карточки / поля / кнопки меню регистрируются, чтобы фон-картинка просвечивала сквозь них (Appearance > Card Transparency)
 local glass, glassNow = setmetatable({}, {__mode = "k"}), 0
 function new(class, props, parent)
+	-- Необязательная палитра p: p = {colors = true} превращает поля с ключами поверхностей
+	-- (C = "Card", C = "Input", TextColor3 = "W") в текущие цвета темы. Это тот же токен-подход,
+	-- что у accent, только сразу при создании: любая новая кнопка красится палитрой без правок.
+	props = props or {}
+	if props.colors then
+		props.colors = nil
+		local map = {C = "BackgroundColor3", BgC = "BackgroundColor3", TxC = "TextColor3", PhC = "PlaceholderColor3"}
+		local out = {}
+		for k, v in props do
+			-- токены можно писать прямо в имени свойства: C = "Card", TxC = "Mut"
+			if map[k] and type(v) == "string" and C[v] ~= nil then
+				out[map[k]] = C[v]
+			else
+				out[k] = v
+			end
+		end
+		props = out
+	end
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
 	for k, v in props do
@@ -1116,7 +1182,21 @@ end
 -- тонкая белая обводка: единый стиль кнопок, меню и карточек.
 -- Возвращает сам UIStroke, поэтому результат можно менять (.Color / .Transparency / .Thickness).
 -- ВАЖНО: второй аргумент — ПРОЗРАЧНОСТЬ (число), а не цвет. Цвет обводки всегда PURE.
-function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end
+-- Толщина и прозрачность контуров берутся из Appearance: ползунки «Outline» живые,
+-- поэтому каждый новый элемент сразу получает текущие значения, а уже созданные
+-- перекрашивает applyStroke() из applyLook().
+local function btnStrokeW() return UICFG.BtnStroke or 1 end
+local function btnStrokeT(t) return math.clamp((t or OUT.Idle) * ((UICFG.BtnStrokeAlpha or 95) / 95), 0, 1) end
+GLB.strokeW, GLB.strokeT = btnStrokeW, btnStrokeT
+-- Реестр обводок: ключ — UIStroke, значение — исходная прозрачность (Hover/Active/Soft).
+-- Нужен, чтобы ползунки толщины и прозрачности контуров красили уже созданные элементы.
+GLB.strokes = setmetatable({}, {__mode = "k"})
+function outline(o, t)
+	local base = t or OUT.Idle
+	local st = stroke(o, PURE, btnStrokeT(base), btnStrokeW())
+	GLB.strokes[st] = base
+	return st
+end
 local function on(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); return c end
 -- Надёжное подключение для кода, которому не видно локальные хелперы других модулей:
 -- берём файловый on, при его отсутствии — прямой Connect. Вызов никогда не падает.
@@ -1175,7 +1255,9 @@ local function button(parent, text, props, opt)
 		accent(b, "TextColor3", "AccTx")
 		b.FontFace = GB
 	end
-	hoverable(b, outline(b), opt.primary and {bg = "Acc", bgHover = "AccHover", bgDown = "AccDown"} or nil)
+	local bStroke = outline(b)
+	bStroke:SetAttribute("BtnStroke", true)
+	hoverable(b, bStroke, opt.primary and {bg = "Acc", bgHover = "AccHover", bgDown = "AccDown"} or nil)
 	-- нажатие: кнопка чуть «вдавливается» и возвращается пружиной — отклик чувствуется без звука.
 	-- UIScale назван PulseScale, чтобы пульсация (pulse) переиспользовала его, а не создавала второй:
 	-- при двух UIScale на одном объекте Roblox учитывает только первый.
@@ -1191,9 +1273,12 @@ local function button(parent, text, props, opt)
 	return b
 end
 
+GLB.fields = setmetatable({}, {__mode = "k"})
 function Skin.field(box)
 	rr(box, 7)
 	local edge = outline(box)
+	edge.Thickness = UICFG.FieldStroke or 1
+	GLB.fields[edge] = true
 	on(box.Focused, function() tween(edge, fast, {Transparency = OUT.Focus}) end)
 	on(box.FocusLost, function() tween(edge, fast, {Transparency = OUT.Idle}) end)
 end
@@ -2456,6 +2541,13 @@ helpUI.info = {
  ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
 
  -- ===== ESP: объяснения к настройкам подсветки =====
+ ["Button outline (px)"] = {"Толщина контура кнопок. 0 — кнопки без рамок.", "Button outline thickness in px; 0 removes the frames."},
+ ["Button outline transparency"] = {"Насколько прозрачны контуры кнопок: 0% — яркие, 100% — невидимые.", "How transparent button outlines are: 0% solid, 100% invisible."},
+ ["Field outline (px)"] = {"Толщина рамки у полей ввода и поиска.", "Border thickness of text fields and the search box."},
+ ["Menu outline (px)"] = {"Толщина контура самого окна меню.", "Thickness of the main menu window border."},
+ ["Menu outline transparency"] = {"Прозрачность контура окна меню.", "Transparency of the main menu window border."},
+ ["CUSTOM PALETTE / СВОЯ ПАЛИТРА"] = {"Любой цвет меню: выбери поверхность и задай цвет RGB-квадратом, полосой оттенка или HEX-кодом.", "Any menu colour: pick a surface and set it with the RGB square, hue bar or a HEX code."},
+ ["OUTLINES / КОНТУРЫ"] = {"Толщина и прозрачность рамок: кнопки, поля и само окно настраиваются отдельно.", "Thickness and transparency of frames: buttons, fields and the window are separate."},
  ["Fill strength"] = {"Плотность внутренней заливки Highlight. Ниже — лучше виден материал тела.", "Density of the Highlight fill. Lower values show the body material better."},
  ["Transparency"] = {"Дополнительная прозрачность тела поверх прозрачности материала.", "Extra body transparency on top of the material's own transparency."},
  ["Animation speed"] = {"Общая скорость анимации: перелив цвета, узор, эффекты.", "Overall animation speed: color cycling, pattern, effects."},
@@ -5565,7 +5657,9 @@ local function startMain()
 		Position = U(0.5, 0, 0.5, 0), BackgroundColor3 = C.Win, Visible = false, Active = true, ZIndex = 20,
 	}, gui)
 	rr(panel, 14)
-	local panelStroke = outline(panel, OUT.Window)
+	-- Контур окна живёт по своим ползункам (Appearance > Menu outline), отдельно от кнопок
+	local panelStroke = stroke(panel, PURE, math.clamp(OUT.Window * ((UICFG.MenuStrokeAlpha or 89) / 89), 0, 1), UICFG.MenuStroke or 1)
+	GLB.menuStroke = panelStroke
 	table.insert(bgFrames, panel)
 	local scale = new("UIScale", {}, panel)
 	-- фон-картинка: лежит под всем содержимым (ZIndex 0), обрезается скруглением окна
@@ -5714,7 +5808,7 @@ local function startMain()
 		dragMoves[rsMove], dragEnds[rsEnd] = nil, nil
 		paintGrip(false)
 		sizeChip.Visible = false
-		tween(panelStroke, fast, {Transparency = OUT.Window})
+		tween(panelStroke, fast, {Transparency = math.clamp(OUT.Window * ((UICFG.MenuStrokeAlpha or 89) / 89), 0, 1)})
 		if moved then
 			commitPanel()
 		else
@@ -6483,6 +6577,26 @@ local function startMain()
 		bgImg.ScaleType = FIT_TYPES[UICFG.BgImgFit] or Enum.ScaleType.Crop
 		applyGlass()
 		applyRadius()
+		-- контуры: ползунки Appearance живые, поэтому уже созданные обводки красим здесь.
+		-- Ключ — сам UIStroke; толщина и прозрачность берутся из настроек.
+		for st, base in GLB.strokes do
+			if st.Parent then
+				-- толщина — только у кнопок (поле и обводка карточек остаются тонкой линией),
+				-- прозрачность — у всех: «контуры меню» это единая настройка
+				if st:GetAttribute("BtnStroke") then st.Thickness = UICFG.BtnStroke or 1 end
+				st.Transparency = math.clamp(base * ((UICFG.BtnStrokeAlpha or 95) / 95), 0, 1)
+			else
+				GLB.strokes[st] = nil
+			end
+		end
+		-- поле ввода: своя толщина, чтобы рамка не распухала вместе с кнопками
+		for st in GLB.fields do
+			if st.Parent then st.Thickness = UICFG.FieldStroke or 1 else GLB.fields[st] = nil end
+		end
+		if GLB.menuStroke and GLB.menuStroke.Parent then
+			GLB.menuStroke.Thickness = UICFG.MenuStroke or 1
+			GLB.menuStroke.Transparency = math.clamp(OUT.Window * ((UICFG.MenuStrokeAlpha or 89) / 89), 0, 1)
+		end
 		for s in GLB.floatScales do
 			if not s.Parent then
 				GLB.floatScales[s] = nil
@@ -6517,13 +6631,18 @@ local function startMain()
 	local themeTabs = {}
 	local function paintThemeTabs()
 		for name, t in themeTabs do
-			local h = THEMES[name].Hi
-			t.dot.BackgroundColor3 = Color3.fromRGB(h[1], h[2], h[3])
+			if name == "Custom" then
+				-- «своя» тема показывает четыре текущих цвета палитры, чтобы её было видно в списке
+				t.dot.BackgroundColor3 = palColor(UICFG.Pal.Hi, defaultPal("Hi"))
+			else
+				local h = THEMES[name].Hi
+				t.dot.BackgroundColor3 = Color3.fromRGB(h[1], h[2], h[3])
+			end
 			colorTabSel(t, UICFG.Theme == name)
 		end
 	end
 	local function setTheme(name)
-		if not THEMES[name] then return end
+		if name ~= "Custom" and not THEMES[name] then return end
 		local old = {}
 		for _, k in GLB.PAL do old[C[k]:ToHex()] = k end
 		UICFG.Theme = name
@@ -6719,13 +6838,87 @@ local function startMain()
 
 	sectionLabel(pa, "UI THEME", nextA())
 	local themeGrid = chipGrid(pa, nextA())
-	for i, name in GLB.THEME_ORDER do
-		themeTabs[name] = colorTab(themeGrid, name, U(1, 0, 1, 0), i, function()
+	local themeList = {}
+	for _, n in GLB.THEME_ORDER do table.insert(themeList, n) end
+	table.insert(themeList, "Custom") -- своя палитра: любые цвета в любых местах меню
+	for i, name in themeList do
+		themeTabs[name] = colorTab(themeGrid, name == "Custom" and "Custom / Своя" or name, U(1, 0, 1, 0), i, function()
 			setTheme(name)
 		end)
 	end
 	paintThemeTabs()
 	table.insert(repaints, paintThemeTabs)
+
+	-- ----- своя палитра: каждая поверхность меню красится отдельно -----
+	-- Тот же выборщик, что у Accent (квадрат S/V, полоса оттенка и поле HEX), но цвет
+	-- сохраняется в UICFG.Pal как HEX: его видно глазами и он не «плывёт» при перезаписи файла.
+	sectionLabel(pa, "CUSTOM PALETTE / СВОЯ ПАЛИТРА", nextA())
+	new("TextLabel", {
+		Size = U(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = nextA(), TextWrapped = true,
+		Text = "Выбери поверхность и покрась её: RGB-квадрат, полоса оттенка или впиши HEX. Тема сама станет Custom.",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center,
+	}, pa)
+	local palRow = row(pa, 34, 6, nextA())
+	local palTabs, palSwatch = {}, {}
+	local palSel = GLB.PAL_ALL[1]
+	-- Одна рабочая таблица HSV для выборщика: makePicker меняет её поля на месте,
+	-- а HEX-строка в UICFG.Pal обновляется по событию (getC не создаёт новые таблицы).
+	local palHSV = {h = 0, s = 0, v = 0}
+	local palRefresh
+	local function loadPalHSV()
+		local h, sa, v = palColor(UICFG.Pal[palSel], defaultPal(palSel)):ToHSV()
+		palHSV.h, palHSV.s, palHSV.v = h, sa, v
+	end
+	local function paintPalTabs()
+		for k, t in palTabs do colorTabSel(t, k == palSel) end
+		for k in palTabs do
+			local sw = palSwatch[k]
+			if sw then sw.BackgroundColor3 = palColor(UICFG.Pal[k], defaultPal(k)) end
+		end
+	end
+	local function palApply()
+		-- выборщик отдаёт HSV, храним HEX: палитру видно глазами и она не «плывёт»
+		UICFG.Pal[palSel] = "#" .. Color3.fromHSV(palHSV.h, palHSV.s, palHSV.v):ToHex():upper()
+		UICFG.Theme = "Custom"
+		setTheme("Custom")
+	end
+	for i, k in GLB.PAL_ALL do
+		local t = colorTab(palRow, GLB.PAL_RU[k] or GLB.EXTRA_RU[k] or k, U(1, 0, 1, 0), i, function()
+			palSel = k
+			loadPalHSV()
+			if palRefresh then palRefresh() end
+			paintPalTabs()
+		end)
+		palTabs[k] = t
+		-- точка у каждой поверхности — её текущий цвет: видно всю палитру сразу
+		local sw = new("Frame", {Size = O(12, 12), AnchorPoint = V2(0.5, 0.5), Position = S(1, -10), ZIndex = 3,
+			BackgroundColor3 = palColor(UICFG.Pal[k], defaultPal(k)), Active = false}, t.btn)
+		round(sw, 6)
+		outline(sw, OUT.Hover)
+		palSwatch[k] = sw
+	end
+	local palPicker
+	palPicker, palRefresh = makePicker(pa, nextA(), function() return palHSV end, palApply)
+	do
+		local inner = palRefresh
+		palRefresh = function()
+			inner()
+			paintPalTabs()
+		end
+	end
+	loadPalHSV()
+	palRefresh()
+	task.defer(function() -- первый кадр: квадрат и полоса должны получить цвет выбранной поверхности
+		if alive and palRefresh then loadPalHSV(); palRefresh() end
+	end)
+
+	-- ----- контуры: толщина и прозрачность обводок -----
+	sectionLabel(pa, "OUTLINES / КОНТУРЫ", nextA())
+	aSlider("Button outline (px)", "BtnStroke", 0, 3, 1, function(v) return string.format("%d px", math.floor(v + 0.5)) end)
+	aSlider("Button outline transparency", "BtnStrokeAlpha", 0, 100, 1, function(v) return string.format("%d%%", math.floor(v + 0.5)) end)
+	aSlider("Field outline (px)", "FieldStroke", 0, 3, 1, function(v) return string.format("%d px", math.floor(v + 0.5)) end)
+	aSlider("Menu outline (px)", "MenuStroke", 0, 3, 1, function(v) return string.format("%d px", math.floor(v + 0.5)) end)
+	aSlider("Menu outline transparency", "MenuStrokeAlpha", 0, 100, 1, function(v) return string.format("%d%%", math.floor(v + 0.5)) end)
 
 	sectionLabel(pa, "ACCENT COLOR", nextA())
 	local ACC_PRESETS = {{0, 0, 0.94}, {0.55, 0.7, 1}, {0.38, 0.7, 0.9}, {0.75, 0.6, 1}, {0.08, 0.85, 1}, {0, 0.8, 0.95}}

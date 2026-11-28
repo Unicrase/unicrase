@@ -346,9 +346,11 @@ class NumericConstants(unittest.TestCase):
         # обводку сохраняют как edge/st и меняют .Color/.Transparency — значит нужен UIStroke.
         # Второй аргумент — прозрачность (число): цвет внутри всегда PURE.
         import re
-        m = re.search(r"function outline\(o, t\).*", SOURCE)
-        self.assertIsNotNone(m, "outline(o, t) должна оставаться с двумя аргументами")
-        self.assertIn("return stroke(o, PURE, t or OUT.Idle", m.group(0))
+        start = SOURCE.index("function outline(o, t)")
+        body = SOURCE[start:start + 400]
+        self.assertIn("stroke(o, PURE", body)
+        self.assertIn("btnStrokeT(", body, "прозрачность контура берётся из Appearance")
+        self.assertIn("btnStrokeW()", body, "толщина контура берётся из Appearance")
 
 
 
