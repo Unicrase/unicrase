@@ -51,6 +51,22 @@ class ForwardLocals(unittest.TestCase):
             self.assertNotIn("local " + decl, SOURCE, "повторный local перекрывает опережающую локаль")
         self.assertIn("\ngui = new(\"ScreenGui\"", SOURCE, "gui объявлен как опережающая локаль")
 
+    def test_no_group_transparency_on_plain_frames(self):
+        """GroupTransparency существует только у CanvasGroup: запись в Frame — ошибка рантайма."""
+        self.assertTrue(re.search(r'new\("CanvasGroup"', SOURCE))
+        # в каскаде карточек и вкладок используется безопасный масштаб, а не GroupTransparency
+        cascade = between("local function appear(o, delay)", "local folders = {")
+        self.assertNotIn("GroupTransparency", cascade)
+        self.assertIn("UIScale", cascade)
+        # единственные GroupTransparency в UI-коде — окно меню и окно ключа (оба CanvasGroup)
+        for line in SOURCE.splitlines():
+            if "GroupTransparency" in line and not line.lstrip().startswith("--"):
+                self.assertTrue("CanvasGroup" in line or "panel" in line or "card.GroupTransparency" in line
+                                or "card, slow" in line or "scale.Scale, panel" in line
+                                or "panel.GroupTransparency" in line or "tween(panel" in line
+                                or "GroupTransparency = 1," in line or "GroupTransparency = 0}" in line,
+                                "GroupTransparency на обычном объекте: " + line.strip())
+
     def test_no_state_written_into_instances(self):
         """Roblox бросает ошибку при записи неизвестного поля в Instance — состояние только в таблицах."""
         for pattern in (r"\w+\.pulseOn\s*=", r"\bf\.fadeOn\s*=", r"\w+\.(fadeOn|pulseOn)\b"):
@@ -115,6 +131,12 @@ class AnimWiring(unittest.TestCase):
         for key in ("AnimCounters", "AnimToasts", "AnimPages", "AnimPulse"):
             self.assertRegex(SOURCE, r'\{"[A-Z][^\n]*", "' + key + r'",')
 
+    def test_effect_cards_dim_labels_only(self):
+        """Фон карточек принадлежит прозрачности фона-картинки: гасим только подписи."""
+        block = SOURCE.split('sectionLabel(pv2, "ANIMATION EFFECTS", 3)', 1)[1].split("local lowBtn", 1)[0]
+        self.assertIn("TextTransparency", block)
+        self.assertNotIn("BackgroundTransparency = CFG.Anim", block)
+
     def test_master_switch_disables_effects_list(self):
         body = between("on(lowBtn.Activated, function()", "end)")
         for key in ("CFG.Anim", "UICFG.AnimCounters", "UICFG.AnimToasts", "UICFG.AnimPages", "UICFG.AnimPulse"):
@@ -133,9 +155,10 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("paint(false)", drag)  # при перетаскивании число следует за пальцем
 
     def test_page_switch_runs_cascade(self):
-        body = between("local function cascade(f)", "local function paintTab")
-        self.assertIn("GroupTransparency", body)  # гасит и фон, и текст
+        body = between("local function appear(o, delay)", "local folders = {")
+        self.assertIn("UIScale", body)  # GroupTransparency есть только у CanvasGroup
         self.assertIn("UICFG.AnimPages", body)
+        self.assertIn("cascadeGen[f] == my", body)  # старый каскад уступает новому
         show = between("local function show(n)", "for i, folder in folders do")
         self.assertIn("cascade(f)", show)
         self.assertIn("pTitle", show)  # заголовок меняется с фейдом

@@ -5379,20 +5379,37 @@ local function startMain()
 	local CY = HDR + 40
 	local PAGE_SIZE = U(1 - RAIL, -Skin.RailBase - 26, 1, -(CY + 9))
 	local function pagePos(dx) return U(RAIL, Skin.RailBase + Skin.Inset + (dx or 0), 0, CY) end
+	local cascadeGen = setmetatable({}, {__mode = "k"}) -- поколение каскада на страницу
 	-- Каскад карточек: строки страницы проявляются сверху вниз по очереди, а не появляются разом.
-	-- GroupTransparency гасит и фон, и текст, поэтому каскад не «просвечивает» раскладкой.
+	-- Проявление элемента: UIScale работает у ЛЮБОГО GuiObject (GroupTransparency есть только у CanvasGroup,
+	-- запись этого свойства в обычный Frame — ошибка рантайма). Масштаб не влияет на раскладку списка.
+	local function appear(o, delay)
+		if not (CFG.Anim and UICFG.AnimPages) or not o.Parent then return end
+		task.delay(delay or 0, function()
+			if not o.Parent then return end
+			local sc = o:FindFirstChild("AppearScale")
+			if not sc then
+				sc = new("UIScale", {Name = "AppearScale", Scale = 0.94}, o)
+			else
+				sc.Scale = 0.94
+			end
+			spring(sc, {Scale = 1}, TWEEN.pop)
+		end)
+	end
+	-- Каскад карточек: строки страницы «подпрыгивают» друг за другом сверху вниз.
 	local function cascade(f)
 		if not (CFG.Anim and UICFG.AnimPages) then return end
+		local gen = (cascadeGen[f] or 0) + 1 -- быстрые переключения: старый каскад уступает новому
+		cascadeGen[f] = gen
 		local i = 0
 		for _, c in f:GetChildren() do
-			if c:IsA("GuiObject") and not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
+			if c:IsA("GuiObject") then
 				i += 1
-				if i <= 24 then
-					c.GroupTransparency = 1
-					task.delay(math.min(0.2, (i - 1) * 0.016), function()
-						if c.Parent then tween(c, TWEEN.ui, {GroupTransparency = 0}) end
-					end)
-				end
+				if i > 20 then break end
+				local my = gen
+				task.delay(math.min(0.22, (i - 1) * 0.018), function()
+					if cascadeGen[f] == my then appear(c) end
+				end)
 			end
 		end
 	end
@@ -6263,13 +6280,11 @@ local function startMain()
 	local pv2 = pages.Visual
 	sectionLabel(pv2, "PERFORMANCE", 0)
 	local paintCap
-	-- Эффекты анимации гасятся по отдельности, но только пока общий выключатель Animations включён:
-	-- так на слабом устройстве можно оставить переходы страниц и убрать пульсации и всплывающие карточки.
-	local effectChips = {}
 	local perfChips = {
 		{"Team colors", "TeamColors", function() refreshHL(); refreshRows() end},
 		{"Size by dist", "DistScale"},
-		{"Animations", "Anim", function() for _, fn in effectChips do fn() end end},
+		-- общий выключатель обновляет и карточки эффектов: видно, что они «спят», пока анимации выключены
+		{"Animations", "Anim", function() for _, fn in repaints do fn() end end},
 		{"FPS / ping", "ShowStats", function() statsCard.Visible = CFG.ShowStats end},
 	}
 
@@ -6294,7 +6309,6 @@ local function startMain()
 	-- Эффекты анимации: общий Animations выше включает всё, здесь каждый эффект гасится отдельно.
 	-- Пока общий выключатель выключен, переключатели эффектов всё равно не дают картинки — это написано в подписи.
 	sectionLabel(pv2, "ANIMATION EFFECTS", 3)
-	local effectCards = {}
 	for i, d in {
 		{"Animated numbers", "AnimCounters", "Счётчики доезжают до нового значения."},
 		{"Toasts", "AnimToasts", "Результаты и ошибки — карточкой в углу."},
@@ -6306,10 +6320,13 @@ local function startMain()
 			function(v) UICFG[key] = v end, d[3])
 		table.insert(repaints, function()
 			paint(false)
-			-- эффекты работают только вместе с общими анимациями: карточка гаснет, значение сохраняется
-			tween(card, TWEEN.ui, {BackgroundTransparency = CFG.Anim and 0.55 or 0.85})
+			-- эффект живёт только вместе с общими анимациями: подпись карточки притухает,
+			-- значение и фон не трогаем (фоном управляет прозрачность фона-картинки)
+			local dim = not CFG.Anim and 0.55 or 0
+			for _, c in card:GetChildren() do
+				if c:IsA("TextLabel") then tween(c, TWEEN.ui, {TextTransparency = dim}) end
+			end
 		end)
-		table.insert(effectCards, card)
 	end
 	local lowBtn = button(pv2, "Low-end preset", {Size = U(1, 0, 0, 40), LayoutOrder = 4})
 	on(lowBtn.Activated, function()
@@ -6874,14 +6891,8 @@ local function startMain()
 			local wasHidden = not tab.Visible
 			tab.Visible = visible
 			if visible then
-				if CFG.Anim and UICFG.AnimPages then
-					-- найденная папка проявляется, а не возникает рывком
-					if wasHidden then
-						tab.GroupTransparency = 1
-						tween(tab, TWEEN.ui, {GroupTransparency = 0})
-					end
-				elseif tab.GroupTransparency ~= 0 then
-					tab.GroupTransparency = 0 -- анимации выключили посреди проявления
+				if wasHidden and CFG.Anim and UICFG.AnimPages then
+					appear(tab) -- найденная папка проявляется, а не возникает рывком
 				end
 				tab.Position = O(2, y)
 				y += TABH + TGAP
