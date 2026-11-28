@@ -214,7 +214,9 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("task.delay(INTRO_LEN + 0.5, stop)", intro)
         # шрифт логотипа и сцена: Michroma с фолбэком, осколки с градиентом, кольца, блик, подпись
         self.assertIn('Font.new("rbxasset://fonts/families/Michroma.json"', SOURCE)
-        self.assertIn("INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)", SOURCE)
+        # шрифт выбирается безопасно: Michroma через семейство, потом Enum, в конце Gotham
+        self.assertIn('local INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)', SOURCE)
+        self.assertIn("typeof(f) == \"Font\"", SOURCE)
         self.assertIn("NumberSequenceKeypoint", intro)
         self.assertIn('Name = "Ring"', intro)
         self.assertIn('Name = "Shine"', intro)
@@ -227,8 +229,11 @@ class AnimWiring(unittest.TestCase):
         # вызов ровно один и только в ветке верного ключа
         screen = between("local function keyScreen(done)", "stop = function()")
         valid = screen.split('== KEY_HASH then', 1)[1].split("tries += 1", 1)[0]
-        self.assertIn("playIntro(function()", valid)
-        self.assertEqual(SOURCE.count("playIntro("), 2)  # объявление + единственный вызов
+        # запуск защищён: ошибка заставки не мешает открыть меню
+        self.assertIn("local okIntro = pcall(playIntro, afterIntro)", valid)
+        self.assertIn("if not okIntro then", valid)
+        self.assertIn("afterIntro()", valid)
+        self.assertEqual(SOURCE.count("playIntro"), 2)  # объявление + единственный вызов (через pcall)
 
     def test_letters_reveal_opens_folder_text(self):
         body = SOURCE.split("local function revealText(label, text, opt)", 1)[1].split("-- Анимация цифры", 1)[0]

@@ -3,248 +3,326 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Enkaisy — заставка после ключа</title>
+<title>Enkaisy — заставка после ключа (превью)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Michroma&display=swap" rel="stylesheet">
 <style>
-  :root{--acc:#5b8cff;--w:#fff;--mut:#8b929d}
+  :root{--acc:#5b8cff;--w:#fff;--mut:#8b929d;--line:#24262d;--panel:#0d0e12}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:#070708;overflow:hidden;color:#dfe4ec;
+  html,body{margin:0;height:100%;background:#0b0b0d;color:#dfe4ec;overflow:hidden;
     font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  #stage{position:fixed;inset:0;background:#0b0b0d;overflow:hidden;cursor:default}
-  .vig{position:absolute;left:0;right:0;height:34%;pointer-events:none}
-  .vig.top{top:0;background:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,0))}
-  .vig.bot{bottom:0;background:linear-gradient(to top,rgba(0,0,0,.85),rgba(0,0,0,0))}
-  #halo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;
-    background:radial-gradient(circle, rgba(91,140,255,.55) 0%, rgba(91,140,255,.18) 42%, rgba(91,140,255,0) 68%);
-    opacity:0;pointer-events:none}
-  .ring{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;
-    border:2px solid rgba(255,255,255,.85);opacity:0;pointer-events:none}
-  .ring.acc{border-color:rgba(91,140,255,.9);border-width:2px}
-  .shard{position:absolute;left:50%;top:50%;border-radius:3px;pointer-events:none;
-    background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(91,140,255,.55));
-    box-shadow:0 0 8px rgba(160,190,255,.45)}
-  #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);display:flex;align-items:center;
-    justify-content:center;font-family:'Michroma',Roboto,sans-serif;font-weight:400;
-    color:#fff;letter-spacing:0;white-space:nowrap;pointer-events:none}
-  #word span{display:inline-block;opacity:0;transform:scale(.7) rotate(-6deg);
-    text-shadow:0 3px 0 #000, 0 0 22px rgba(91,140,255,.55)}
-  #shineClip{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);overflow:hidden;pointer-events:none}
-  #shine{position:absolute;top:50%;left:-30%;transform:translate(-50%,-50%) rotate(18deg);
-    background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.75),rgba(255,255,255,0));opacity:0}
-  #sub{position:absolute;left:50%;top:60%;transform:translateX(-50%);font-size:12px;letter-spacing:.34em;
-    color:#8b929d;opacity:0;text-transform:uppercase;pointer-events:none}
+  #stage{position:fixed;inset:0;background:#0b0b0d;overflow:hidden}
+  #vignette{position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to bottom,rgba(0,0,0,.9) 0%,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 74%,rgba(0,0,0,.9) 100%),
+      radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%)}
+  #halo{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;opacity:0;
+    background:radial-gradient(circle,rgba(91,140,255,.5) 0%,rgba(91,140,255,.16) 45%,rgba(91,140,255,0) 70%)}
+  #ring1,#ring2{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    opacity:0;border:2px solid rgba(255,255,255,.9)}
+  #ring2{border-color:rgba(91,140,255,.95)}
+  #shards{position:absolute;inset:0}
+  .shard{position:absolute;left:50%;top:50%;border-radius:3px;opacity:0;
+    background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(91,140,255,.5));
+    box-shadow:0 0 7px rgba(170,200,255,.5)}
+  #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);
+    display:flex;align-items:center;justify-content:flex-start;white-space:nowrap;
+    font-family:'Michroma','Gill Sans',"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff;z-index:3}
+  #word span{display:inline-block;opacity:0;transform-origin:50% 50%;
+    text-align:left;will-change:transform,opacity}
+  #shineClip{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);overflow:hidden;z-index:4;pointer-events:none}
+  #shine{position:absolute;top:50%;left:-40%;transform:translate(-50%,-50%) rotate(16deg);opacity:0;
+    background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0))}
+  #sub{position:absolute;left:50%;top:60%;transform:translateX(-50%);opacity:0;color:#9aa1ac;
+    letter-spacing:.34em;text-transform:uppercase;white-space:nowrap;z-index:4;
+    font-family:'Michroma',Roboto,sans-serif}
   #rule{position:absolute;left:50%;top:67.5%;transform:translate(-50%,-50%);height:2px;width:0;
-    background:#5b8cff;border-radius:1px;opacity:0;pointer-events:none}
-  .bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:10px;align-items:center;justify-content:center;
-    padding:10px;font-size:12px;color:#8b929d;background:rgba(8,8,10,.92);border-top:1px solid #1d1f25;z-index:99}
-  .pill{border:1px solid #2a2c33;background:#15161b;color:#e2e6ee;padding:6px 12px;border-radius:8px;cursor:pointer}
-  .pill:hover{background:#1d1f26}
-  .note{position:fixed;left:12px;top:12px;font-size:11px;color:#5d646f;line-height:1.5;max-width:260px;z-index:99}
+    background:var(--acc);opacity:0;border-radius:1px;z-index:4}
+  #fade{position:absolute;inset:0;background:#050506;opacity:0;pointer-events:none;z-index:6}
+
+  #stage{bottom:132px}
+  .hud{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(8,9,12,.98);min-height:132px;
+    border-top:1px solid var(--line);padding:9px 12px 11px;display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut)}
+  .btn{border:1px solid var(--line);background:#14161c;color:#e6eaf2;padding:6px 11px;border-radius:8px;
+    cursor:pointer;font-size:12px;font-family:inherit}
+  .btn:hover{background:#1b1e26}
+  .btn.on{border-color:#5c6577;background:#22262f;color:#fff}
+  .time{font-variant-numeric:tabular-nums;color:#cfd6e2;min-width:74px}
+  #scrub{width:100%;accent-color:var(--acc);height:18px}
+  #err{position:fixed;left:0;right:0;top:0;z-index:30;background:#7d1d24;color:#fff;
+    font-size:12px;padding:8px 12px;display:none;font-family:ui-monospace,monospace}
+  .tag{position:fixed;left:12px;top:12px;z-index:10;font-size:11px;color:#6b7280;line-height:1.55;max-width:270px}
+  .tag b{color:#9aa5b6;font-weight:600}
 </style>
 </head>
 <body>
 <div id="stage">
-  <div class="vig top"></div><div class="vig bot"></div>
+  <div id="vignette"></div>
   <div id="halo"></div>
-  <div class="ring" id="r1"></div><div class="ring acc" id="r2"></div>
+  <div id="ring1"></div>
+  <div id="ring2"></div>
+  <div id="shards"></div>
   <div id="word"></div>
   <div id="shineClip"><div id="shine"></div></div>
-  <div id="sub">MOBILE AIM ASSIST</div>
+  <div id="sub">Mobile aim assist</div>
   <div id="rule"></div>
+  <div id="fade"></div>
 </div>
 
-<div class="note">
-  Превью заставки после ключа.<br>
-  Шрифт — Michroma (в скрипте он же, фолбэк Gotham Black).<br>
-  Длительность 3.1 с, пропустить нельзя.
+<div class="tag">
+  <b>Заставка после ключа</b><br>
+  шрифт Michroma · 3.1 с · пропустить нельзя<br>
+  таймлайн чистой функцией от t: перемотка и покадровый просмотр работают в любую сторону
 </div>
+<div id="err"></div>
 
-<div class="bar">
-  <span id="clock">0.00 с</span>
-  <span class="pill" id="replay">повторить</span>
-  <span class="pill" id="slow">скорость 1×</span>
+<div class="hud">
+  <input id="scrub" type="range" min="0" max="3.1" step="0.01" value="0">
+  <div class="row">
+    <span class="time" id="time">0.00 / 3.10 с</span>
+    <button class="btn" id="play">пауза</button>
+    <button class="btn" id="replay">повторить</button>
+    <button class="btn" id="prev">‹ кадр</button>
+    <button class="btn" id="next">кадр ›</button>
+    <button class="btn" id="slow">1×</button>
+    <button class="btn" id="loop">автоцикл: вкл</button>
+    <span id="fps" style="margin-left:auto"></span>
+  </div>
+  <div class="row">
+    <span>перейти:</span>
+    <button class="btn" data-t="0.25">осколки</button>
+    <button class="btn" data-t="1.20">сборка</button>
+    <button class="btn" data-t="1.60">кольца</button>
+    <button class="btn" data-t="2.10">подпись</button>
+    <button class="btn" data-t="2.35">блик</button>
+    <button class="btn" data-t="2.80">уход</button>
+  </div>
 </div>
 
 <script>
-const WORD = "UNICRASE";
-const LEN = 3.1;
-const stage = document.getElementById('stage');
-const halo = document.getElementById('halo');
-const wordEl = document.getElementById('word');
-const shineEl = document.getElementById('shine');
-const shineClip = document.getElementById('shineClip');
-const subEl = document.getElementById('sub');
-const ruleEl = document.getElementById('rule');
-const r1 = document.getElementById('r1'), r2 = document.getElementById('r2');
-const SPEEDS = [1, 0.5, 0.25, 0.1];
-let speedIdx = 0, speed = 1;
+(function () {
+  "use strict";
+  const LEN = 3.1;
+  const WORD = "UNICRASE";
+  const SUB = "MOBILE AIM ASSIST";
+  const LETTER_START = 1.02, LETTER_STEP = 0.055, LETTER_DUR = 0.5;
+  const HOLDOUT = 2.62, FADE_DUR = 0.45;
+  const LOOP_HOLD = 0.7;
 
-/* геометрия: как в скрипте — от ширины экрана, трекинг по высоте букв */
-let letters = [];
-function build(){
-  wordEl.innerHTML = '';
-  letters = [];
-  const w = Math.min(window.innerWidth, 900);
-  const target = Math.max(170, Math.min(780, w * 0.84));
-  // Michroma широкая: ~0.78em на заглавную букву
-  const h = Math.max(18, Math.min(190, Math.floor(target / (WORD.length * 0.78) * 1.05)));
-  wordEl.style.fontSize = h + 'px';
-  const pad = Math.max(1, Math.floor(h * 0.03));
-  for (const ch of WORD){
-    const s = document.createElement('span');
-    s.textContent = ch;
-    s.style.marginRight = pad + 'px';
-    wordEl.appendChild(s);
-    letters.push(s);
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), halo = $('halo'), ring1 = $('ring1'), ring2 = $('ring2'),
+        shardsLayer = $('shards'), wordEl = $('word'), shineClip = $('shineClip'), shineEl = $('shine'),
+        subEl = $('sub'), ruleEl = $('rule'), fadeEl = $('fade'), scrub = $('scrub');
+
+  const SPEEDS = [1, 0.5, 0.25];
+  let speedIdx = 0, speed = 1, playing = true, looping = true;
+  let t = 0, last = 0, rafId = 0, holdTimer = null;
+  let geo = {h: 60, total: 300, pad: 2};
+  let shards = [];
+  let letters = [];
+
+  function fail(msg) {
+    const el = $('err');
+    el.style.display = 'block';
+    el.textContent = 'Ошибка превью: ' + msg + ' — пришли этот текст, починю.';
   }
-  const box = wordEl.getBoundingClientRect();
-  shineClip.style.width = (box.width + 40) + 'px';
-  shineClip.style.height = (box.height * 1.6) + 'px';
-  shineEl.style.width = (box.width * 0.18) + 'px';
-  shineEl.style.height = (box.height * 1.6) + 'px';
-  subEl.style.fontSize = Math.max(9, Math.min(20, Math.round(h * 0.2))) + 'px';
-  halo.style.width = halo.style.height = (box.width * 1.5) + 'px';
-  return box.width * 0.5;
-}
+  window.addEventListener('error', e => fail(e.message));
+  window.addEventListener('unhandledrejection', e => fail(String(e.reason)));
 
-/* осколки: 30 штук по кругу, вытянутые «стёкла» с градиентом */
-let shards = [];
-function buildShards(){
-  shards.forEach(s => s.el.remove());
-  shards = [];
-  for (let i = 0; i < 30; i++){
-    const a = (i / 30) * Math.PI * 2 + (Math.random() - 0.5) * 0.22;
-    const tall = i % 3 !== 0;
-    const w = tall ? 2 + Math.random() * 2 : 5 + Math.random() * 3;
-    const h = tall ? 16 + Math.random() * 26 : 6 + Math.random() * 4;
-    const el = document.createElement('div');
-    el.className = 'shard';
-    el.style.width = w + 'px';
-    el.style.height = h + 'px';
-    el.style.opacity = '0';
-    stage.appendChild(el);
-    shards.push({el, a, w, h, spin: (Math.random() - 0.5) * 180,
-                 delay: Math.random() * 0.3, dur: 0.55 + Math.random() * 0.3});
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const easeOutQuint = k => 1 - Math.pow(1 - k, 5);
+
+  /* ---------- построение сцены ---------- */
+  function buildWord() {
+    wordEl.innerHTML = '';
+    letters = [];
+    const stageW = stage.clientWidth || window.innerWidth || 390;
+    const target = clamp(stageW * 0.84, 170, 780);
+    // Michroma широкая: подбираем кегль так, чтобы слово заняло target по ширине
+    let h = clamp(Math.floor(target / (WORD.length * 0.82)), 18, 190);
+    wordEl.style.fontSize = h + 'px';
+
+    for (let i = 0; i < WORD.length; i++) {
+      const s = document.createElement('span');
+      s.textContent = WORD[i];
+      wordEl.appendChild(s);
+      letters.push(s);
+    }
+    // ширина каждой буквы: по факту (в jsdom layout нет — берём оценку кегля)
+    let widths = letters.map(s => s.offsetWidth || s.getBoundingClientRect().width || h * 0.82);
+    if (widths.every(w => !w)) widths = letters.map(() => h * 0.82);
+    const pad = Math.max(1, Math.round(h * 0.03));
+    let total = 0;
+    letters.forEach((s, i) => {
+      const w = Math.ceil(widths[i]) + 1;
+      s.style.width = w + 'px';
+      s.style.marginRight = pad + 'px';
+      total += w + pad;
+    });
+    // центрируем всю строку явно: последний margin компенсируем, чтобы слово стояло ровно по центру
+    wordEl.style.width = total + 'px';
+    if (letters.length) letters[letters.length - 1].style.marginRight = '0px';
+    geo = {h: h, total: total, pad: pad};
+
+    subEl.style.fontSize = clamp(Math.round(h * 0.2), 9, 20) + 'px';
+    halo.style.width = halo.style.height = Math.round(total * 1.5) + 'px';
+    shineClip.style.width = Math.round(total * 1.08) + 'px';
+    shineClip.style.height = Math.round(h * 1.9) + 'px';
+    shineEl.style.width = Math.round(h * 1.6) + 'px';
+    shineEl.style.height = Math.round(h * 3.2) + 'px';
+    geo.ruleW = Math.round(total * 0.5);
   }
-}
 
-let raf = null, t0 = 0, done = false, ruleW = 0;
+  function buildShards() {
+    shardsLayer.innerHTML = '';
+    shards = [];
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2 + (Math.random() - 0.5) * 0.22;
+      const tall = i % 3 !== 0;
+      const el = document.createElement('div');
+      el.className = 'shard';
+      shardsLayer.appendChild(el);
+      shards.push({
+        el: el, a: a,
+        w: tall ? 2 + Math.random() * 2 : 5 + Math.random() * 3,
+        h: tall ? 16 + Math.random() * 26 : 6 + Math.random() * 4,
+        spin: (Math.random() - 0.5) * 180,
+        delay: Math.random() * 0.3,
+        dur: 0.55 + Math.random() * 0.3
+      });
+    }
+  }
 
-function reset(){
-  cancelAnimationFrame(raf);
-  done = false;
-  letters.forEach(s => { s.style.opacity = '0'; s.style.transform = 'scale(.7) rotate(-6deg)';
-                         s.style.transition = 'none'; s.style.textShadow = '0 3px 0 #000, 0 0 0 rgba(0,0,0,0)'; });
-  halo.style.opacity = '0'; halo.style.transform = 'translate(-50%,-50%) rotate(0deg)';
-  [r1, r2].forEach(r => { r.style.opacity = '0'; r.style.width = r.style.height = '10px'; });
-  shineEl.style.opacity = '0'; shineEl.style.left = '-30%';
-  subEl.style.opacity = '0'; ruleEl.style.opacity = '0'; ruleEl.style.width = '0px';
-  stage.style.background = '#0b0b0d';
+  /* ---------- рендер одного кадра: только из t, без накопления состояния ---------- */
+  function render(time) {
+    const tt = clamp(time, 0, LEN);
+
+    for (const s of shards) {
+      const k = clamp((tt - s.delay) / s.dur, 0, 1);
+      const ease = k * k;
+      const d = 0.62 * (1 - ease);
+      s.el.style.left = (50 + Math.cos(s.a) * d * 100).toFixed(2) + '%';
+      s.el.style.top = (47 + Math.sin(s.a) * d * 0.94 * 100).toFixed(2) + '%';
+      s.el.style.transform = 'translate(-50%,-50%) rotate(' + (s.a * 57.2958 + s.spin * ease).toFixed(1) + 'deg)';
+      s.el.style.width = Math.max(1, s.w * (1 - ease * 0.85)).toFixed(1) + 'px';
+      s.el.style.height = Math.max(2, s.h * (1 - ease * 0.45)).toFixed(1) + 'px';
+      const vis = clamp(k * 3, 0, 1);
+      s.el.style.opacity = (vis * 0.95 * (1 - ease)).toFixed(3);
+    }
+
+    const pulse = clamp((tt - 0.55) / 0.6, 0, 1);
+    const breathe = 1 + Math.sin((tt - 1.1) * 3) * 0.02;
+    halo.style.opacity = (pulse * 0.85 * (1 - clamp((tt - 2.6) / 0.5, 0, 1))).toFixed(3);
+    halo.style.transform = 'translate(-50%,-50%) scale(' + breathe.toFixed(4) + ')';
+
+    [[ring1, 1.02, 1], [ring2, 1.11, 0.85]].forEach(function (r) {
+      const k = clamp((tt - r[1]) / 0.75, 0, 1);
+      const size = 30 + k * 620;
+      r[0].style.width = r[0].style.height = size.toFixed(0) + 'px';
+      r[0].style.opacity = k <= 0 || k >= 1 ? '0' : (r[2] * (1 - k)).toFixed(3);
+    });
+
+    letters.forEach(function (s, i) {
+      const start = LETTER_START + i * LETTER_STEP;
+      const p = clamp((tt - start) / LETTER_DUR, 0, 1);
+      const e = easeOutQuint(p);
+      const scale = lerp(0.7, 1, e) * (1 + Math.sin(p * Math.PI) * 0.06);
+      s.style.opacity = clamp(p * 2, 0, 1).toFixed(3);
+      s.style.transform = 'scale(' + scale.toFixed(4) + ') rotate(' + (-6 * (1 - e)).toFixed(2) + 'deg)';
+      s.style.textShadow = '0 3px 0 #000, 0 0 ' + Math.round(22 * e) + 'px rgba(91,140,255,' + (0.5 * e).toFixed(2) + ')';
+    });
+
+    const subK = clamp((tt - 2.02) / 0.4, 0, 1);
+    subEl.style.opacity = subK.toFixed(3);
+    ruleEl.style.opacity = subK.toFixed(3);
+    ruleEl.style.width = (geo.ruleW * subK).toFixed(1) + 'px';
+
+    const shK = clamp((tt - 2.22) / 0.5, 0, 1);
+    // полоса идёт слева направо и видна только пока внутри слова
+    shineEl.style.opacity = (0.6 * Math.sin(shK * Math.PI)).toFixed(3);
+    shineEl.style.left = (-12 + shK * 124).toFixed(1) + '%';
+
+    const out = clamp((tt - HOLDOUT) / FADE_DUR, 0, 1);
+    fadeEl.style.opacity = out.toFixed(3);
+
+    $('time').textContent = tt.toFixed(2) + ' / ' + LEN.toFixed(2) + ' с';
+    if (document.activeElement !== scrub) scrub.value = String(tt);
+  }
+
+  /* ---------- цикл проигрывания ---------- */
+  function tick(now) {
+    if (!playing) return;
+    if (!last) last = now;
+    const dt = (now - last) / 1000;
+    last = now;
+    t += dt * speed;
+    if (t >= LEN) {
+      if (looping) {
+        t = 0; last = 0;
+        render(0);
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
+      t = LEN; render(LEN); playing = false; setPlayBtn(); return;
+    }
+    render(t);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    cancelAnimationFrame(rafId);
+    clearTimeout(holdTimer);
+    last = 0;
+    if (playing) rafId = requestAnimationFrame(tick);
+  }
+  function setPlayBtn() { $('play').textContent = playing ? 'пауза' : 'играть'; }
+  function pause() { playing = false; cancelAnimationFrame(rafId); clearTimeout(holdTimer); setPlayBtn(); }
+  function resume() { if (t >= LEN) t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); }
+  function seek(v) { pause(); t = clamp(v, 0, LEN); render(t); }
+
+  /* ---------- управление ---------- */
+  $('play').onclick = function () { playing ? pause() : resume(); };
+  $('replay').onclick = function () { t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); };
+  scrub.oninput = function () { seek(parseFloat(scrub.value)); };
+  document.querySelectorAll('[data-t]').forEach(function (b) {
+    b.onclick = function () { seek(parseFloat(b.dataset.t)); };
+  });
+  $('prev').onclick = function () { seek(t - 0.05); };
+  $('next').onclick = function () { seek(t + 0.05); };
+  $('slow').onclick = function (e) {
+    speedIdx = (speedIdx + 1) % SPEEDS.length;
+    speed = SPEEDS[speedIdx];
+    e.currentTarget.textContent = speed === 1 ? '1×' : speed + '×';
+  };
+  $('loop').onclick = function (e) {
+    looping = !looping;
+    e.currentTarget.textContent = 'автоцикл: ' + (looping ? 'вкл' : 'выкл');
+  };
+  stage.addEventListener('pointerdown', function () { t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : resume(); }
+    if (e.code === 'ArrowRight') { e.preventDefault(); seek(t + 0.05); }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); seek(t - 0.05); }
+  });
+  let resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { buildWord(); render(t); }, 150);
+  });
+
+  /* ---------- старт ---------- */
+  buildWord();
   buildShards();
-  ruleW = build();
-  document.getElementById('clock').textContent = '0.00 с';
-}
-
-function play(){
-  reset();
-  t0 = performance.now();
-  raf = requestAnimationFrame(frame);
-}
-
-function frame(now){
-  const t = ((now - t0) / 1000) * speed;
-  step(t);
-  document.getElementById('clock').textContent = t.toFixed(2) + ' с';
-  if (t < LEN) raf = requestAnimationFrame(frame);
-  else finish();
-}
-
-function step(t){
-  /* осколки: летят к центру с ускорением, вращаются, истончаются */
-  for (const sh of shards){
-    const k = Math.max(0, Math.min(1, (t - sh.delay) / sh.dur));
-    const ease = k * k;
-    const d = 0.62 * (1 - ease);
-    const cx = 50 + Math.cos(sh.a) * d * 100;
-    const cy = 50 + Math.sin(sh.a) * d * 0.94 * 100;
-    sh.el.style.left = cx + '%';
-    sh.el.style.top = cy + '%';
-    sh.el.style.transform = `translate(-50%,-50%) rotate(${sh.a * 180 / Math.PI + sh.spin * ease}deg)`;
-    const thin = 1 - ease * 0.85;
-    sh.el.style.width = Math.max(1, sh.w * thin) + 'px';
-    sh.el.style.height = Math.max(2, sh.h * (1 - ease * 0.5)) + 'px';
-    const vis = Math.max(0, Math.min(1, k * 3));
-    sh.el.style.opacity = Math.max(0, Math.min(1, vis * 0.95 - ease * 0.95));
+  render(0);
+  // шрифт может подъехать позже: пересчитываем геометрию, когда он загрузился
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { buildWord(); render(t); }).catch(function () {});
   }
-  /* свет: нарастает к сборке, потом мягко дышит */
-  const pulse = Math.max(0, Math.min(1, (t - 0.55) / 0.6));
-  const breathe = 1 + Math.sin((t - 1.1) * 3) * 0.02;
-  halo.style.opacity = String(pulse * 0.9);
-  halo.style.transform = `translate(-50%,-50%) rotate(${t * 22}deg) scale(${breathe})`;
-
-  /* буквы: пружина с перелётом, слева направо */
-  letters.forEach((s, i) => {
-    const start = 1.02 + (i + 1) * 0.055;
-    const p = (t - start) / 0.5;
-    if (p <= 0) return;
-    const q = Math.min(1, p);
-    const ease = 1 - Math.pow(1 - q, 4);
-    const over = 1 + Math.sin(Math.min(1, q) * Math.PI) * 0.12; // overshoot пружины
-    s.style.opacity = String(Math.min(1, q * 1.6));
-    s.style.transform = `scale(${(0.7 + 0.3 * ease) * over}) rotate(${-6 * (1 - ease)}deg)`;
-    s.style.textShadow = `0 3px 0 #000, 0 0 ${Math.round(22 * ease)}px rgba(91,140,255,${(0.55 * ease).toFixed(2)})`;
-  });
-
-  /* кольца: расходятся от сборки */
-  [[r1, 1.02], [r2, 1.11]].forEach(([r, start]) => {
-    const k = Math.max(0, Math.min(1, (t - start) / 0.75));
-    if (k <= 0) return;
-    const size = 40 + k * 620;
-    r.style.width = r.style.height = size + 'px';
-    r.style.opacity = String(Math.max(0, 0.85 * (1 - k)));
-  });
-
-  /* подпись и линия */
-  if (t > 2.02){
-    const k = Math.min(1, (t - 2.02) / 0.4);
-    subEl.style.opacity = String(k);
-    ruleEl.style.opacity = String(k);
-    ruleEl.style.width = (ruleW * 0.5 * k) + 'px';
-  }
-  /* блик */
-  if (t > 2.25){
-    const k = Math.min(1, (t - 2.25) / 0.55);
-    shineEl.style.opacity = String(0.55 * Math.sin(k * Math.PI));
-    shineEl.style.left = (-30 + k * 160) + '%';
-  }
-  /* уход: всё гаснет вместе с фоном */
-  if (t > 2.62){
-    const out = Math.min(1, (t - 2.62) / 0.45);
-    letters.forEach(s => s.style.opacity = String(1 - out));
-    subEl.style.opacity = String(1 - out);
-    ruleEl.style.opacity = String(1 - out);
-    halo.style.opacity = String((1 - out) * 0.9);
-    stage.style.background = `rgba(7,7,8,${(1 - out * 0.95).toFixed(3)})`;
-  }
-}
-
-function finish(){
-  cancelAnimationFrame(raf);
-  if (done) return;
-  done = true;
-  stage.style.background = '#070708';
-}
-
-document.getElementById('replay').onclick = play;
-document.getElementById('slow').onclick = e => {
-  speedIdx = (speedIdx + 1) % SPEEDS.length;
-  speed = SPEEDS[speedIdx];
-  e.currentTarget.textContent = 'скорость ' + (speed === 1 ? '1×' : speed + '×');
-  play();
-};
-window.addEventListener('resize', () => { reset(); play(); });
-play();
+  setPlayBtn();
+  start();
+})();
 </script>
 </body>
 </html>

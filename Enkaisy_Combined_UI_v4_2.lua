@@ -7095,13 +7095,22 @@ end
 local INTRO_WORD = "UNICRASE"
 local INTRO_SUB = "MOBILE AIM ASSIST"
 local INTRO_LEN = 3.1
--- Шрифт логотипа: широкий техно-гротеск Michroma; если клиент его не знает — тяжёлый Gotham.
+-- Шрифт логотипа: широкий техно-гротеск Michroma. Цепочка строго через pcall:
+-- 1) семейство Michroma, 2) Enum.Font.Michroma (в старых клиентах его может не быть),
+-- 3) тяжёлый Gotham — чтобы заставка не падала никогда, что бы ни было с клиентом.
 local INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)
 do
-	local ok, f = pcall(function()
-		return Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-	end)
-	if ok and f then INTRO_FONT = f end
+	local candidates = {
+		function() return Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal) end,
+		function() return Font.fromEnum(Enum.Font.Michroma) end,
+	}
+	for _, pick in candidates do
+		local ok, f = pcall(pick)
+		if ok and typeof(f) == "Font" then
+			INTRO_FONT = f
+			break
+		end
+	end
 end
 local function playIntro(after)
 	local done = false
@@ -7239,8 +7248,8 @@ local function playIntro(after)
 		halo.Size = O(baseHal, baseHal)
 		word.Size = O(total, math.ceil(h * 1.3))
 	end
-	on(stage:GetPropertyChangedSignal("AbsoluteSize"), fitWord)
-	fitWord()
+	on(stage:GetPropertyChangedSignal("AbsoluteSize"), function() pcall(fitWord) end)
+	pcall(fitWord)
 
 	-- буквы ставим на стартовое состояние: ниже, мельче, прозрачные
 	for _, l in letters do
@@ -7460,12 +7469,18 @@ local function keyScreen(done)
 			task.wait(0.22)
 			if closed then return end
 			rc:Disconnect()
-			playIntro(function()
+			-- заставка не должна уметь отменить открытие меню: любая её ошибка — просто пропуск сцены
+			local function afterIntro()
 				if closed then return end
 				dim:Destroy() blur:Destroy() blur = nil
 				pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 				done()
-			end)
+			end
+			local okIntro = pcall(playIntro, afterIntro)
+			if not okIntro then
+				pcall(function() if dim.Parent then dim:Destroy() end if blur then blur:Destroy() blur = nil end end)
+				afterIntro()
+			end
 			return
 		end
 		tries += 1
