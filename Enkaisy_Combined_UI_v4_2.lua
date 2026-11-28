@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.7.2: триггербот переработан: Auto/Single, проверка видимости, своя дальность, ожидание наводки
 -- v4.7.1: свободная палитра RGB+HEX на любые элементы меню, ползунки контуров кнопок и окна
 -- v4.7.0: убраны кривые плавности, Silent Aim, Checks и стили круга; из анимаций остались только тосты
 -- v4.6.7: НАБЛЮДАТЕЛЬ ЗА ROBLOX: tools/watch_upstream.py — сверяет используемые классы/свойства/перечисления с актуальным API и следит за версией Luau, отчёт в docs/UPSTREAM.md; тесты точности (наследование свойств); документация: почему «обучение во сне» невозможно и что вместо него
@@ -149,7 +150,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.7.1" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.7.2" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
