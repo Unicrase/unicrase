@@ -31,6 +31,8 @@
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
 --       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
 --       ESP update rate теперь реально ограничивает частоту (в т.ч. 60 Гц на 120-Гц экране).
+--       Поиск: запрос ищется по словам (порядок не важен), под полем — список найденных настроек;
+--       нажатие ведёт в папку и прокручивает страницу ровно к карточке, совпадения листаются стрелками ▲▼.
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
 -- v4.0: Dynamic FOV (вкладка FOV): радиус круга и выбора цели зависит от дистанции (Linear / Smooth, мин/макс, дистанции, плавность, текущий радиус).
 --       Target Animation (вкладка FOV): индикатор цели - появление, переключение, захват, потеря; стили Ring / Square / Dot, скорость, Preview.
@@ -1341,6 +1343,10 @@ Skin.glyphs = {
 	Close = {paths = {{3,3, 13,13}, {3,13, 13,3}}},
 	Star = {paths = {{8,1, 10,6, 15,6.5, 11.5,10, 12.5,15, 8,12.5, 3.5,15, 4.5,10, 1,6.5, 6,6, 8,1}}},
 	Next = {paths = {{5.5,3, 10.5,8, 5.5,13}}},
+	Up = {paths = {{3,10.5, 8,5.5, 13,10.5}}},
+	Down = {paths = {{3,5.5, 8,10.5, 13,5.5}}},
+	Right = {paths = {{5.5,3, 10.5,8, 5.5,13}}},
+	Left = {paths = {{10.5,3, 5.5,8, 10.5,13}}},
 }
 local function icon(name, parent, size, color)
 	local box = new("Frame", {Name = name .. "Icon", Size = O(size or 16, size or 16), AnchorPoint = V2(0.5, 0.5),
@@ -2145,6 +2151,12 @@ helpUI.info = {
  ["Corner Radius"] = {"Меняет скругление элементов интерфейса.", "Changes interface corner rounding."},
 }
 function helpUI.add(parent, title, desc, label)
+	-- Поиску нужен сам объект настройки: по нему строится точная прокрутка к элементу.
+	if not helpUI.cardOwner then
+		for _, v in helpUI.items do
+			if v.card == parent then helpUI.cardOwner, helpUI.cardTitle = parent, v.title break end
+		end
+	end
 	-- Кнопка справки больше самого знака и не перекрывает переключатель.
 	local b = new("TextButton", {Name = "Help", Size = O(28, 28), AnchorPoint = V2(0, 0.5),
 		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 5}, parent)
@@ -4665,6 +4677,7 @@ local function startMain()
 	local dialog -- модальное окно справки и подтверждений (собирается ниже)
 	local bgFrames = {}
 	local curTab = "Main"
+	local folderHook -- поиск перехватывает клик по папке: ведёт к совпадению, а не просто открывает страницу
 
 	-- кнопка-логотип (когда меню свёрнуто)
 	local openBtn = new("TextButton", {
@@ -4992,7 +5005,10 @@ local function startMain()
 		end
 		new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, pg)
 		pages[n] = pg
-		on(tb.Activated, function() show(n) end)
+		on(tb.Activated, function()
+			if folderHook and folderHook(n) then return end
+			show(n)
+		end)
 	end
 
 	table.insert(repaints, function()
@@ -5837,22 +5853,246 @@ local function startMain()
 		end
 		searchIndex[n] = fold(table.concat(words, " "))
 	end
+	-- Слова запроса ищутся по отдельности: "дистанция esp" находит папки с обоими словами,
+	-- даже если они стоят в разном порядке и не рядом.
+	local function searchTerms()
+		local out = {}
+		for w in fold(search.Text):gmatch("%S+") do table.insert(out, w) end
+		return out
+	end
+	-- ===== Результаты поиска: точный переход к элементу =====
+	-- Поле "Поиск" фильтрует папки по словам запроса. Чтобы не листать страницу вручную,
+	-- под полем показываются сами совпадения: нажатие на строку (или на папку со столькими же
+	-- совпадениями) открывает папку и прокручивает страницу ровно к этой карточке.
+	-- Если совпадений несколько, у строки появляются стрелки ▲▼ — как в поиске Telegram:
+	-- следующее и предыдущее совпадение по кругу, список при этом не закрывается.
+	-- Низ колонки папок: поле поиска (1,-77) + отступ = 83 px. Всё, что добавляет поиск,
+	-- растёт вверх от этой линии, поэтому папки просто становятся короче.
+	local SEARCH_BOTTOM = 83
+	local hintH = 13
+	local resultsHint = new("TextLabel", {Size = U(1, -20, 0, hintH), BackgroundTransparency = 1, Visible = false,
+		Text = "", TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL}, side)
+	local results = new("ScrollingFrame", {
+		Name = "SearchResults", Size = U(1, -10, 0, 0), BackgroundTransparency = 1,
+		ScrollBarThickness = 2, ScrollBarImageColor3 = C.Mut, ScrollBarImageTransparency = 0.65,
+		CanvasSize = O(0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+		ElasticBehavior = Enum.ElasticBehavior.Never, Visible = false,
+	}, side)
+	local resultsList = new("Frame", {Size = U(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1}, results)
+	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder}, resultsList)
+	local rowPainters, resultSigs = {}, {} -- resultSigs: {папка, карточка} в порядке обхода
+	local matchStep = 1 -- текущее совпадение: подпись 3/12 и стрелки
+	local lastTerms, resultLimit = {}, 24 -- сколько строк показывать сразу ("Показать все" снимает лимит)
+
+	-- прокрутка страницы к карточке; у Aim и Players прокрутка своя, внутри страницы
+	local function scrollPage(pg, card)
+		if not pg or not card or not card.Parent then return end
+		local target = pg
+		if not pg:IsA("ScrollingFrame") then
+			for _, d in pg:GetDescendants() do if d:IsA("ScrollingFrame") then target = d break end end
+		end
+		task.defer(function()
+			if not card.Parent or not target.Parent then return end
+			local y = card.AbsolutePosition.Y - target.AbsolutePosition.Y + target.CanvasPosition.Y
+			-- элемент встаёт в верхнюю треть видимой области: видно и подпись, и что идёт дальше
+			tween(target, fast, {CanvasPosition = V2(0, math.max(0, y - target.AbsoluteSize.Y * 0.28))})
+		end)
+	end
+
+	local function repaintRows()
+		for _, paint in rowPainters do paint() end
+	end
+	-- позиция совпадения в общем списке (по ссылке на карточку)
+	local function indexOf(card)
+		for i, sig in resultSigs do if sig[2] == card then return i end end
+		return nil
+	end
+	-- короткая вспышка контура: видно, к какой именно карточке привёл поиск.
+	-- Обводка одна на карточку: повторный переход не наслаивает контуры.
+	local flashes = setmetatable({}, {__mode = "k"})
+	local function flash(card)
+		if not card or not card.Parent then return end
+		local ring = flashes[card]
+		if not (ring and ring.Parent) then
+			ring = new("UIStroke", {Color = C.Acc, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				LineJoinMode = Enum.LineJoinMode.Round, Transparency = 0.15}, card)
+			flashes[card] = ring
+		end
+		ring.Transparency = 0.15
+		task.delay(1.1, function()
+			if ring.Parent and ring.Transparency < 1 then
+				tween(ring, slow, {Transparency = 1})
+			end
+		end)
+	end
+	local function goTo(folder, card, index)
+		if index then matchStep = index end
+		if curTab ~= folder then show(folder) end
+		scrollPage(pages[folder], card)
+		flash(card)
+		repaintRows()
+	end
+	local function stepResult(dir)
+		if #resultSigs < 2 then return end
+		matchStep = (matchStep - 1 + (dir or 1)) % #resultSigs + 1
+		local sig = resultSigs[matchStep]
+		goTo(sig[1], sig[2])
+	end
+	-- совпадения только в одной папке: клик по папке ведёт к первому из них
+	local function firstIn(folder)
+		for i, sig in resultSigs do if sig[1] == folder then return i end end
+		return nil
+	end
+
+	-- строка результата: название настройки, счётчик совпадений и стрелки (если их больше одного)
+	local function addResultRow(order, folder, card, title)
+		local rowBtn = new("TextButton", {Size = U(1, 0, 0, 28), BackgroundColor3 = C.Card, Text = "",
+			AutoButtonColor = false, LayoutOrder = order}, resultsList)
+		rr(rowBtn, 7)
+		outline(rowBtn)
+		local label = new("TextLabel", {Size = U(1, -26, 1, 0), Position = O(8, 0), BackgroundTransparency = 1, Text = title,
+			TextColor3 = C.W, FontFace = GM, TextSize = 12, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd,
+			Active = false}, rowBtn)
+		local count = new("TextLabel", {Size = U(1, -26, 1, 0), Position = O(8, 0), BackgroundTransparency = 1, Text = "",
+			TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Right,
+			Active = false}, rowBtn)
+		if #resultSigs > 1 then
+			-- стрелки ▲▼ как в Telegram: листают совпадения, не закрывая список
+			local function arrow(glyph, name, right)
+				local b = new("TextButton", {Name = name, Size = O(22, 22), AnchorPoint = V2(1, 0.5), Position = U(1, -right, 0.5, 0),
+					BackgroundTransparency = 1, Text = "", AutoButtonColor = false}, rowBtn)
+				icon(glyph, b, 11, C.Mut)
+				hoverable(b, outline(b, 1), {base = 1})
+				return b
+			end
+			local dn = arrow("Down", "NextMatch", 3)
+			local up = arrow("Up", "PrevMatch", 26)
+			label.Size, count.Size = U(1, -72, 1, 0), U(1, -72, 1, 0)
+			on(dn.Activated, function() stepResult(1) end)
+			on(up.Activated, function() stepResult(-1) end)
+		end
+		on(rowBtn.Activated, function() goTo(folder, card, indexOf(card)) end)
+		table.insert(rowPainters, function()
+			local pos = indexOf(card)
+			local here = pos == matchStep
+			count.Text = #resultSigs > 1 and (pos and (pos .. "/" .. #resultSigs) or "") or ""
+			count.TextColor3 = here and C.W or C.Mut
+			rowBtn.BackgroundColor3 = here and C.Sel or C.Card
+		end)
+	end
+
+	-- список совпадений и высота панели; папки при этом фильтруются как раньше
+	local function paintResults(terms, keepStep)
+		for _, c in resultsList:GetChildren() do
+			if not c:IsA("UIListLayout") then c:Destroy() end
+		end
+		table.clear(rowPainters)
+		table.clear(resultSigs)
+		if #terms > 0 then
+			for _, folder in folders do
+				for _, it in helpUI.items do
+					if it.title and it.card and it.card.Parent and it.card:IsDescendantOf(pages[folder.id]) then
+						local hay = fold(it.title .. " " .. (it.desc or ""))
+						local all = true
+						for _, w in terms do
+							if not string.find(hay, w, 1, true) then all = false break end
+						end
+						if all then table.insert(resultSigs, {folder.id, it.card}) end
+					end
+				end
+			end
+		end
+		local shown = math.min(#resultSigs, resultLimit)
+		for i = 1, shown do
+			local sig = resultSigs[i]
+			for _, it in helpUI.items do
+				if it.card == sig[2] and it.title then
+					addResultRow(i, sig[1], sig[2], it.title)
+					break
+				end
+			end
+		end
+		-- остаток списка: одна кнопка вместо простыни из карточек — на телефоне так удобнее
+		if #resultSigs > shown then
+			local more = new("TextButton", {Size = U(1, 0, 0, 26), BackgroundColor3 = C.Input, Text = "Показать все (" .. #resultSigs .. ")",
+				TextColor3 = C.Mut, FontFace = GM, TextSize = 11, AutoButtonColor = false, LayoutOrder = shown + 1}, resultsList)
+			rr(more, 7)
+			outline(more)
+			on(more.Activated, function()
+				resultLimit = 64
+				paintResults(lastTerms, true)
+			end)
+		end
+		if not keepStep or matchStep > #resultSigs then matchStep = 1 end
+		-- высота панели: не больше трети окна, иначе на телефоне не останется списка папок
+		local hRows = shown * 30 + (#resultSigs > shown and 28 or 0)
+		local hShow = #resultSigs > 0 and math.min(hRows, math.max(64, panel.AbsoluteSize.Y * 0.30)) or 0
+		local hintOn = #resultSigs > 2 and shown >= #resultSigs -- при обрезке списка подпись не нужна
+		local extra = (hintOn and hintH + 2 or 0)
+		results.Size = U(1, -10, 0, hShow)
+		results.Visible = hShow > 0
+		-- панель стоит над полем поиска, подпись — между ними
+		results.Position = U(0, 6, 1, -(SEARCH_BOTTOM + extra + hShow))
+		resultsHint.Visible = hintOn
+		resultsHint.Position = U(0, 10, 1, -(SEARCH_BOTTOM + hintH))
+		if hintOn then
+			resultsHint.Text = "Совпадений: " .. #resultSigs .. (shown < #resultSigs and (" (показано " .. shown .. ")") or "") .. " · ▲▼ листают"
+		end
+		-- папки занимают остаток колонки над результатами
+		tabsHolder.Size = U(1, -10, 1, -(SEARCH_BOTTOM + 10 + extra + (hShow > 0 and hShow + 6 or 0)))
+		repaintRows()
+	end
+
 	local function filterTabs()
-		local q = fold(search.Text:match("^%s*(.-)%s*$"))
+		local terms = searchTerms()
+		lastTerms = terms
+		resultLimit = 24 -- новый запрос снова показывает короткий список
+		paintResults(terms, true)
 		local y = 0
 		for _, folder in folders do
 			local n = folder.id
 			local tab = ptabs[n].button
-			tab.Visible = q == "" or string.find(searchIndex[n], q, 1, true) ~= nil
+			local hit = #terms == 0
+			if not hit then
+				hit = true
+				for _, w in terms do
+					if not string.find(searchIndex[n], w, 1, true) then hit = false break end
+				end
+			end
+			tab.Visible = hit
 			if tab.Visible then
 				tab.Position = O(2, y)
 				y += TABH + TGAP
 			end
 		end
-		empty.Visible = y == 0
+		empty.Visible = y == 0 and #resultSigs == 0
+		if #terms == 0 then results.Visible, resultsHint.Visible = false, false end
 		tabsHolder.CanvasSize, tabsHolder.CanvasPosition = O(0, y), V2(0, 0)
+		-- одно совпадение: сразу открываем нужную папку и прокручиваем к элементу
+		if #terms > 0 and #resultSigs == 1 then
+			local sig = resultSigs[1]
+			matchStep = 1
+			if curTab ~= sig[1] then show(sig[1]) end
+			scrollPage(pages[sig[1]], sig[2])
+		end
 	end
+
+	-- клик по папке при активном поиске ведёт к первому совпадению в ней (как переход в Telegram)
+	folderHook = function(n)
+		if #searchTerms() == 0 then return false end
+		local i = firstIn(n)
+		if not i then return false end
+		show(n)
+		matchStep = i
+		goTo(resultSigs[i][1], resultSigs[i][2])
+		return true
+	end
+
 	on(search:GetPropertyChangedSignal("Text"), filterTabs)
+	-- Enter на клавиатуре телефона = следующее совпадение (как стрелка ▼)
+	on(search.FocusLost, function(enter)
+		if enter and #resultSigs > 1 then stepResult(1) end
+	end)
 
 	-- ===== События =====
 	movable(openBtn, openBtn, function() setOpen(true) end, function() clampGui(openBtn) end)
