@@ -28,6 +28,13 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.5.3: ИСПРАВЛЕНО — настройки Chams теперь реально применяются. Причина: chPaintBody
+--         звала chOutline(char, layer, col), но переменной layer внутри не было: nil,
+--         падение каждый кадр, pcall в кадровом цикле это молча глотал. Слой создаётся
+--         в chApply и передаётся дальше, а chOutline/chPattern сами переживают его отсутствие.
+--         Ошибка движка теперь показывается всплывающим уведомлением (на телефоне нет консоли).
+--         Уведомление о выборе пресета тоже заработало (звался несуществующий CHCTX.toast).
+--         Добавлен тест, который проверяет передачу слоя и вызовы движка.
 -- v4.5.2: телефонная диагностика: если панель Chams не собралась, причина пишется красной
 --         карточкой ПРЯМО во вкладке (на телефоне консоли нет), а при успехе сверху видна
 --         строка «CHAMS · N блоков · v4.5.2». Название переключателя в ESP уточнено.
@@ -122,7 +129,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.5.2" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.5.3" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2470,6 +2477,8 @@ end
 
 local function chPattern(char, layer, col, now)
 	local st = chState()
+	if not layer then layer = chLayer[char] end
+	if not layer then return end
 	local key = (st.TexOn ~= false) and st.Tex or nil
 	local p = key and CH_PAT[key]
 	local fx = chFxLayer(char, layer)
@@ -2641,6 +2650,9 @@ end
 -- BoxHandleAdornment (Adornee + Thickness). Создаётся один раз на часть и переиспользуется.
 local function chOutline(char, layer, col)
 	local st = chState()
+	-- слой мог не прийти: без него обводку рисовать некуда, но падать нельзя
+	if not layer then layer = chLayer[char] end
+	if not layer then return end
 	local set = layer.outlines
 	-- толщина: тонкая обводка Highlight (Thickness недоступен) или своя BoxHandleAdornment
 	if not (st.OutlineOn and st.MatOn ~= false) then
@@ -2677,8 +2689,9 @@ local function chOutline(char, layer, col)
 	end
 end
 
-local function chPaintBody(char, now, tint)
+local function chPaintBody(char, now, tint, layer)
 	local st = chState()
+	if not layer then layer = chLayer[char] end
 	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
 	local col, h, s, v = chColor(tint)
 	col = chSpinColor(col, h, s, v, now)
@@ -2871,7 +2884,7 @@ local function chApply(char, tint, now)
 	if not char then return end
 	local layer = chLayer[char]
 	if not layer then layer = {} chLayer[char] = layer end
-	local col = chPaintBody(char, now, tint)
+	local col = chPaintBody(char, now, tint, layer)
 	chPaintLight(char, layer, col, now)
 	chPaintFx(char, layer, col, now)
 	chPaintParticles(char, layer, col, now)
@@ -2941,7 +2954,7 @@ local function buildChamsPage(parent, api)
 				end
 				st.Preset = pr.name
 				applyAll()
-				if CHCTX.toast then CHCTX.toast("Chams: " .. pr.name) end
+				if notify then pcall(notify, "Chams", "Пресет: " .. pr.name) end
 			end)
 		end
 	end
@@ -3631,9 +3644,15 @@ local function frame()
 		setp(o.h, "Enabled", pv(o.plr, "Hl", CFG.Hl) and vis)
 		-- Chams: тело, свет, текстуры и эффекты. Считаем только для видимых целей —
 		-- иначе на 30 игроках каждый кадр красились бы и невидимые (просадка FPS).
-		if vis and CFG.Chams2 and chApply then
+		if vis and chApply then
 			local okC, eC = pcall(chApply, char, o.h.FillColor, now)
-			if not okC and not chWarn then chWarn = true warn("[Enkaisy] chams error: " .. tostring(eC)) end
+			if not okC and not chWarn then
+				-- предупреждение в консоль и один раз на экран: на телефоне консоли нет,
+				-- а «настройки не работают» без причины — самый дорогой баг
+				chWarn = true
+				warn("[Enkaisy] chams error: " .. tostring(eC))
+				if notify then pcall(notify, "CHAMS: ошибка", tostring(eC):sub(1, 90), true) end
+			end
 		end
 		local hum = o.hum
 		local f = hum and math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1) or 1

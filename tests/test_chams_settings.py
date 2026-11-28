@@ -128,3 +128,46 @@ class ChamsDeclarationOrder(unittest.TestCase):
         self.assertIn("chState()", block, "переключатель обязан приводить состояние к таблице")
         self.assertIn("refreshHL", block, "выключение должно сразу перекрашивать цели")
         self.assertIn("saveNow()", block, "значение должно сохраняться")
+
+
+class ChamsEnginePassesState(unittest.TestCase):
+    """Движок Chams: в каждую функцию передаются ВСЕ аргументы, которые она читает.
+
+    Реальный баг 4.5.0: chPaintBody звала chOutline(char, layer, col), но переменной
+    layer внутри не было — nil, падение каждый кадр, pcall в кадровом цикле это
+    молча глотал, и настройки на экране ничего не меняли. Luau такое не ловит,
+    потому что неизвестное имя читается как глобальное. Поэтому проверяем явно.
+    """
+
+    def func(self, name):
+        start = SOURCE.index("local function %s(" % name)
+        head = SOURCE[start:SOURCE.index("\n", start)]
+        params = [p.strip() for p in head[head.index("(") + 1:head.index(")")].split(",") if p.strip()]
+        nxt = SOURCE.find("\nlocal function ", start)
+        ends = [x for x in (nxt, SOURCE.find("\n-- =====", start)) if x != -1]
+        return params, SOURCE[SOURCE.index("\n", start):min(ends) if ends else len(SOURCE)]
+
+    def test_paint_body_receives_layer(self):
+        params, body = self.func("chPaintBody")
+        self.assertIn("layer", params, "chPaintBody обязана получать слой")
+        self.assertIn("chOutline(", body)
+        self.assertIn("chPattern(", body)
+
+    def test_outline_and_pattern_never_get_nil_layer(self):
+        for name in ("chOutline", "chPattern"):
+            params, body = self.func(name)
+            self.assertIn("layer", params, name + " без слоя упадёт")
+            # если слоя нет — функция обязана выйти, а не падать на nil
+            self.assertIn("if not layer", body, name + " должна переживать отсутствие слоя")
+
+    def test_apply_creates_layer_before_paint(self):
+        _, body = self.func("chApply")
+        self.assertLess(body.index("chLayer[char]"), body.index("chPaintBody"),
+                        "слой создаётся после покраски тела")
+
+    def test_engine_painters_return_no_nil_calls(self):
+        # каждая ch-функция, которую зовёт chApply, обязана существовать
+        _, body = self.func("chApply")
+        calls = set(re.findall(r"(?<![\w.:])(ch\w+)\(", body))
+        for name in calls:
+            self.assertIn("local function %s(" % name, SOURCE, name + " не объявлена")
