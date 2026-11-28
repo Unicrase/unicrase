@@ -1,173 +1,114 @@
-"""Chams: каждая настройка панели обязана что-то менять.
+"""Chams удалён из скрипта целиком (4.6.0) — эти тесты стерегут, чтобы он не вернулся.
 
-Правило от пользователя: нельзя создавать настройки, которые ничего не меняют,
-и нельзя добавлять названия материалов без визуальной реализации. Статическая
-проверка ловит именно это: ключ, который панель пишет в состояние, должен
-читаться движком.
+Пользователь попросил удалить всю папку CHAMS: вкладку, панель, движок материалов,
+узоров и эффектов, старые стили подсветки и переключатель в ESP. Подсветка ESP
+осталась базовой: цвет + прозрачность Highlight.
+
+Тесты проверяют три вещи:
+1) ни одна часть движка не осталась в файле (иначе это мёртвый код и путаница);
+2) подсветка продолжает работать без него (refreshHL, CH.apply, alphaFor);
+3) настройки ESP сохраняются и читаются (базовая подсветка не сломана).
 """
 import re
 import unittest
 from pathlib import Path
 
-SOURCE = (Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua").read_text(encoding="utf-8")
+FULL = (Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua").read_text(encoding="utf-8")
 
 
-def between(text, start, end):
-    return text.split(start, 1)[1].split(end, 1)[0]
+def strip_comments(text):
+    """Код без комментариев: в шапке осталась история версий, где старые имена упомянуты законно."""
+    text = re.sub(r"--\[\[.*?\]\]", "", text, flags=re.S)
+    return "\n".join(l for l in text.split("\n") if not l.lstrip().startswith("--"))
 
 
-class ChamsSettings(unittest.TestCase):
-    """Ни одной «мёртвой» настройки в панели Chams."""
+SOURCE = strip_comments(FULL)
 
-    def setUp(self):
-        # движок + refreshHL: часть настроек (плотность заливки) живёт в слое Highlight
-        self.engine = between(SOURCE, "local function chState()", "-- ===== ПАНЕЛЬ CHAMS") + \
-            between(SOURCE, "local function refreshHL()", "\nlocal function unhl")
-        self.page = between(SOURCE, "local function buildChamsPage(parent, api)",
-                            "\n-- Единая точка API движка Chams")
 
-    def test_every_slot_is_read_by_the_engine(self):
-        written = set(re.findall(r'slot\("[^"]+",\s*"(\w+)"', self.page))
-        self.assertGreaterEqual(len(written), 10, "ползунки должны быть")
-        dead = sorted(k for k in written if not re.search(r"[\w_]+\.%s\b" % k, self.engine))
-        self.assertEqual(dead, [], "ползунки, которые движок не читает: %s" % dead)
+class ChamsIsGone(unittest.TestCase):
+    """Ни одной части удалённой папки CHAMS."""
 
-    def test_engine_uses_material_and_effects(self):
-        # материал тела и каждый слой рисуются настоящими свойствами Roblox
-        self.assertIn("part.Material", self.engine)
-        self.assertIn("part.Reflectance", self.engine)
-        self.assertIn("part.TextureID", self.engine)
-        self.assertIn("PointLight", self.engine)
-        self.assertIn("BoxHandleAdornment", self.engine)  # толщина обводки
-        self.assertIn("UIGridLayout", self.engine)        # узор
-        self.assertIn("ParticleEmitter", self.engine)
+    REMOVED = [
+        "CH_MATS", "CH_FX", "CH_DEF", "CH_TEX", "CH_PAT", "CH_TEX_ORDER",
+        "CHAMS_BY_KEY", "chamsTexture", "chamsClear", "chamsParts", "chamsOrig",
+        "chamsLights", "chState", "chApply", "chLayer", "chOutline", "chPattern",
+        "chPaintBody", "chPaintFx", "chPaintLight", "chPaintParticles", "chPaintBody",
+        "buildChamsPage", "CHAMS_PAGE", "CH_DEF.TexId", "CFG.Chams2",
+    ]
 
-    def test_no_fake_asset_ids(self):
-        # ID нельзя придумывать: в таблице текстур только имена узоров
-        tex = between(SOURCE, "CH_TEX = {", "CH_TEX_ORDER")
-        self.assertNotIn("rbxassetid", tex)
-        self.assertNotIn("rbxassetid://2883", SOURCE)
+    def test_engine_names_are_gone(self):
+        for name in self.REMOVED:
+            self.assertNotIn(name, SOURCE, name + " всё ещё в файле — движок удалён не полностью")
 
-    def test_every_texture_has_a_real_pattern(self):
-        # каждое имя в списке текстур обязано иметь настоящий узор в CH_PAT,
-        # иначе пункт «Texture» ничего не рисует (запрет на пустые настройки)
-        order = re.findall(r'"([A-Za-z]+)"', between(SOURCE, "CH_TEX_ORDER = {", "-- Текущее состояние Chams"))
-        patterns = set(re.findall(r'([A-Za-z]+) = \{(?:shape|lines|wave)', between(SOURCE, "CH_PAT = {", "local function chPattern")))
-        self.assertGreaterEqual(len(order), 30, "список текстур должен быть полным")
-        self.assertEqual([k for k in order if k != "None" and k not in patterns], [],
-                         "текстуры без реализации")
+    def test_no_chams_tab(self):
+        self.assertNotIn('id = "Chams"', SOURCE)
+        self.assertNotIn('title = "CHAMS"', SOURCE)
 
-    def test_page_cards_have_layout_order(self):
-        # страница использует UIListLayout: карточка без LayoutOrder встаёт в случайном месте
-        page = between(SOURCE, "local function buildChamsPage(parent, api)",
-                       "\n-- Единая точка API движка Chams")
-        cards = re.findall(r'new\("Frame", \{[^}]*BackgroundColor3 = C\.Card[^}]*\}, parent\)', page, re.S)
-        self.assertGreaterEqual(len(cards), 3)
-        for card in cards:
-            self.assertIn("LayoutOrder", card, "карточка панели без LayoutOrder")
+    def test_no_chams_switch_in_esp(self):
+        self.assertNotIn("Материалы и эффекты Chams", SOURCE)
+        self.assertNotIn("chClearVisible", SOURCE)
 
-    def test_colors_are_real_palettes(self):
-        # Color/Color2/GlowColor/OutlineColor должны иметь палитру, а не только поле в таблице
-        for key in ("Color", "Color2", "GlowColor", "OutlineColor"):
-            self.assertIn('"%s"' % key, self.page, "нет палитры для " + key)
+    def test_no_style_list(self):
+        # таблица старых стилей подсветки (Outline / Soft / Solid / Neon / Lava ...)
+        self.assertNotIn("CHAMS = {", SOURCE)
+        self.assertNotIn("mat = Enum.Material.Neon", SOURCE)
 
-    def test_settings_are_saved(self):
-        self.assertIn("saveNow()", between(SOURCE, "local function buildChamsPage", "\t-- СБРОС"))
+
+class HighlightStillWorks(unittest.TestCase):
+    """Базовая подсветка ESP после удаления Chams."""
+
+    def test_refresh_still_sets_colors(self):
+        start = SOURCE.index("local function refreshHL()")
+        body = SOURCE[start:SOURCE.index("\nlocal function unhl", start)]
+        self.assertIn("CH.apply(o, fc, oc)", body)
+        self.assertIn("marks[id] == \"Mark\"", body)
+        self.assertIn("CFG.TeamColors", body)
+
+    def test_apply_sets_transparency_from_settings(self):
+        start = SOURCE.index("function CH.apply(o, fillColor, outlineColor)")
+        body = SOURCE[start:SOURCE.index("\nend", start)]
+        self.assertIn("alphaFor(o.plr, \"Fill\", CFG.Fill, 0.45)", body)
+        self.assertIn("alphaFor(o.plr, \"Outline\", CFG.Outline, 0.8)", body)
+        self.assertIn("FillTransparency", body)
+        self.assertIn("OutlineTransparency", body)
+
+    def test_frame_loop_does_not_call_engine(self):
+        frame = SOURCE[SOURCE.index("local function render()"):] if "local function render()" in SOURCE else SOURCE
+        self.assertNotIn("chApply", frame)
+        self.assertNotIn("chamsTexture", frame)
+
+    def test_unhl_clears_only_highlight(self):
+        start = SOURCE.index("local function unhl(char, fade)")
+        body = SOURCE[start:start + 900]
+        self.assertIn("restoreNative(o)", body)
+        self.assertNotIn("chamsClear", body)
+
+
+class EspSettingsStillSaved(unittest.TestCase):
+    """Настройки ESP, которые раньше были частью панели Chams."""
+
+    def test_fill_and_outline_sliders_exist(self):
+        self.assertIn('slider("Fill strength", "Fill"', SOURCE)
+        self.assertIn('slider("Outline opacity", "Outline"', SOURCE)
+
+    def test_settings_are_persisted(self):
+        self.assertIn("CFG.Fill", SOURCE)
+        self.assertIn("CFG.Outline", SOURCE)
+        self.assertIn("saveNow", SOURCE)
+
+    def test_help_does_not_mention_removed_panel(self):
+        self.assertNotIn("Материалы и эффекты Chams", SOURCE)
+
+    def test_no_help_entries_for_deleted_controls(self):
+        """Справка не должна описывать настройки, которых больше нет в интерфейсе."""
+        import re as _re
+        info_start = SOURCE.index("helpUI.info = {")
+        info_end = SOURCE.index("\n}", info_start)
+        block = SOURCE[info_start:info_end]
+        rest = SOURCE[:info_start] + SOURCE[info_end:]
+        for key in _re.findall(r'^ \["([^"]+)"\]', block, _re.M):
+            self.assertIn('"%s"' % key, rest, "справка описывает удалённую настройку: " + key)
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class ChamsDeclarationOrder(unittest.TestCase):
-    """Панель собирается при старте меню: всё, что она зовёт, обязано быть объявлено ВЫШЕ.
-
-    Именно из-за нарушения этого правила вкладка CHAMS оказалась пустой: панель звала
-    sectionLabel, объявленную ниже, вызов падал на nil, а pcall это молча глотал.
-    """
-
-    def test_helpers_used_by_page_are_declared_earlier(self):
-        page_at = SOURCE.index("local function buildChamsPage")
-        page = SOURCE[page_at:SOURCE.index("\n-- Единая точка API движка Chams", page_at)]
-        # sectionLabel вызывается только через шину (CHCTX) — прямых обращений быть не должно
-        direct = re.findall(r"(?<![\w.:])sectionLabel\s*\(", page)
-        self.assertEqual(direct, [], "sectionLabel объявлена ниже панели: зовём через CHCTX")
-        self.assertIn("CHCTX.sectionLabel", page)
-        # всё остальное, что панель зовёт напрямую, объявлено раньше
-        for name in ("chState", "CH_MAT_KEY", "CH_TEX", "CH_TEX_ORDER", "CH_FX", "CH_PAT"):
-            self.assertLess(SOURCE.index(name), page_at, name + " объявлен ниже панели")
-
-    def test_pattern_layer_comes_before_pattern_paint(self):
-        # chPattern зовёт chFxLayer: он должен быть объявлен выше, иначе слой не создаётся
-        self.assertLess(SOURCE.index("local function chFxLayer"), SOURCE.index("local function chPattern"))
-
-    def test_page_errors_are_not_swallowed(self):
-        # пустая вкладка без причины недопустима: ошибка сборки должна быть видна в консоли
-        self.assertIn("панель Chams не собралась", SOURCE)
-
-    def test_legacy_mode_really_turns_materials_off(self):
-        # выключенные материалы должны возвращать тело к исходному виду и не
-        # применять плотность заливки Chams: иначе переключатель «не работает»
-        tex = between(SOURCE, "local function chamsTexture", "local base = st.col")
-        self.assertIn("cs.MatOn ~= false", tex, "при выключенных материалах движок не запускается")
-        self.assertIn("chamsClear(char)", tex, "тело возвращается к исходному виду")
-        refresh = between(SOURCE, "local function refreshHL()", "local function unhl")
-        self.assertIn("cs.MatOn == false", refresh, "refreshHL обязан видеть выключенный режим")
-
-    def test_failure_is_visible_on_screen(self):
-        # на телефоне консоли нет: ошибка сборки панели должна быть видна в самой вкладке
-        block = SOURCE[SOURCE.index("local function CHAMS_PAGE"):SOURCE.index("local function startMain")]
-        self.assertIn("панель не собралась", block, "нет сообщения об ошибке в интерфейсе")
-        self.assertIn("to string", block.replace("tostring", "to string"))
-        self.assertIn("DangerBg", block, "сообщение должно быть заметным")
-        self.assertIn("ChamsDiag", block, "нужна строка диагностики, что панель построена")
-
-    def test_legacy_switch_persists_and_repaints(self):
-        block = SOURCE[SOURCE.index('toggleCard(pm, "Материалы и эффекты Chams"'):]
-        block = block[:block.index("CHAMS_PAGE(pages, api)")]
-        self.assertIn("chState()", block, "переключатель обязан приводить состояние к таблице")
-        self.assertIn("refreshHL", block, "выключение должно сразу перекрашивать цели")
-        self.assertIn("saveNow()", block, "значение должно сохраняться")
-
-
-class ChamsEnginePassesState(unittest.TestCase):
-    """Движок Chams: в каждую функцию передаются ВСЕ аргументы, которые она читает.
-
-    Реальный баг 4.5.0: chPaintBody звала chOutline(char, layer, col), но переменной
-    layer внутри не было — nil, падение каждый кадр, pcall в кадровом цикле это
-    молча глотал, и настройки на экране ничего не меняли. Luau такое не ловит,
-    потому что неизвестное имя читается как глобальное. Поэтому проверяем явно.
-    """
-
-    def func(self, name):
-        start = SOURCE.index("local function %s(" % name)
-        head = SOURCE[start:SOURCE.index("\n", start)]
-        params = [p.strip() for p in head[head.index("(") + 1:head.index(")")].split(",") if p.strip()]
-        nxt = SOURCE.find("\nlocal function ", start)
-        ends = [x for x in (nxt, SOURCE.find("\n-- =====", start)) if x != -1]
-        return params, SOURCE[SOURCE.index("\n", start):min(ends) if ends else len(SOURCE)]
-
-    def test_paint_body_receives_layer(self):
-        params, body = self.func("chPaintBody")
-        self.assertIn("layer", params, "chPaintBody обязана получать слой")
-        self.assertIn("chOutline(", body)
-        self.assertIn("chPattern(", body)
-
-    def test_outline_and_pattern_never_get_nil_layer(self):
-        for name in ("chOutline", "chPattern"):
-            params, body = self.func(name)
-            self.assertIn("layer", params, name + " без слоя упадёт")
-            # если слоя нет — функция обязана выйти, а не падать на nil
-            self.assertIn("if not layer", body, name + " должна переживать отсутствие слоя")
-
-    def test_apply_creates_layer_before_paint(self):
-        _, body = self.func("chApply")
-        self.assertLess(body.index("chLayer[char]"), body.index("chPaintBody"),
-                        "слой создаётся после покраски тела")
-
-    def test_engine_painters_return_no_nil_calls(self):
-        # каждая ch-функция, которую зовёт chApply, обязана существовать
-        _, body = self.func("chApply")
-        calls = set(re.findall(r"(?<![\w.:])(ch\w+)\(", body))
-        for name in calls:
-            self.assertIn("local function %s(" % name, SOURCE, name + " не объявлена")

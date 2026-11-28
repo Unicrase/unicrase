@@ -357,177 +357,19 @@ if __name__ == "__main__":
     unittest.main()
 
 class ChamsAndFov(unittest.TestCase):
-    def test_chams_look_list(self):
-        # 4.5.0: плоский список из 22 «стилей» заменён полноценной системой Chams —
-        # материал тела + настоящий узор + свет + эффекты, всё комбинируется.
-        for key in ["Outline", "Soft", "Solid", "Glow", "Shaded", "Metallic", "Metal", "Chrome",
-                    "Glossy", "Glass", "Crystal", "Ice", "Lava", "Water Flow", "Neon Rim"]:
-            self.assertIn('key = "%s"' % key, SOURCE, "старые стили должны остаться в таблице CHAMS")
-        self.assertIn('Chams = "Outline"', SOURCE)
-        # панель собрана из данных и подключена к отдельной вкладке
-        self.assertIn("local function buildChamsPage(parent, api)", SOURCE)
-        self.assertIn("CHAMS_PAGE(pages, api)", SOURCE)
-        self.assertIn("pcall(CHCTX.buildChamsPage, page, api)", SOURCE)
-        for table in ("CH_MATS", "CH_TEX", "CH_TEX_ORDER", "CH_FX", "CH_PAT", "CH_DEF"):
-            self.assertIn(table, SOURCE)
-        # каждый слой движка настоящий: материал, узор, свет, обводка, частицы
-        for fn in ("chPaintBody", "chPattern", "chPaintLight", "chOutline", "chPaintFx", "chPaintParticles"):
-            self.assertIn("local function " + fn, SOURCE)
-        self.assertIn("local function chApply(char, tint, now)", SOURCE)
-        # старые сейвы не ломаются
-        self.assertIn("for k, v in CH_DEF do if c[k] == nil then c[k] = v end end", SOURCE)
-        # выдуманных ID текстур быть не должно: только настоящий ассет, который вводит пользователь
-        tex = SOURCE.split("CH_TEX = {", 1)[1].split("CH_TEX_ORDER", 1)[0]
-        self.assertNotIn("rbxassetid", tex, "ID текстур нельзя выдумывать")
-        self.assertIn("CUSTOM TEXTURE ID", SOURCE)
-        # длинные списки — в своих прокрутках
-        self.assertIn("ScrollingFrame", SOURCE)
-        self.assertIn("AutomaticCanvasSize = Enum.AutomaticSize.Y", SOURCE)
+    """Папка CHAMS удалена целиком (4.6.0): её место занял базовый Highlight."""
 
-    def test_fov_style_cards(self):
-        for key in ["Glow", "Gradient", "Dashed", "Classic"]:
-            self.assertIn('key = "%s"' % key, SOURCE)
-        self.assertIn("A.FovStyle = st.key", SOURCE)
-        # пунктир рисуется сегментами по кругу и вращается
-        self.assertIn("local DASH_N = 24", SOURCE)
-        self.assertIn("seg.Rotation = math.deg(ang) + 90", SOURCE)
+    def test_chams_removed_from_menu(self):
+        self.assertNotIn('id = "Chams"', SOURCE)
+        self.assertNotIn("CHAMS_PAGE(pages, api)", SOURCE)
+        self.assertNotIn("local function buildChamsPage(parent, api)", SOURCE)
+        for name in ("CH_MATS", "CH_TEX", "CH_FX", "CH_PAT", "CH_DEF", "CHAMS_BY_KEY"):
+            self.assertNotIn(name, SOURCE)
 
-    def test_fov_size_in_pixels(self):
-        self.assertIn("FovPx = 240", SOURCE)
-        self.assertIn("FOV Size (diameter, px)", SOURCE)
-        # радиус на экране берётся из пикселей, а не из процента короткой стороны
-        self.assertIn("local rPx = (A.DynFov or NX.dynBack) and (NX.dynR * 0.01 * short) or math.max(2, A.FovPx * 0.5)", SOURCE)
-        # согласование со старым полем, которым живёт Dynamic FOV
-        self.assertIn("A.FovR = math.clamp(A.FovPx * 0.5 / short * 100, 2, 60)", SOURCE)
-        # подпись текущего радиуса — в пикселях
-        self.assertIn("%d px (diameter %d px)", SOURCE)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-class ChamsActuallyApplies(unittest.TestCase):
-    """Стиль Chams должен реально менять хайлайты, а не просто существовать в таблице.
-
-    Первая версия ловила падение, но выбор стиля ничего не менял: chamsApply была
-    объявлена и ни разу не вызвана, а refreshHL перезаписывал цвета базовыми.
-    """
-
-    def test_chams_apply_is_called(self):
-        # применение стиля к Highlight — через таблицу CH (одна точка входа)
-        self.assertGreaterEqual(SOURCE.count("CH.apply(o, fc, oc"), 1, "применение стиля не вызывается")
-        self.assertIn("function CH.apply(o, fillColor, outlineColor, tintable)", SOURCE)
-
-    def test_refresh_uses_style(self):
-        body = between("local function refreshHL()", "local function unhl(")
-        # стиль берётся по ключу прямо из CHAMS_BY_KEY (функция chamsStyle убрана ради лимита локалей)
-        self.assertIn("CHAMS_BY_KEY[CFG.Chams or", body)
-        self.assertIn("CH.apply(o, fc, oc", body)
-        # базовые прозрачности больше не выставляются напрямую мимо стиля
-        self.assertNotIn("h.FillTransparency = 1 - alphaFor", body)
-
-    def test_styles_differ_visibly(self):
-        import re
-        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
-        rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
-        self.assertEqual(len(rows), 22)
-        fills = [float(f) for f, _ in rows]
-        outlines = [float(o) for _, o in rows]
-        # Solid и Soft (0.25 против 0.80 по заливке) обязаны отличаться заметно,
-        # иначе пользователь их не различит на экране
-        self.assertGreater(max(fills) - min(fills), 0.5)
-        self.assertGreater(max(outlines) - min(outlines), 0.4)
-
-    def test_style_alphas_are_distinguishable(self):
-        # Коэффициенты берём ИЗ КОДА (chamsAlpha), а не дублируем в тесте:
-        # иначе ослабление формулы в скрипте тест не заметит.
-        import re
-        m = re.search(r'local k = \(key == "Fill"\) and \(([\d.]+) - strength \* ([\d.]+)\)'
-                      r" or \(([\d.]+) - strength \* ([\d.]+)\)", SOURCE)
-        self.assertIsNotNone(m, "формула chamsAlpha не найдена или переписана")
-        f_a, f_b, o_a, o_b = (float(v) for v in m.groups())
-        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
-        rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
-        self.assertEqual(len(rows), 22)
-
-        def fill_alpha(f):
-            return min(1.0, 0.45 * (f_a - f * f_b))
-
-        def edge_alpha(o):
-            return min(1.0, 1.0 * (o_a - o * o_b))
-
-        fills = [fill_alpha(float(f)) for f, _ in rows]
-        edges = [edge_alpha(float(o)) for _, o in rows]
-        self.assertGreater(max(fills) - min(fills), 0.5,
-                           "по формулe из кода стили дают одинаковую заливку — разницы не видно")
-        self.assertGreater(max(edges) - min(edges), 0.15,
-                           "по формуле из кода контур у всех стилей одинаковый")
-        # Solid (fill 0.25) обязан быть плотнее Soft (0.80) не меньше чем на 0.4
-        self.assertGreater(fill_alpha(0.25) - fill_alpha(0.80), 0.4)
-
-    def test_style_tint_survives_hp_color(self):
-        # цвет по здоровью и радуга перекрашивают заливку каждый кадр — оттенок стиля
-        # должен возвращаться, иначе Chams «исчезает» при включённом HPColor
-        body = between("if CFG.HPColor and hum then", "local far =")
-        self.assertIn("CH.tint(", SOURCE)
-        self.assertIn("-- HPColor и радуга перекрашивают заливку каждый кадр", SOURCE)
-
-    def test_style_choice_is_saved(self):
-        # выбор материала, текстуры и эффекта обязан сохраняться между запусками
-        start = SOURCE.index("local function buildChamsPage(parent, api)")
-        body = SOURCE[start:start + 9000]
-        self.assertIn("saveNow()", body, "настройки Chams должны сохраняться")
-        # ...и сразу применяться к целям, а не только писаться в состояние
-        self.assertIn("refreshHL()", body)
-
-
-class ChamsTextures(unittest.TestCase):
-    """Chams Look — это ТЕКСТУРА тела, а не только плотность подсветки.
-
-    Highlight умеет только заливку и контур, поэтому стиль дополнительно меняет
-    материал частей тела: Neon светится, CrackedLava — лава, ForceField — сетка и т.д.
-    """
-
-    TEX = {
-        "Neon": "Enum.Material.Neon", "Lava": "Enum.Material.CrackedLava",
-        "Ice": "Enum.Material.Ice", "Glass": "Enum.Material.Glass",
-        "ForceField": "Enum.Material.ForceField", "Metal": "Enum.Material.Foil",
-        "Chrome": "Enum.Material.Foil", "Water Flow": "Enum.Material.Water",
-    }
-
-    def test_styles_carry_materials(self):
-        from pathlib import Path
-        import re
-        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
-        # запись стиля может занимать две строки: берём блок от "{key" до "}," включительно
-        blocks = re.findall(r'\{key = "([^"]+)"(.*?)\},(?=\n)', table, re.S)
-        self.assertGreater(len(blocks), 15, "не удалось разобрать таблицу стилей")
-        by_key = dict(blocks)
-        for key, mat in self.TEX.items():
-            self.assertIn(key, by_key, "%s нет в таблице стилей" % key)
-            self.assertIn(mat, by_key[key], "%s должен ставить материал %s" % (key, mat))
-
-    def test_texture_is_applied_and_restored(self):
-        self.assertIn("local function chamsTexture(", SOURCE)
-        self.assertIn("local function chamsClear(", SOURCE)
-        # texture вызывается из refreshHL
-        body = between("local function refreshHL()", "local function unhl(")
-        self.assertIn("chamsTexture", body)
-        # и снимается при снятии подсветки/выгрузке, иначе игроки останутся неоновыми
-        unhl = between("local function unhl(", "local function dohl(")
-        self.assertIn("chamsClear", unhl)
-        stop = SOURCE[SOURCE.index("stop = function()"):]
-        self.assertIn("chamsClear", stop[:1500])
-
-    def test_original_material_is_remembered(self):
-        self.assertIn("chamsOrig[part] = {mat = part.Material, col = part.Color}", SOURCE)
-        self.assertIn("part.Material = orig.mat", SOURCE)
-        self.assertIn("part.Color = orig.col", SOURCE)
-
-    def test_light_for_glowing_styles(self):
-        self.assertIn("PointLight", SOURCE)
-        self.assertIn("st.glow", SOURCE)
-
+    def test_highlight_remains(self):
+        # базовая подсветка: цвет и прозрачности, которые считает refreshHL
+        self.assertIn("local function refreshHL()", SOURCE)
+        self.assertIn("CH.apply(o, fc, oc)", SOURCE)
 
 class FovCircleStyles(unittest.TestCase):
     """Стили круга FOV должны быть детьми самого круга, а не оверлея.
