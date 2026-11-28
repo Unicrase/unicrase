@@ -16,6 +16,13 @@
     background:
       linear-gradient(to bottom,rgba(0,0,0,.9) 0%,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 74%,rgba(0,0,0,.9) 100%),
       radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%)}
+  #beams{position:absolute;inset:0;overflow:hidden}
+  .beam{position:absolute;left:50%;top:47%;transform-origin:50% 50%;transform:translate(-50%,-50%);
+    background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.16) 42%,rgba(255,255,255,0) 100%);
+    opacity:0;pointer-events:none;will-change:transform,opacity,width}
+  #core{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle,#ffffff 0%,rgba(255,255,255,.75) 35%,rgba(170,200,255,0) 70%);
+    opacity:0;pointer-events:none}
   #halo{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;opacity:0;
     background:radial-gradient(circle,rgba(91,140,255,.5) 0%,rgba(91,140,255,.16) 45%,rgba(91,140,255,0) 70%)}
   #ring1,#ring2{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
@@ -29,8 +36,14 @@
   #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);max-width:92vw;
     display:flex;align-items:center;justify-content:center;white-space:nowrap;
     font-family:'Michroma','Gill Sans',"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff;z-index:3}
-  #word span{display:inline-block;opacity:0;transform-origin:50% 50%;
-    text-align:left;will-change:transform,opacity}
+  #word span{display:inline-block;opacity:0;transform-origin:50% 50%;text-align:left;
+    will-change:transform,opacity;
+    /* серебро: белое сверху, серое в середине, холодная тень снизу + светлая кромка */
+    color:transparent;
+    background:linear-gradient(180deg,#ffffff 0%,#e8ecf2 26%,#bfc6d2 48%,#eef2f8 58%,#a8b0bd 78%,#7c8492 100%);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-stroke:0.035em rgba(248,250,255,.92);
+    filter:drop-shadow(0 3px 0 rgba(0,0,0,.85));}
   #shineClip{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);overflow:hidden;z-index:4;pointer-events:none}
   #shine{position:absolute;top:50%;left:-40%;transform:translate(-50%,-50%) rotate(16deg);opacity:0;
     background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0))}
@@ -59,6 +72,8 @@
 </head>
 <body>
 <div id="stage">
+  <div id="beams"></div>
+  <div id="core"></div>
   <div id="vignette"></div>
   <div id="halo"></div>
   <div id="ring1"></div>
@@ -186,6 +201,19 @@
     shineEl.style.height = Math.round(lineH * 2.6) + 'px';
   }
 
+  let beams = [];
+  function buildBeams() {
+    const layer = document.getElementById('beams');
+    layer.innerHTML = '';
+    beams = [];
+    for (let i = 0; i < 9; i++) {
+      const b = document.createElement('div');
+      b.className = 'beam';
+      layer.appendChild(b);
+      beams.push({el: b, phase: i * 0.7, speed: 18 + (i % 3) * 6, base: i * 40 + 12});
+    }
+  }
+
   function buildShards() {
     shardsLayer.innerHTML = '';
     shards = [];
@@ -221,6 +249,27 @@
       s.el.style.height = Math.max(2, s.h * (1 - ease * 0.45)).toFixed(1) + 'px';
       const vis = clamp(k * 3, 0, 1);
       s.el.style.opacity = (vis * 0.95 * (1 - ease)).toFixed(3);
+    }
+
+    // свет из глубины: лучи из точки схода, медленно вращаются и дышат
+    const lightK = clamp((tt - 0.2) / 1.0, 0, 1) * (1 - clamp((tt - 2.6) / 0.5, 0, 1));
+    const diag = Math.max(stage.clientWidth || window.innerWidth || 390, stage.clientHeight || 700) * 1.6;
+    beams.forEach(b => {
+      const rot = b.base + tt * b.speed * 0.35;
+      const w = diag * (0.85 + Math.sin(tt * 2.2 + b.phase) * 0.18);
+      b.el.style.transform = 'translate(-50%,-50%) rotate(' + rot.toFixed(1) + 'deg)';
+      b.el.style.width = w.toFixed(0) + 'px';
+      b.el.style.height = (diag * 0.62).toFixed(0) + 'px';
+      b.el.style.opacity = (lightK * 0.9).toFixed(3);
+    });
+    const coreK = clamp((tt - 0.5) / 0.7, 0, 1) * (1 - clamp((tt - 2.55) / 0.45, 0, 1));
+    const coreEl = document.getElementById('core');
+    if (coreK > 0) {
+      const cs = 14 + coreK * 46 + Math.sin(tt * 5.5) * 3;
+      coreEl.style.width = coreEl.style.height = cs.toFixed(0) + 'px';
+      coreEl.style.opacity = (coreK * 0.95).toFixed(3);
+    } else {
+      coreEl.style.opacity = '0';
     }
 
     const pulse = clamp((tt - 0.55) / 0.6, 0, 1);
@@ -331,6 +380,7 @@
   /* ---------- старт ---------- */
   buildWord();
   buildShards();
+  buildBeams();
   render(0);
   // шрифт может подъехать позже: пересчитываем геометрию, когда он загрузился
   if (document.fonts && document.fonts.ready) {

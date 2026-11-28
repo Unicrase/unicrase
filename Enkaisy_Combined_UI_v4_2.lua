@@ -984,12 +984,25 @@ local function revealText(label, text, opt)
 				-- разлёт внутри строки: смещение ограничено половиной высоты и шириной буквы
 				local a = rnd:NextNumber(0, math.pi * 2)
 				local dist = rnd:NextNumber(math.max(4, size * 0.3), math.max(6, math.min(h * 0.52, size * 1.1)))
+				-- искра-«звезда»: светлый блик по диагонали, вращается, слегка пульсирует
 				local spark = new("Frame", {Name = "Spark", Size = O(s, s), AnchorPoint = V2(0.5, 0.5),
-					BackgroundColor3 = (k % 2 == 0) and C.AccTx or C.W, BackgroundTransparency = 0.15,
+					BackgroundColor3 = C.W, BackgroundTransparency = 0.05,
 					ZIndex = label.ZIndex + 3, Active = false,
 					Position = O(cx + math.cos(a) * dist, cy + math.sin(a) * dist)}, layer)
 				rr(spark, math.ceil(s))
-				table.insert(sparks, {f = spark, x = cx, y = cy, delay = delay + (k - 1) * 0.02,
+				new("UIGradient", {Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+					ColorSequenceKeypoint.new(0.5, Color3.fromRGB(226, 232, 244)),
+					ColorSequenceKeypoint.new(1, (k % 2 == 0) and C.AccTx or Color3.fromRGB(160, 168, 182)),
+				}), Rotation = rnd:NextInteger(0, 180)}, spark)
+				-- тонкий ореол: свечение вокруг искры
+				local halo2 = new("Frame", {Name = "SparkGlow", Size = O(s * 2.4, s * 2.4), AnchorPoint = V2(0.5, 0.5),
+					Position = O(s * 0.5, s * 0.5), BackgroundColor3 = C.W, BackgroundTransparency = 0.6,
+					ZIndex = label.ZIndex + 2, Active = false}, spark)
+				rr(halo2, math.ceil(s))
+				table.insert(sparks, {f = spark, g = spark:FindFirstChildOfClass("UIGradient"),
+					x = cx, y = cy, delay = delay + (k - 1) * 0.02, size = s,
+					spin = rnd:NextInteger(-540, 540),
 					dur = dur * rnd:NextNumber(0.8, 1.15)})
 			end
 		end
@@ -1001,10 +1014,11 @@ local function revealText(label, text, opt)
 			if revealers[label] ~= gen then return end
 			task.delay(sp.delay, function()
 				if revealers[label] ~= gen or not sp.f.Parent then return end
-				local from = sp.f.Position
 				local info = TweenInfo.new(sp.dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-				tween(sp.f, info, {Position = O(sp.x, sp.y), BackgroundTransparency = 0.9,
-					Size = O(1, 1), Rotation = rnd:NextInteger(-180, 180)})
+				tween(sp.f, info, {Position = O(sp.x, sp.y), BackgroundTransparency = 0.85,
+					Size = O(math.max(1, sp.size * 0.4), math.max(1, sp.size * 0.4)), Rotation = sp.spin})
+				-- блик пробегает по искре, пока она летит: градиент поворачивается
+				if sp.g then tween(sp.g, info, {Rotation = sp.g.Rotation + 240}) end
 				task.delay(sp.dur, function() if sp.f.Parent then sp.f:Destroy() end end)
 			end)
 		end
@@ -1100,7 +1114,13 @@ local glass, glassNow = setmetatable({}, {__mode = "k"}), 0
 function new(class, props, parent)
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
-	for k, v in props do o[k] = v end
+	for k, v in props do
+		-- UIOffset у UIGradient ограничен диапазоном [-1, 1]: всё, что больше, падает с ошибкой
+		if k == "Offset" and typeof(v) == "Vector2" then
+			v = V2(math.clamp(v.X, -1, 1), math.clamp(v.Y, -1, 1))
+		end
+		o[k] = v
+	end
 	if props.BackgroundTransparency == nil and (class == "Frame" or class == "TextButton" or class == "TextBox") then
 		local bc = props.BackgroundColor3
 		if bc ~= nil and (bc == C.Card or bc == C.Input or bc == C.Sel) then
@@ -7170,6 +7190,25 @@ local function playIntro(after)
 	end
 	vignette(0, 0)
 	vignette(1, 1)
+	-- СВЕТ ИЗ ГЛУБИНЫ: пучок лучей, идущих из центра к камере. Он и есть источник блеска
+	-- на буквах и искрах: силуэты рисуются с прозрачностью по градиенту, поэтому лучи
+	-- выглядят как объёмный свет, а не как залитые треугольники.
+	local beams = {}
+	for i = 1, 9 do
+		local beam = new("Frame", {Name = "Beam" .. i, Size = U(0.9, 0, 2.6, 0), AnchorPoint = V2(0.5, 0.5),
+			Position = S(0.5, 0.5), BackgroundColor3 = C.W, BackgroundTransparency = 1,
+			Rotation = (i - 1) * 40 + 12, ZIndex = 3, Active = false}, stage)
+		new("UIGradient", {Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),      -- у центра луч прозрачный
+			NumberSequenceKeypoint.new(0.45, 0.15),
+			NumberSequenceKeypoint.new(1, 1),      -- и растворяется к краю экрана
+		}), Rotation = 90}, beam)
+		table.insert(beams, {f = beam, phase = i * 0.7, speed = 18 + (i % 3) * 6})
+	end
+	-- блик-«солнце»: маленький яркий диск точно в точке схода лучей
+	local core = new("Frame", {Name = "Core", Size = O(10, 10), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
+		BackgroundColor3 = C.W, BackgroundTransparency = 1, ZIndex = 3, Active = false}, stage)
+	rr(core, 200)
 	-- свечение позади слова: акцентный круг, разгорается к сборке букв и гаснет на уходе
 	local halo = new("Frame", {Name = "Halo", Size = S(1, 1), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
 		BackgroundColor3 = C.Acc, BackgroundTransparency = 1, Active = false, ZIndex = 3}, stage)
@@ -7212,6 +7251,8 @@ local function playIntro(after)
 	local word = new("Frame", {Name = "Word", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
 		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
 	local letters = {}
+	local SILVER_TOP, SILVER_MID, SILVER_LOW = Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(214, 219, 228), Color3.fromRGB(138, 146, 160)
 	local function mkLetter(ch, color, z)
 		local o = new("TextLabel", {Size = O(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
 			AnchorPoint = V2(0.5, 0.5), Position = O(0, 0), BackgroundTransparency = 1, Text = ch,
@@ -7220,12 +7261,33 @@ local function playIntro(after)
 			ZIndex = z, Active = false}, word)
 		return o
 	end
+	-- Серебряная заливка: белое сверху → светло-серое → середина → холодная тень снизу.
+	-- UIGradient на TextLabel красит сам текст, поэтому слово читается как металл.
+	local shimmer = {} -- все градиенты букв: у каждого бежит блик
+	local function silver(o, shift)
+		local g = new("UIGradient", {Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0.00, SILVER_TOP),
+			ColorSequenceKeypoint.new(0.32, SILVER_MID),
+			ColorSequenceKeypoint.new(0.52, SILVER_TOP), -- узкая светлая полоса = блик металла
+			ColorSequenceKeypoint.new(0.78, SILVER_MID),
+			ColorSequenceKeypoint.new(1.00, SILVER_LOW),
+		}), Rotation = 90}, o)
+		table.insert(shimmer, {g = g, shift = shift})
+		return g
+	end
+	-- Толщина: контур текста чуть светлее заливки, отсюда «жирный» металлический край
+	local function edge(o)
+		o.TextStrokeColor3 = Color3.fromRGB(246, 248, 252)
+		o.TextStrokeTransparency = 1
+		return o
+	end
 	for i = 1, #INTRO_WORD do
 		local ch = INTRO_WORD:sub(i, i)
-		-- тень (объём) и свечение (акцент) — копии буквы позади неё
+		-- тень (объём), свечение (акцент) и серебряная заливка
 		local shadow = mkLetter(ch, C.B, 10)
 		local glow = mkLetter(ch, C.Acc, 10)
-		local lbl = mkLetter(ch, C.W, 11)
+		local lbl = edge(mkLetter(ch, SILVER_MID, 11))
+		silver(lbl, i * 0.6)
 		local sc = new("UIScale", {Scale = 1}, lbl)
 		table.insert(letters, {i = i, lbl = lbl, shadow = shadow, glow = glow, sc = sc, cx = 0, w = 0})
 	end
@@ -7320,6 +7382,7 @@ local function playIntro(after)
 				{TextTransparency = 0, Rotation = 0})
 			tween(l.shadow, TweenInfo.new(0.55), {TextTransparency = 0.55, Rotation = 0})
 			tween(l.glow, TweenInfo.new(0.55), {TextTransparency = 0.72, Rotation = 0})
+			tween(l.lbl, TweenInfo.new(0.55), {TextStrokeTransparency = 0.55}) -- контур: металлическая кромка
 		end)
 	end
 	for _, l in letters do
@@ -7355,6 +7418,27 @@ local function playIntro(after)
 			sh.f.BackgroundTransparency = math.clamp(1 - vis * 0.9 + ease * 0.9, 0, 1)
 			sh.st.Transparency = math.clamp(1 - vis + ease, 0, 1)
 		end
+		-- СВЕТ ИЗ ГЛУБИНЫ: лучи медленно вращаются и «дышат», к моменту сборки разгораются.
+		-- Прозрачность лучей и есть источник блеска на металле и искрах.
+		local lightK = math.clamp((t - 0.2) / 1.0, 0, 1) * (1 - math.clamp((t - 2.6) / 0.5, 0, 1))
+		for _, b in beams do
+			b.f.Rotation = (b.phase * 40) + t * b.speed * 0.35
+			b.f.BackgroundTransparency = math.clamp(1 - lightK * 0.72, 0, 1)
+			local w = 0.72 + math.sin(t * 2.2 + b.phase) * 0.16
+			b.f.Size = U(w, 0, 2.6, 0)
+		end
+		local coreK = math.clamp((t - 0.5) / 0.7, 0, 1) * (1 - math.clamp((t - 2.55) / 0.45, 0, 1))
+		if coreK > 0 then
+			local cs = 14 + coreK * 46 + math.sin(t * 5.5) * 3
+			core.Size = O(cs, cs)
+			core.BackgroundTransparency = math.clamp(1 - coreK * 0.85, 0, 1)
+		end
+		-- СЕРЕБРЯНЫЙ ПЕРЕЛИВ: у каждой буквы градиент едет по вертикали с разным сдвигом —
+		-- по слову бежит волна, как по полированному металлу
+		for _, sh in shimmer do
+			-- Offset ограничен [-1, 1], поэтому перелив — мягкое покачивание, а не бесконечный бег
+			sh.g.Offset = V2(0, math.clamp(math.sin(t * 1.15 + sh.shift) * 0.9, -1, 1))
+		end
 		-- свечение: нарастает к моменту сборки, потом мягко дышит
 		local pulse = math.clamp((t - 0.55) / 0.6, 0, 1)
 		local breathe = 1 + math.sin((t - 1.1) * 3) * 0.02
@@ -7387,6 +7471,8 @@ local function playIntro(after)
 			sub.TextTransparency = out
 			rule.BackgroundTransparency = math.max(0.1, out)
 			bg.BackgroundTransparency = out
+			for _, b in beams do b.f.BackgroundTransparency = math.max(b.f.BackgroundTransparency, out) end
+			core.BackgroundTransparency = math.max(core.BackgroundTransparency, out)
 			-- уход: буквы чуть разлетаются от центра и гаснут вместе с фоном
 			for _, l in letters do
 				l.lbl.Position = O(l.cx * (1 + out * 0.06), 0)
