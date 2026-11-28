@@ -26,8 +26,11 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
--- ВЕРСИЯ СБОРКИ: v4.3.2 (константа BUILD). Она видна в шапке меню и на экране ключа —
+-- ВЕРСИЯ СБОРКИ: v4.3.3 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.3.3: стиль Chams теперь РЕАЛЬНО применяется: chamsApply вызывается из refreshHL,
+--         прозрачности считаются по таблице стилей, оттенок стиля живёт поверх цвета темы
+--         и не стирается цветом по здоровью / радугой. В строке списка — превью стиля.
 -- v4.3.2: исправлено падение списка CHAMS LOOK и карточек CIRCLE STYLE
 --         (цвет обводки брался из OUT.Hover — это число-прозрачность, а не цвет; теперь PURE).
 -- v4.3.1: круг FOV: размер в пикселях и стили Glow / Gradient / Dashed / Classic; список CHAMS LOOK
@@ -74,7 +77,7 @@
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BUILD = "4.3.2" -- версия сборки: показывается в меню и на экране ключа
+local BUILD = "4.3.3" -- версия сборки: показывается в меню и на экране ключа
 local REMOTE_NAME = "EnkaisyAimFire"
 local CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2095,24 +2098,53 @@ CHAMS = {
 CHAMS_BY_KEY = {}
 for i, c in CHAMS do c.idx, CHAMS_BY_KEY[c.key] = i, c end
 
--- применяет стиль к одному хайлайту. tint — оттенок «поверхности» (металл, лёд, лава):
--- он подмешивается к цвету темы, а прозрачности берутся из настроек ESP с поправкой стиля.
-local function chamsApply(o, tint)
-	local st = CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
-	local fill = o.h.FillColor
-	if tint then fill = fill:Lerp(tint, 0.55) end
-	o.h.FillColor = fill
-	if tint then o.h.OutlineColor = tint:Lerp(Color3.new(1, 1, 1), 0.4) end
-	-- CFG.Fill / CFG.Outline — базовая непрозрачность; стиль сдвигает её в свою сторону
-	o.h.FillTransparency = math.clamp(1 - alphaFor(o.plr, "Fill", CFG.Fill, 0.45) * (1.05 - st.fill), 0, 1)
-	o.h.OutlineTransparency = math.clamp(1 - alphaFor(o.plr, "Outline", CFG.Outline, 0.8) * (1.05 - st.outline), 0, 1)
+-- Стиль Chams: и ключ для списка, и его параметры в одном месте.
+local function chamsStyle()
+	return CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
+end
+
+-- Оттенок стиля поверх базового цвета: так «металл», «лёд», «лава» отличаются даже
+-- когда у всех целей один цвет темы. Для стилей без своего цвета возвращается база.
+local function chamsTint(base, st, mix)
+	st = st or chamsStyle()
+	if not (base and st.col) then return base end
+	return base:Lerp(st.col, mix or 0.6)
+end
+
+-- Сила стиля. У Highlight есть только заливка и обводка, поэтому «характер» стиля —
+-- это плотность: st.fill / st.outline (0.20..0.97) сдвигают базовую непрозрачность ESP.
+local function chamsAlpha(o, key, base, minOn, strength)
+	-- strength — «плотность» стиля из таблицы CHAMS: меньше = плотнее.
+	-- Заливка: 0.20 → ×1.62, 0.97 → ×0.16 (Wireframe почти прозрачный).
+	-- Контур: 0.00 → ×1.35, 0.50 → ×0.80 (мягкие стили контур приглушают).
+	-- Обе шкалы умножаются на базу ESP, поэтому ползунки Fill/Outline продолжают работать.
+	local k = (key == "Fill") and (2.0 - strength * 1.9) or (1.35 - strength * 1.1)
+	local a = alphaFor(o.plr, key, base, minOn) * k
+	return math.clamp(a, 0, 1)
+end
+
+-- Применяет стиль к хайлайту: цвет (с оттенком стиля) и обе прозрачности.
+-- tintable = false, когда у цели свой цвет (персональный) — его не перекрашиваем.
+local function chamsApply(o, fillColor, outlineColor, tintable)
+	local st = chamsStyle()
+	if fillColor then
+		o.h.FillColor = (tintable == false) and fillColor or chamsTint(fillColor, st)
+	end
+	if outlineColor then
+		o.h.OutlineColor = (tintable == false) and outlineColor or chamsTint(outlineColor, st, 0.7)
+	end
+	o.h.FillTransparency = 1 - chamsAlpha(o, "Fill", CFG.Fill, 0.45, st.fill)
+	o.h.OutlineTransparency = 1 - chamsAlpha(o, "Outline", CFG.Outline, 0.8, st.outline)
 	return st
 end
 
 local function refreshHL()
+	local st = chamsStyle()
 	for _, o in esp do
 		local h = o.h
+		-- персональный цвет сильнее стиля: если он задан, оттенок стиля не подмешивается
 		local fc = pcol(o.plr, "Fill")
+		local ownFill = fc ~= nil
 		if not fc then
 			local tcf = TC.get(o.plr, "Team")
 			if o.plr then
@@ -2132,21 +2164,11 @@ local function refreshHL()
 				fc = tcf or hsv(col.NPC)
 			end
 		end
-		h.FillColor = fc
-		h.OutlineColor = pcol(o.plr, "Outline") or TC.get(o.plr, "Box") or hsv(col.Outline)
-		h.FillTransparency = 1 - alphaFor(o.plr, "Fill", CFG.Fill, 0.45)
-		h.OutlineTransparency = 1 - alphaFor(o.plr, "Outline", CFG.Outline, 0.8)
+		local oc = pcol(o.plr, "Outline") or TC.get(o.plr, "Box") or hsv(col.Outline)
+		local ownOutline = pcol(o.plr, "Outline") ~= nil
+		chamsApply(o, fc, oc, not (ownFill or ownOutline))
 	end
-end
-
-local NONE = Enum.HumanoidDisplayDistanceType.None
-local function restoreNative(o)
-	if not o.hidNative then return end
-	o.hidNative = false
-	local hum = o.hum
-	if hum and hum.Parent and o.origDDT then
-		pcall(function() hum.DisplayDistanceType = o.origDDT end)
-	end
+	return st
 end
 
 local function unhl(char, fade)
@@ -2179,13 +2201,10 @@ local function dohl(char, plr)
 		Name = "TH", Adornee = char, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
 		FillTransparency = 1, OutlineTransparency = 1,
 	}, char)
+	-- refreshHL сам применяет выбранный стиль Chams: берём готовые прозрачности и
+	-- проявляем хайлайт фейдом до них (набор стиля считается ровно в одном месте)
 	refreshHL()
-	-- стиль Chams применяется сразу: появление идёт фейдом к его прозрачностям
-	local st = CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
-	o.h.FillColor = hsv(col.Fill)
-	if st.col then o.h.FillColor = o.h.FillColor:Lerp(st.col, 0.55) end
-	local ft = math.clamp(1 - alphaFor(plr, "Fill", CFG.Fill, 0.45) * (1.05 - st.fill), 0, 1)
-	local ot = math.clamp(1 - alphaFor(plr, "Outline", CFG.Outline, 0.8) * (1.05 - st.outline), 0, 1)
+	local ft, ot = o.h.FillTransparency, o.h.OutlineTransparency
 	o.h.FillTransparency, o.h.OutlineTransparency = 1, 1
 	tween(o.h, TweenInfo.new(0.25), {FillTransparency = ft, OutlineTransparency = ot})
 	local function setup()
@@ -2368,6 +2387,9 @@ local function frame()
 		if not marked and not custom then
 			if CFG.HPColor and hum then o.h.FillColor = Color3.fromHSV(f * 0.33, 0.85, 0.95) end
 			if rb then o.h.FillColor = rb end
+			-- HPColor и радуга перекрашивают заливку каждый кадр — оттенок стиля возвращаем обратно,
+			-- иначе Chams «пропадает», как только включён цвет по здоровью
+			o.h.FillColor = chamsTint(o.h.FillColor)
 		end
 		-- ESP Box: экранная рамка вокруг цели, цвет как у контура подсветки
 		if CFG.Box or o.bx then
@@ -6317,24 +6339,25 @@ local function startMain()
 				BackgroundTransparency = 0.55, AutoButtonColor = false, LayoutOrder = i, Text = ""}, inner)
 			rr(r, 9)
 			local edge = outline(r, OUT.Hover)
-			-- образец: шар со своим характером (металл, лёд, лава, неон)
-			local orb = new("Frame", {Size = O(18, 18), AnchorPoint = V2(0.5, 0.5), Position = U(0, 22, 0.5, 0),
-				BackgroundColor3 = st.col or C.W, BackgroundTransparency = 0.1}, r)
-			rr(orb, 9)
-			if st.col then
-				new("UIGradient", {Color = ColorSequence.new(st.col:Lerp(Color3.new(1, 1, 1), 0.7), st.col),
-					Rotation = 40}, orb)
-			else
-				new("UIGradient", {Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 158, 175)),
-					Rotation = 40}, orb)
-			end
-			new("TextLabel", {Size = U(1, -46, 1, 0), Position = O(40, 0), BackgroundTransparency = 1,
+			-- образец стиля: квадрат заливки и контур той же толщины, что будут на цели, —
+			-- по строке видно, чем Solid отличается от Soft, не включая стиль.
+			-- Оттенок стиля подмешан к белому, как он подмешается к цвету цели.
+			-- те же формулы, что в chamsAlpha: превью не должно обещать не то, что будет на цели
+			local pvFillA = math.clamp(0.45 * (2.0 - st.fill * 1.9), 0, 1)
+			local pvEdgeA = math.clamp(1.0 * (1.35 - st.outline * 1.1), 0, 1)
+			local swatch = new("Frame", {Size = O(18, 18), Position = U(0, 42, 0.5, 0), AnchorPoint = V2(0, 0.5),
+				BackgroundColor3 = st.col and st.col:Lerp(Color3.new(1, 1, 1), 0.15) or C.W,
+				BackgroundTransparency = 1 - pvFillA}, r)
+			rr(swatch, 5)
+			stroke(swatch, st.col or PURE, 1 - pvEdgeA, math.clamp(0.9 + st.thick, 1, 2.6))
+			new("TextLabel", {Size = U(1, -76, 1, 0), Position = O(64, 0), BackgroundTransparency = 1,
 				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
 				Active = false}, r)
-			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel"), orb = orb}
+			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel")}
 			-- bind — файловый хелпер: не зависит от того, виден ли connect в этой области
 			local function pick()
 				CFG.Chams = st.key
+				saveNow()
 				refreshHL()
 				updAll()
 				for k, rr2 in rows do

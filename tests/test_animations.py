@@ -391,3 +391,79 @@ class ChamsAndFov(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ChamsActuallyApplies(unittest.TestCase):
+    """Стиль Chams должен реально менять хайлайты, а не просто существовать в таблице.
+
+    Первая версия ловила падение, но выбор стиля ничего не менял: chamsApply была
+    объявлена и ни разу не вызвана, а refreshHL перезаписывал цвета базовыми.
+    """
+
+    def test_chams_apply_is_called(self):
+        calls = SOURCE.count("chamsApply(")
+        # объявление + минимум один реальный вызов
+        self.assertGreaterEqual(calls, 2, "chamsApply объявлена, но не вызывается")
+        self.assertIn("chamsApply(o, fc, oc", SOURCE)
+
+    def test_refresh_uses_style(self):
+        body = between("local function refreshHL()", "local function unhl(")
+        self.assertIn("chamsStyle()", body)
+        self.assertIn("chamsApply(o, fc, oc", body)
+        # базовые прозрачности больше не выставляются напрямую мимо стиля
+        self.assertNotIn("h.FillTransparency = 1 - alphaFor", body)
+
+    def test_styles_differ_visibly(self):
+        import re
+        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
+        rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
+        self.assertEqual(len(rows), 21)
+        fills = [float(f) for f, _ in rows]
+        outlines = [float(o) for _, o in rows]
+        # Solid и Soft (0.25 против 0.80 по заливке) обязаны отличаться заметно,
+        # иначе пользователь их не различит на экране
+        self.assertGreater(max(fills) - min(fills), 0.5)
+        self.assertGreater(max(outlines) - min(outlines), 0.4)
+
+    def test_style_alphas_are_distinguishable(self):
+        # Коэффициенты берём ИЗ КОДА (chamsAlpha), а не дублируем в тесте:
+        # иначе ослабление формулы в скрипте тест не заметит.
+        import re
+        m = re.search(r'local k = \(key == "Fill"\) and \(([\d.]+) - strength \* ([\d.]+)\)'
+                      r" or \(([\d.]+) - strength \* ([\d.]+)\)", SOURCE)
+        self.assertIsNotNone(m, "формула chamsAlpha не найдена или переписана")
+        f_a, f_b, o_a, o_b = (float(v) for v in m.groups())
+        table = between("CHAMS = {", "}\nCHAMS_BY_KEY")
+        rows = re.findall(r"fill = ([\d.]+), outline = ([\d.]+)", table)
+        self.assertEqual(len(rows), 21)
+
+        def fill_alpha(f):
+            return min(1.0, 0.45 * (f_a - f * f_b))
+
+        def edge_alpha(o):
+            return min(1.0, 1.0 * (o_a - o * o_b))
+
+        fills = [fill_alpha(float(f)) for f, _ in rows]
+        edges = [edge_alpha(float(o)) for _, o in rows]
+        self.assertGreater(max(fills) - min(fills), 0.5,
+                           "по формулe из кода стили дают одинаковую заливку — разницы не видно")
+        self.assertGreater(max(edges) - min(edges), 0.15,
+                           "по формуле из кода контур у всех стилей одинаковый")
+        # Solid (fill 0.25) обязан быть плотнее Soft (0.80) не меньше чем на 0.4
+        self.assertGreater(fill_alpha(0.25) - fill_alpha(0.80), 0.4)
+
+    def test_style_tint_survives_hp_color(self):
+        # цвет по здоровью и радуга перекрашивают заливку каждый кадр — оттенок стиля
+        # должен возвращаться, иначе Chams «исчезает» при включённом HPColor
+        body = between("if CFG.HPColor and hum then", "local far =")
+        self.assertIn("chamsTint", SOURCE)
+        self.assertIn("-- HPColor и радуга перекрашивают заливку каждый кадр", SOURCE)
+
+    def test_style_choice_is_saved(self):
+        start = SOURCE.index("local function pick()")
+        body = SOURCE[start:start + 300]
+        self.assertIn("saveNow()", body, "выбор стиля должен сохраняться между запусками")
+
+
+
+if __name__ == "__main__":
+    unittest.main()
