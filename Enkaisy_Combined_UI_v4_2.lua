@@ -7151,6 +7151,7 @@ local function playIntro(after)
 		if after then after() end
 	end
 	if not (CFG.Anim and UICFG.AnimIntro) then finish() return end
+	local t0 = os.clock() -- время сцены: все эффекты считаются от него, а не от первого кадра
 	local stage = new("ScreenGui", {Name = "EnkaisyIntro", ResetOnSpawn = false, DisplayOrder = 120,
 		IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LP:WaitForChild("PlayerGui"))
 	pcall(function() stage.ScreenInsets = Enum.ScreenInsets.None end)
@@ -7205,37 +7206,34 @@ local function playIntro(after)
 		table.insert(shards, {f = f, st = st, a = a, spin = (math.random() - 0.5) * 180,
 			delay = math.random() * 0.3, dur = 0.55 + math.random() * 0.3, w = w, h = h})
 	end
-	-- слово: каждая буква в своей ячейке, при ширине ячейки по замеру — трекинг ровный
-	local word = new("Frame", {Name = "Word", Size = S(0.8, 0.18), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
+	-- Слово собираем БЕЗ UIListLayout и без ручного расчёта ширин.
+	-- Каждый TextLabel измеряет себя сам (AutomaticSize), поэтому шрифт может быть любым:
+	-- раньше ширины считались через GetTextSize, а рендерился другой шрифт — слово «плыло» вправо.
+	local word = new("Frame", {Name = "Word", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
 		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
-	new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
-		SortOrder = Enum.SortOrder.LayoutOrder}, word)
 	local letters = {}
+	local function mkLetter(ch, color, z)
+		local o = new("TextLabel", {Size = O(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
+			AnchorPoint = V2(0.5, 0.5), Position = O(0, 0), BackgroundTransparency = 1, Text = ch,
+			TextColor3 = color, FontFace = INTRO_FONT, TextSize = 40, TextTransparency = 1,
+			TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
+			ZIndex = z, Active = false}, word)
+		return o
+	end
 	for i = 1, #INTRO_WORD do
-		local cell = new("Frame", {Name = "L" .. i, Size = O(1, 1), BackgroundTransparency = 1, LayoutOrder = i,
-			Active = false, ZIndex = 10}, word)
-		-- тень: чёрная копия со смещением, придаёт буквам объём
-		local shadow = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
-			TextColor3 = C.B, TextSize = 40, TextTransparency = 1, ZIndex = 10,
-			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
-		shadow.Position = O(0, 3)
-		-- свечение: акцентная размытая копия позади
-		local glow = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
-			TextColor3 = C.Acc, TextSize = 40, TextTransparency = 1, ZIndex = 10,
-			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
-		local lbl = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
-			TextColor3 = C.W, TextSize = 40, TextTransparency = 1, ZIndex = 11,
-			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
-		local sc = new("UIScale", {Scale = 1}, cell)
-		table.insert(letters, {cell = cell, lbl = lbl, shadow = shadow, glow = glow, sc = sc, i = i})
+		local ch = INTRO_WORD:sub(i, i)
+		-- тень (объём) и свечение (акцент) — копии буквы позади неё
+		local shadow = mkLetter(ch, C.B, 10)
+		local glow = mkLetter(ch, C.Acc, 10)
+		local lbl = mkLetter(ch, C.W, 11)
+		local sc = new("UIScale", {Scale = 1}, lbl)
+		table.insert(letters, {i = i, lbl = lbl, shadow = shadow, glow = glow, sc = sc, cx = 0, w = 0})
 	end
 	-- блик: белая полоса проезжает по слову на «выдержке», обрезается своим контейнером
-	local shineClip = new("Frame", {Name = "ShineClip", Size = S(1, 1), BackgroundTransparency = 1,
-		Active = false, ClipsDescendants = true, ZIndex = 12}, word)
-	local shine = new("Frame", {Name = "Shine", Size = U(0.18, 0, 1.6, 0), AnchorPoint = V2(0.5, 0.5),
-		Position = U(-0.3, 0, 0.5, 0), BackgroundColor3 = C.W, BackgroundTransparency = 1, Rotation = 18,
-		Active = false, ZIndex = 12}, shineClip)
+	local shineClip = new("Frame", {Name = "ShineClip", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5),
+		Position = O(0, 0), BackgroundTransparency = 1, Active = false, ClipsDescendants = true, ZIndex = 12}, word)
+	local shine = new("Frame", {Name = "Shine", Size = U(0.2, 0, 1, 0), AnchorPoint = V2(0.5, 0.5),
+		BackgroundColor3 = C.W, BackgroundTransparency = 1, Rotation = 16, Active = false, ZIndex = 12}, shineClip)
 	new("UIGradient", {Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.55), NumberSequenceKeypoint.new(1, 1),
 	})}, shine)
@@ -7248,54 +7246,79 @@ local function playIntro(after)
 	rr(rule, 1)
 	-- базовые размеры для кадровых эффектов (иначе умножение в кадре накапливается)
 	local baseHal, baseWordW = 0, 0
-	-- размеры считаются от экрана: на телефоне слово не превращается в точки и не вылезает за края
-	local function fitWord()
+	local layoutGen = 0
+	-- Раскладка: задаём кегль, ждём один кадр (AutomaticSize пересчитывает ширины),
+	-- читаем реальные ширины и расставляем буквы от центра. Если слово шире потолка —
+	-- уменьшаем кегль и повторяем. Никаких предположений о метриках шрифта.
+	local function layoutWord()
+		layoutGen += 1
+		local my = layoutGen
 		local a = stage.AbsoluteSize
 		if a.X < 50 then return end
-		local target = math.clamp(a.X * 0.84, 170, 780)
-		local ok, size = pcall(STS.GetTextSize, STS, INTRO_WORD, 100, INTRO_FONT, V2(4000, 300))
-		local natural = (ok and size and size.X) or (#INTRO_WORD * 66)
-		local k = target / math.max(1, natural)
-		local h = math.clamp(math.floor(100 * k * 1.05), 18, 190)
-		local pad = math.max(1, math.floor(h * 0.03))
+		local maxW = math.clamp(a.X * 0.84, 140, 820)
+		local h = math.clamp(math.floor(a.X * 0.185), 18, 180)
+		local gap = 0
 		local total = 0
-		for _, l in letters do
-			local okw, w = pcall(STS.GetTextSize, STS, INTRO_WORD:sub(l.i, l.i), h, INTRO_FONT, V2(2000, 300))
-			local cw = (okw and w and w.X) or (h * 0.68)
-			cw = math.ceil(cw + 0.5)
-			l.cell.Size = O(cw, math.ceil(h * 1.3))
-			for _, o in {l.lbl, l.shadow, l.glow} do
-				o.TextSize = h
+		for _ = 1, 5 do
+			for _, l in letters do
+				for _, o in {l.lbl, l.shadow, l.glow} do
+					o.TextSize = h
+				end
 			end
-			total += cw + pad
+			gap = math.max(1, math.floor(h * 0.05))
+			task.wait() -- кадр на пересчёт AutomaticSize
+			if layoutGen ~= my or not stage.Parent then return end
+			total = 0
+			for _, l in letters do
+				local w = l.lbl.AbsoluteSize.X
+				if w <= 1 then w = h * 0.62 end -- ещё не измерилось: грубая оценка по кеглю
+				l.w = w
+				total += w
+			end
+			total += gap * math.max(0, #letters - 1)
+			if total <= maxW or h <= 18 then break end
+			-- шире потолка: ужимаем кегль пропорционально и пробуем снова
+			h = math.max(18, math.floor(h * math.clamp(maxW / total, 0.5, 0.95)))
 		end
-		word.Size = O(total, math.ceil(h * 1.3))
-		local layout = word:FindFirstChildOfClass("UIListLayout")
-		if layout then layout.Padding = UDim.new(0, pad) end
+		-- расстановка: центр каждой буквы относительно центра слова
+		local x = -total / 2
+		for _, l in letters do
+			l.cx = x + l.w / 2
+			l.lbl.Position = O(l.cx, 0)
+			l.shadow.Position = O(l.cx, math.max(2, math.floor(h * 0.03)))
+			l.glow.Position = O(l.cx, 0)
+			x += l.w + gap
+		end
+		local lineH = math.ceil(h * 1.25)
+		word.Size = O(0, 0) -- размер слова не нужен: буквы позиционируются от центра
+		shineClip.Size = O(total + gap * 2, lineH)
+		shine.Size = O(math.max(24, h * 0.8), lineH * 2.6)
 		sub.TextSize = math.clamp(math.floor(h * 0.2), 9, 20)
 		sub.Size = O(total, math.ceil(h * 0.4))
-		rule.Position = S(0.5, 0.675)
 		baseHal, baseWordW = total * 1.5, total
 		halo.Size = O(baseHal, baseHal)
-		word.Size = O(total, math.ceil(h * 1.3))
 	end
-	on(stage:GetPropertyChangedSignal("AbsoluteSize"), function() pcall(fitWord) end)
-	pcall(fitWord)
+	on(stage:GetPropertyChangedSignal("AbsoluteSize"), function() pcall(layoutWord) end)
+	pcall(layoutWord)
 
-	-- буквы ставим на стартовое состояние: ниже, мельче, прозрачные
+	-- подпись стартует узкой: ширину задаст раскладка (иначе она растянется на весь экран)
+	sub.Size = O(0, 0)
+	-- стартовое состояние: буквы мельче, немного повёрнуты и прозрачны
 	for _, l in letters do
-		l.sc.Scale = 0.7
-		l.cell.Position = O(0, 0)
-		l.lbl.Rotation = -6
+		l.sc.Scale = 0.68
+		l.lbl.Rotation = -7
+		l.shadow.Rotation = -7
+		l.glow.Rotation = -7
 	end
 	-- появление букв: пружина с перелётом + проявление; вызывается из таймлайна, не из кадра
 	local function revealLetter(l, delay)
 		task.delay(delay, function()
 			if not stage.Parent then return end
 			spring(l.sc, {Scale = 1}, TWEEN.pop)
-			tween(l.lbl, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0, Rotation = 0})
-			tween(l.shadow, TweenInfo.new(0.6), {TextTransparency = 0.55})
-			tween(l.glow, TweenInfo.new(0.6), {TextTransparency = 0.72})
+			tween(l.lbl, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+				{TextTransparency = 0, Rotation = 0})
+			tween(l.shadow, TweenInfo.new(0.55), {TextTransparency = 0.55, Rotation = 0})
+			tween(l.glow, TweenInfo.new(0.55), {TextTransparency = 0.72, Rotation = 0})
 		end)
 	end
 	for _, l in letters do
@@ -7305,15 +7328,15 @@ local function playIntro(after)
 	task.delay(2.02, function()
 		if not stage.Parent then return end
 		tween(sub, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0})
-		tween(rule, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 0.1, Size = O(word.Size.X.Offset * 0.5, 2)})
+		tween(rule, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 0.1, Size = O(baseWordW * 0.5, 2)})
 	end)
 	-- блик по слову на выдержке
 	task.delay(2.25, function()
 		if not stage.Parent then return end
-		tween(shine, TweenInfo.new(0.55, Enum.EasingStyle.Sine), {Position = U(1.3, 0, 0.5, 0), BackgroundTransparency = 0.45})
+		shine.Position = U(-0.15, 0, 0.5, 0)
+		tween(shine, TweenInfo.new(0.55, Enum.EasingStyle.Sine), {Position = U(1.15, 0, 0.5, 0), BackgroundTransparency = 0.45})
 	end)
 
-	local t0 = os.clock()
 	local rb
 	local function step(dt)
 		local t = os.clock() - t0
@@ -7363,9 +7386,11 @@ local function playIntro(after)
 			sub.TextTransparency = out
 			rule.BackgroundTransparency = math.max(0.1, out)
 			bg.BackgroundTransparency = out
-			-- слово чуть отъезжает на камеру при уходе (базовая ширина, без накопления)
-			if baseWordW > 0 then
-				word.Size = O(baseWordW * (1 + out * 0.02), word.Size.Y.Offset)
+			-- уход: буквы чуть разлетаются от центра и гаснут вместе с фоном
+			for _, l in letters do
+				l.lbl.Position = O(l.cx * (1 + out * 0.06), 0)
+				l.shadow.Position = O(l.cx * (1 + out * 0.06), math.max(2, math.floor((l.lbl.TextSize or 40) * 0.03)))
+				l.glow.Position = O(l.cx * (1 + out * 0.06), 0)
 			end
 		end
 	end

@@ -140,12 +140,7 @@
     wordEl.innerHTML = '';
     letters = [];
     const stageW = stage.clientWidth || window.innerWidth || 390;
-    // потолок по ширине сцены: слово всегда влезает с полями 7% слева и справа
-    const maxW = Math.max(120, Math.min(stageW * 0.86, 820));
-    const target = maxW;
-    // Michroma широкая: подбираем кегль так, чтобы слово заняло target по ширине
-    let h = clamp(Math.floor(target / (WORD.length * 0.82)), 16, 190);
-    wordEl.style.fontSize = h + 'px';
+    const maxW = Math.max(120, Math.min(stageW * 0.84, 820));
 
     for (let i = 0; i < WORD.length; i++) {
       const s = document.createElement('span');
@@ -153,52 +148,41 @@
       wordEl.appendChild(s);
       letters.push(s);
     }
-    // ширина каждой буквы: по факту (в jsdom layout нет — берём оценку кегля)
-    let widths = letters.map(s => s.offsetWidth || s.getBoundingClientRect().width || h * 0.82);
-    if (widths.every(w => !w)) widths = letters.map(() => h * 0.82);
-    const pad = Math.max(1, Math.round(h * 0.03));
-    let total = 0;
-    letters.forEach((s, i) => {
-      const w = Math.ceil(widths[i]) + 1;
-      s.style.width = w + 'px';
-      s.style.marginRight = pad + 'px';
-      total += w + pad;
-    });
-    // центрируем всю строку явно: последний margin компенсируем, чтобы слово стояло ровно по центру
-    wordEl.style.width = total + 'px';
-    if (letters.length) letters[letters.length - 1].style.marginRight = '0px';
 
-    // контрольный замер: если фактическая ширина больше потолка (другой шрифт/фолбэк),
-    // ужимаем кегль пропорционально и пересчитываем один раз
-    const realW = wordEl.getBoundingClientRect().width || total;
-    if (realW > maxW * 1.01 && h > 16) {
-      const k = maxW / realW;
-      h = Math.max(16, Math.floor(h * k));
+    // Ширину не угадываем: ставим кегль, меряем РЕАЛЬНУЮ ширину каждой буквы,
+    // и если слово не влезло — уменьшаем кегль и меряем снова (как в скрипте).
+    let h = clamp(Math.floor(stageW * 0.185), 18, 180);
+    let total = 0, gap = 1;
+    for (let pass = 0; pass < 5; pass++) {
       wordEl.style.fontSize = h + 'px';
-      letters.forEach(function (s) {
-        s.style.width = 'auto';
-        s.style.marginRight = Math.max(1, Math.round(h * 0.03)) + 'px';
+      letters.forEach(s => { s.style.width = 'auto'; s.style.marginRight = '0px'; });
+      const widths = letters.map(s => {
+        const r = s.getBoundingClientRect();
+        return r.width || s.offsetWidth || h * 0.62;
       });
-      const wf = letters.map(function (s) { return s.offsetWidth || s.getBoundingClientRect().width || h * 0.82; });
-      const pad2 = Math.max(1, Math.round(h * 0.03));
-      let total2 = 0;
-      letters.forEach(function (s, i) {
-        const w = Math.ceil(wf[i]) + 1;
-        s.style.width = w + 'px';
-        s.style.marginRight = (i === letters.length - 1 ? 0 : pad2) + 'px';
-        total2 += w + (i === letters.length - 1 ? 0 : pad2);
-      });
-      wordEl.style.width = total2 + 'px';
+      gap = Math.max(1, Math.floor(h * 0.05));
+      total = widths.reduce((a, b) => a + b, 0) + gap * (letters.length - 1);
+      if (total <= maxW || h <= 18) {
+        letters.forEach((s, i) => {
+          s.style.width = Math.ceil(widths[i]) + 'px';
+          s.style.marginRight = (i === letters.length - 1 ? 0 : gap) + 'px';
+          s.dataset.cx = String(Math.round((i + 0.5) * (total / letters.length)));
+        });
+        break;
+      }
+      h = Math.max(18, Math.floor(h * clamp(maxW / total, 0.5, 0.95)));
     }
-    geo = {h: h, total: total, pad: pad};
 
+    wordEl.style.width = Math.min(total, maxW) + 'px';
+    const lineH = Math.ceil(h * 1.25);
+    geo = {h: h, total: Math.min(total, maxW), pad: gap, lineH: lineH,
+           ruleW: Math.round(Math.min(total, maxW) * 0.5)};
     subEl.style.fontSize = clamp(Math.round(h * 0.2), 9, 20) + 'px';
-    halo.style.width = halo.style.height = Math.round(total * 1.5) + 'px';
-    shineClip.style.width = Math.round(total * 1.08) + 'px';
-    shineClip.style.height = Math.round(h * 1.9) + 'px';
-    shineEl.style.width = Math.round(h * 1.6) + 'px';
-    shineEl.style.height = Math.round(h * 3.2) + 'px';
-    geo.ruleW = Math.round(total * 0.5);
+    halo.style.width = halo.style.height = Math.round(geo.total * 1.5) + 'px';
+    shineClip.style.width = Math.round(geo.total + gap * 2) + 'px';
+    shineClip.style.height = lineH + 'px';
+    shineEl.style.width = Math.round(Math.max(24, h * 0.8)) + 'px';
+    shineEl.style.height = Math.round(lineH * 2.6) + 'px';
   }
 
   function buildShards() {
@@ -272,6 +256,11 @@
 
     const out = clamp((tt - HOLDOUT) / FADE_DUR, 0, 1);
     fadeEl.style.opacity = out.toFixed(3);
+    // разлёт от центра на выходе: позиция буквы * 1.06
+    letters.forEach(function (s) {
+      const base = s.dataset.cx ? parseFloat(s.dataset.cx) : 0;
+      s.style.marginLeft = (base * out * 0.06).toFixed(2) + 'px';
+    });
 
     $('time').textContent = tt.toFixed(2) + ' / ' + LEN.toFixed(2) + ' с';
     if (document.activeElement !== scrub) scrub.value = String(tt);

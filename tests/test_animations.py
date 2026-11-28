@@ -221,8 +221,13 @@ class AnimWiring(unittest.TestCase):
         self.assertIn('Name = "Ring"', intro)
         self.assertIn('Name = "Shine"', intro)
         self.assertIn("INTRO_SUB", intro)
-        # трекинг букв считается по замеру ширины, а не делением на всех
-        self.assertIn("STS.GetTextSize, STS, INTRO_WORD, 100, INTRO_FONT", intro)
+        # ширину букв не угадываем: каждая буква меряет себя сама (AutomaticSize),
+        # иначе слово «плывёт» вправо, когда рендерится не тот шрифт, что меряли
+        self.assertIn("AutomaticSize = Enum.AutomaticSize.XY", intro)
+        self.assertNotIn("STS.GetTextSize, STS, INTRO_WORD", intro)
+        self.assertIn("l.lbl.AbsoluteSize.X", intro)
+        # и потолок по ширине экрана: если слово шире — кегль уменьшается
+        self.assertIn("local maxW = math.clamp(a.X * 0.84, 140, 820)", intro)
         # кадровые эффекты не накапливают размеры
         self.assertIn("baseHal", intro)
         self.assertIn("baseWordW", intro)
