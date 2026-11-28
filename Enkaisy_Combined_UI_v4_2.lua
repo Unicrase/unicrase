@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.7.3: чистка мёртвых полей: остатки Silent Aim и стилей круга удалены из настроек
 -- v4.7.2: триггербот переработан: Auto/Single, проверка видимости, своя дальность, ожидание наводки
 -- v4.7.1: свободная палитра RGB+HEX на любые элементы меню, ползунки контуров кнопок и окна
 -- v4.7.0: убраны кривые плавности, Silent Aim, Checks и стили круга; из анимаций остались только тосты
@@ -150,7 +151,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.7.2" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.7.3" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 

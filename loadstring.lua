@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.7.3: чистка мёртвых полей: остатки Silent Aim и стилей круга удалены из настроек
 -- v4.7.2: триггербот переработан: Auto/Single, проверка видимости, своя дальность, ожидание наводки
 -- v4.7.1: свободная палитра RGB+HEX на любые элементы меню, ползунки контуров кнопок и окна
 -- v4.7.0: убраны кривые плавности, Silent Aim, Checks и стили круга; из анимаций остались только тосты
@@ -29,7 +30,7 @@
 -- Правило раскладки: одна папка = одна задача, похожие настройки стоят рядом (Smoothness + Sticky, Triggerbot + delay/tolerance,
 -- Hitbox + размеры и Hitbox ESP, Dynamic FOV + размер круга). Пояснения — серым текстом прямо под разделом.
 
--- Target Lock: раздел TARGET LOCK в Aim, кнопка Switch locked target = сменить цель. Silent Aim: раздел SILENT AIM (лимит угла — на сервере, SILENT_MAX_ANGLE).
+-- Target Lock: раздел TARGET LOCK в Aim, кнопка Switch locked target = сменить цель.LENT AIM (лимит угла — на сервере, SILENT_MAX_ANGLE).
 -- Aim-координаты: ТОЧКА НАВЕДЕНИЯ (логика, раздел AIM POINT) и КРУГ FOV (визуал, папка FOV) — независимые значения в долях экрана; радиусы — % короткой стороны экрана.
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
@@ -150,7 +151,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.7.2" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.7.3" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -545,10 +546,9 @@ Rcs = false, RcsStrength = 1, RcsSmooth = 0.35, RcsSuppress = false,
 -- LeadMul — множитель упреждения (%)
 StickTime = 0.25, LeadMul = 100,
 	TargetPart = "Head", Priority = "Crosshair", VisFromHead = true,
-TargetLock = false, SilentAim = false,
-FovR = 18, SilentR = 14, LockR = 28, -- радиусы областей в % короткой стороны экрана (не зависят от разрешения)
+TargetLock = false,
+FovR = 18, LockR = 28, -- радиусы областей в % короткой стороны экрана (не зависят от разрешения)
 FovPx = 240, -- диаметр круга FOV в пикселях (FovR остаётся радиусом в % — им пользуется Dynamic FOV)
-FovStyle = "Gradient", -- вид круга: Glow / Gradient / Dashed / Classic
 FovAnim = true, -- круг «дышит» и подсвечивается, когда цель захвачена
 	Trigger = false, TriggerDelay = 0.05, Multipoint = false, AdvPredict = false,
 	TrigMode = "Auto", TrigRange = 0, WallCheck = true, TrigAimFirst = false,
@@ -3070,8 +3070,8 @@ local function buildAim(page, api)
 	--   vp     — размер экрана в пикселях (camera.ViewportSize)
 	--   aim    — ТОЧКА НАВЕДЕНИЯ (px экрана): выбор цели, поворот камеры, triggerbot, выстрел
 	--   circle — где РИСУЕТСЯ круг (по умолчанию = aim, но его можно отвязать)
-	--   fov / silent / lock — радиусы областей (px экрана); тот же fov использует и отрисовка круга
-	local SP = {vp = V2(1920, 1080), aim = V2(960, 540), circle = V2(960, 540), fov = 0, silent = 0, lock = 0}
+	--   fov / lock — радиусы областей (px экрана); тот же fov использует и отрисовка круга
+	local SP = {vp = V2(1920, 1080), aim = V2(960, 540), circle = V2(960, 540), fov = 0, lock = 0}
 	local updateSpace, runSelfTest, setEditing -- задаются ниже
 	AIM.testUntil = 0
 
@@ -4952,7 +4952,6 @@ local function buildAim(page, api)
 	--   2) луч проходит через расширенный хитбокс (Hitbox / Head hitbox) и стена не мешает;
 	--   3) упреждённая точка цели лежит в пределах допуска TriggerR от точки наведения и до неё есть прямая видимость.
 	-- В случаях 2 и 3 пуля отправляется точно в точку цели (как Silent Aim; сервер ограничивает угол, SILENT_MAX_ANGLE).
-	-- При включённом Silent Aim стреляем, когда цель есть в радиусе Silent.
 	local pickMs, pickWarned = 0, false
 	local lastTrigger, seenSince, seenModel, lastWarm = setmetatable({}, {__mode = "k"}), nil, nil, 0
 	local firedFor -- цель, по которой в режиме Single уже был выстрел
@@ -5096,7 +5095,7 @@ local function buildAim(page, api)
 		if dir.Magnitude < 0.01 then return false, "bad dir" end
 		local aimDir = dir.Unit
 		local shotDir = aimDir
-		-- цель, в которую летит пуля: переданная (triggerbot), Silent Aim, либо — при включённой наводке —
+		-- цель, в которую летит пуля: переданная триггерботом либо — при включённой наводке —
 		-- текущая цель, если упреждённая точка уже у прицела (камера отстаёт из-за Smoothness, пуля — нет)
 		local part = forcePart
 		if not part and A.Enabled and currentTarget and currentTarget.Parent then
