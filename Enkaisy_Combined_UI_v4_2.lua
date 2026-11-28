@@ -31,6 +31,10 @@
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
 --       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
 --       ESP update rate теперь реально ограничивает частоту (в т.ч. 60 Гц на 120-Гц экране).
+--       Качество наводки: Stick time (удержание цели по времени), Predict multiplier, Shake (мягкое дрожание),
+--       мёртвая зона в экранных пикселях, плавное догоняние камеры, сплайн-трекер скорости по истории позиций.
+--       Silent aim: сначала цель самой наводки, иначе — по реальной точке попадания; Multipoint — ближние точки первыми.
+--       ESP: ESP box (рамка по границам модели) и Min distance (ближе — не рисуем).
 --       RCS (Recoil Control System) в папке Aim: возврат камеры к прицелу после отдачи, сила 0–100%,
 --       плавность и режим «без отдачи» (отдача не отрисовывается). Пуля летит по прицелу ДО отдачи.
 --       Настройки видны всегда, но гаснут, пока RCS выключен.
@@ -388,7 +392,7 @@ local CFG = {
 	Hl = true, Names = false, HP = false, Pct = false,
 	TeamCheck = false, HideDead = true, Rainbow = false, Disp = false,
 	Fill = 0.45, Outline = 1, NameSize = 16, NameLen = 14,
-	Dist = false, HPColor = false, Limit = true, LimitN = 30, MaxDist = DIST_MAX,
+	Dist = false, HPColor = false, Limit = true, LimitN = 30, MaxDist = DIST_MAX, MinDist = 0, Box = false,
 	FriendMode = "Off", NpcFilter = "Off", NpcText = "", ModelNames = "", HideNative = true,
 	TeamColors = true, DistScale = true, Anim = true, ShowStats = true,
 	FpsUnlock = false, FpsCap = 0, EspHz = 60,
@@ -442,6 +446,9 @@ ShowFOV = true, DebugHUD = true,
 Smoothness = 0.16, Prediction = 0.1, MaxDistance = 500, Sticky = 0.7,
 -- RCS (Recoil Control System): возвращает камеру к точке прицела после отдачи и (по желанию) гасит её
 Rcs = false, RcsStrength = 1, RcsSmooth = 0.35, RcsSuppress = false,
+-- качество наводки: StickTime — сколько цель остаётся «своей» после выхода из круга (сек),
+-- Shake — дрожание прицела в долях градуса, LeadMul — множитель упреждения (%)
+StickTime = 0.25, Shake = 0, LeadMul = 100,
 	TargetPart = "Head", Priority = "Crosshair", VisFromHead = true,
 TargetLock = false, SilentAim = false,
 FovR = 18, SilentR = 14, LockR = 28, -- радиусы областей в % короткой стороны экрана (не зависят от разрешения)
@@ -714,6 +721,9 @@ AIMCFG.MaxDistance = math.clamp(AIMCFG.MaxDistance, 50, 2000)
 AIMCFG.Sticky = math.clamp(AIMCFG.Sticky, 0.2, 1)
 AIMCFG.RcsStrength = math.clamp(tonumber(AIMCFG.RcsStrength) or 1, 0, 1)
 AIMCFG.RcsSmooth = math.clamp(tonumber(AIMCFG.RcsSmooth) or 0.35, 0, 1)
+AIMCFG.StickTime = math.clamp(tonumber(AIMCFG.StickTime) or 0.25, 0, 2)
+AIMCFG.Shake = math.clamp(tonumber(AIMCFG.Shake) or 0, 0, 3)
+AIMCFG.LeadMul = math.clamp(tonumber(AIMCFG.LeadMul) or 100, 0, 200)
 AIMCFG.SilentR = math.clamp(AIMCFG.SilentR, 2, 60)
 AIMCFG.LockR = math.clamp(AIMCFG.LockR, 5, 90)
 AIMCFG.TriggerDelay = math.clamp(AIMCFG.TriggerDelay, 0, 0.5)
@@ -754,6 +764,9 @@ local function cleanHSV(t, d)
 end
 AIMCFG.FovCol = cleanHSV(AIMCFG.FovCol, DEF.AIM.FovCol)
 for _, k in HBV.COLKEYS do AIMCFG[k] = cleanHSV(AIMCFG[k], DEF.AIM[k]) end
+CFG.MinDist = math.clamp(tonumber(CFG.MinDist) or 0, 0, DIST_MAX)
+CFG.MaxDist = math.clamp(tonumber(CFG.MaxDist) or DIST_MAX, 0, DIST_MAX)
+if CFG.MaxDist > 0 and CFG.MinDist > CFG.MaxDist then CFG.MinDist = CFG.MaxDist end
 AIMCFG.HbvAlpha = math.clamp(AIMCFG.HbvAlpha, 0, 0.95)
 AIMCFG.HbvFillAlpha = math.clamp(AIMCFG.HbvFillAlpha, 0, 1)
 AIMCFG.HbvThick = math.clamp(AIMCFG.HbvThick, 0, 4)
@@ -1465,6 +1478,59 @@ local TC_R15 = {{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"}, {"UpperTor
 	{"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"}}
 local TC_R6 = {{"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"}, {"Torso", "Left Leg"}, {"Torso", "Right Leg"}}
 TC.R15, TC.R6 = TC_R15, TC_R6
+-- ESP Box: рамка по экранным границам модели. Считаем проекции восьми углов BoundingBox —
+-- так рамка остаётся точной при любом повороте камеры и не «плывёт» на наклонных целях.
+-- Четыре тонких Frame в том же ScreenGui, что линии: ни одного лишнего объекта на цель.
+function TC.box(o, char, vis, cam, color)
+	local parts = o.bxParts or {}
+	if not o.bxParts then
+		-- один раз собираем список видимых частей: их проекции и дают границы
+		for _, p in char:GetDescendants() do
+			if #parts >= 12 then break end -- тело + крупные аксессуары: дальше точность не растёт, только нагрузка
+			if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" and p.Name ~= "Handle" then table.insert(parts, p) end
+		end
+		-- части могли добавиться позже (одежда, аксессуары): обновляем раз в пару секунд
+		o.bxParts, o.bxT = parts, os.clock()
+	elseif os.clock() - (o.bxT or 0) > 2 then
+		o.bxT = os.clock()
+	end
+	if not (vis and cam and #parts > 0) then
+		for _, f in o.bx or {} do f.Visible = false end
+		return
+	end
+	-- частота задаётся кадром ESP (EspHz): отдельный таймер молча съедал бы половину обновлений
+	local now = os.clock()
+	local minX, minY, maxX, maxY, any = math.huge, math.huge, -math.huge, -math.huge, false
+	for _, p in parts do
+		if p.Parent then
+			local cf, sz = p.CFrame, p.Size
+			for i = 0, 7 do
+				local corner = cf * Vector3.new((i % 2 == 0) and -sz.X / 2 or sz.X / 2,
+					(i % 4 < 2) and -sz.Y / 2 or sz.Y / 2, (i < 4) and -sz.Z / 2 or sz.Z / 2)
+				local sp, on = cam:WorldToViewportPoint(corner)
+				if on then
+					any = true
+					minX, minY = math.min(minX, sp.X), math.min(minY, sp.Y)
+					maxX, maxY = math.max(maxX, sp.X), math.max(maxY, sp.Y)
+				end
+			end
+		end
+	end
+	if not any or maxX - minX < 2 or maxY - minY < 2 then
+		for _, f in o.bx or {} do f.Visible = false end
+		return
+	end
+	-- поля вокруг модели: узкая рамка не прилипает к силуэту
+	local pad = math.clamp((maxY - minY) * 0.06, 2, 8)
+	minX, minY, maxX, maxY = minX - pad, minY - pad, maxX + pad, maxY + pad
+	o.bx = o.bx or {}
+	if not (o.bx[1] and o.bx[1].Parent) then
+		for i = 1, 4 do o.bx[i] = TC.bar() end
+	end
+	local th = math.clamp((maxY - minY) * 0.012, 1, 2) -- толщина растёт с размером цели, но не жирнеет
+	TC.rect(o.bx, minX, minY, maxX - minX, maxY - minY, th, color)
+end
+
 function TC.frame() -- линия = повёрнутый Frame в отдельном ScreenGui (IgnoreGuiInset: координаты = WorldToViewportPoint)
 	if not (TC.gui and TC.gui.Parent) then
 		TC.gui = new("ScreenGui", {
@@ -1474,11 +1540,33 @@ function TC.frame() -- линия = повёрнутый Frame в отдельн
 	end
 	return new("Frame", {AnchorPoint = V2(0.5, 0.5), BorderSizePixel = 0, Visible = false, Active = false}, TC.gui)
 end
+-- полоса рамки: без AnchorPoint, позиция = левый верхний угол в экранных координатах
+function TC.bar()
+	if not (TC.gui and TC.gui.Parent) then
+		TC.gui = new("ScreenGui", {
+			Name = "EnkaisyLines", ResetOnSpawn = false, DisplayOrder = 98, IgnoreGuiInset = true,
+			ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		}, LP:WaitForChild("PlayerGui"))
+	end
+	return new("Frame", {BorderSizePixel = 0, Visible = false, Active = false}, TC.gui)
+end
 function TC.line(f, a, b, c)
 	local d = b - a
 	f.Position, f.Size, f.Rotation = O((a.X + b.X) / 2, (a.Y + b.Y) / 2), O(d.Magnitude, 1.5), math.deg(math.atan2(d.Y, d.X))
 	f.BackgroundColor3, f.Visible = c, true
 end
+-- четыре полосы = периметр рамки; толщина одинаковая, стыки не просвечивают
+function TC.rect(bx, x, y, w, h, th, color)
+	local bars = {{x, y, w + th, th}, {x, y + h, w + th, th}, {x, y, th, h + th}, {x + w, y, th, h + th}}
+	for i, b in bars do
+		local f = bx[i]
+		f.Visible = true
+		f.Position = U(0, b[1], 0, b[2])
+		f.Size = O(math.max(1, b[3]), math.max(1, b[4]))
+		f.BackgroundColor3 = color
+	end
+end
+
 function TC.draw(o, char, vis, cam)
 	local fill = o.h.FillColor -- если Team Colors для цели не действует, линии берут цвет заливки
 	if CFG.Tracers and vis and cam and o.root then
@@ -1652,6 +1740,7 @@ local function unhl(char, fade)
 	if o.hb then o.hb:Destroy() end
 	if o.tr then o.tr:Destroy() end
 	for _, f in o.sk or {} do f:Destroy() end
+	for _, f in o.bx or {} do f:Destroy() end
 	if fade and CFG.Anim then
 		local t = TS:Create(o.h, TweenInfo.new(0.25), {FillTransparency = 1, OutlineTransparency = 1})
 		t.Completed:Once(function() o.h:Destroy() end)
@@ -1841,7 +1930,8 @@ local function frame()
 		if o.plr then pc += 1 else nc += 1 end
 		local dist = (camPos and o.root) and (o.root.Position - camPos).Magnitude or 0
 		o.dist = dist
-		local far = CFG.MaxDist < DIST_MAX and dist > CFG.MaxDist
+		-- MinDist: вплотную к цели рамки/подписи только мешают, их можно скрыть
+		local far = (CFG.MaxDist < DIST_MAX and dist > CFG.MaxDist) or (CFG.MinDist > 0 and dist < CFG.MinDist)
 		if list and not far then table.insert(list, o) end
 		local limited = CFG.Limit and (o.rank or 0) > CFG.LimitN
 		local vis = not far and not limited and (not CFG.HideDead or RIG.alive(char))
@@ -1854,6 +1944,11 @@ local function frame()
 		if not marked and not custom then
 			if CFG.HPColor and hum then o.h.FillColor = Color3.fromHSV(f * 0.33, 0.85, 0.95) end
 			if rb then o.h.FillColor = rb end
+		end
+		-- ESP Box: экранная рамка вокруг цели, цвет как у контура подсветки
+		if CFG.Box or o.bx then
+			local okB, eB = pcall(TC.box, o, char, vis, cam, o.h.OutlineColor)
+			if not okB and not TC.warnB then TC.warnB = true warn("[Enkaisy] box draw error: " .. tostring(eB)) end
 		end
 		if CFG.Tracers or CFG.Skeleton or o.tr or o.sk then
 			local okT, eT = pcall(TC.draw, o, char, vis, cam)
@@ -2095,6 +2190,11 @@ helpUI.info = {
  ["RCS strength"] = {"Насколько сильно RCS гасит отдачу: 100% — полностью, 50% — половину, 0% — RCS выключен.", "How much recoil RCS removes: 100% — all of it, 50% — half, 0% — RCS off."},
  ["RCS smoothness"] = {"Скорость выравнивания: 0 — мгновенно, выше — плавнее и мягче.", "How fast recoil is levelled out: 0 — instantly, higher — smoother."},
  ["RCS suppress (no kick)"] = {"Не даёт камере уходить вверх при выстреле: отдача не отрисовывается, ствол не задран.", "Stops the camera from kicking up while shooting: recoil is not shown and the barrel never climbs."},
+ ["Stick time (sec)"] = {"Сколько секунд захваченная цель остаётся главной, даже если рядом появилась другая.", "How many seconds the captured target stays primary even if another one appears nearby."},
+ ["Predict multiplier, %"] = {"Множитель упреждения: меньше — стрелять ближе к текущей позиции цели, больше — дальше вперёд.", "Prediction multiplier: lower shoots closer to the target's current position, higher shoots further ahead."},
+ ["Shake (soft aim), deg"] = {"Небольшое дрожание прицела при наводке, чтобы она не выглядела идеально ровной. 0 — выключено.", "Small aim jitter while aiming so it does not look perfectly linear. 0 — off."},
+ ["ESP box"] = {"Рамка вокруг цели по её видимым границам на экране.", "A box around the target along its visible screen bounds."},
+ ["Min distance (studs)"] = {"Ближе этого расстояния ESP не рисуется: вплотную рамки и подписи мешают.", "ESP is not drawn closer than this distance: boxes and labels get in the way up close."},
  ["Smoothness (higher = faster)"] = {"Скорость наведения: большее значение означает быстрее.", "Aim speed: a higher value means faster."},
  ["Manual predict (sec)"] = {"Ручное упреждение в секундах.", "Manual prediction time in seconds."},
  ["Auto predict bias (ms)"] = {"Поправка автоматического упреждения в миллисекундах.", "Automatic prediction bias in milliseconds."},
@@ -2504,6 +2604,8 @@ local function buildAim(page, api)
 		Cyan = Color3.fromRGB(80, 220, 255), Yellow = Color3.fromRGB(255, 220, 80),
 	}
 	local currentTarget = nil
+	local targetSince = nil -- когда текущая цель захвачена: даёт липкость по времени и антидребезг
+	local camLag, shakeOff = nil, CFrame.new() -- сглаженный «свой» поворот камеры и текущая тряска
 	local lastPingT, autoLead = 0, 0.1
 	local editing = false
 	local previewFov = false -- живой предпросмотр круга, пока открыта вкладка FOV
@@ -2950,7 +3052,7 @@ local function buildAim(page, api)
 	local lockedModel, skipModel, skipUntil, switchTarget -- Target Lock
 	local function setEnabled(state)
 		A.Enabled = state
-		if not state then currentTarget = nil; lockedModel = nil; rcsReset() end
+		if not state then currentTarget = nil; lockedModel = nil; rcsReset(); camLag, shakeOff = nil, CFrame.new() end
 		refreshAll(true)
 	end
 	movable(quick, quick, function() setEnabled(not A.Enabled) end, function() clampGui(quick) end)
@@ -3043,6 +3145,10 @@ local function buildAim(page, api)
 	slider("Auto predict bias (ms)", "LeadBias", 0, 300, 5, 0)
 	slider("Manual predict (sec)", "Prediction", 0, 0.6, 0.01, 2)
 	slider("Aim max distance", "MaxDistance", 50, 2000, 25, 0)
+	-- качество наводки: удержание по времени, тряска и подстройка упреждения
+	slider("Stick time (sec)", "StickTime", 0, 2, 0.05, 2)
+	slider("Predict multiplier, %", "LeadMul", 0, 200, 5, 0)
+	slider("Shake (soft aim), deg", "Shake", 0, 3, 0.05, 2)
 
 	-- RCS живёт рядом с наводкой: это та же работа с камерой, но против отдачи.
 	-- Ползунки гаснут, пока сам RCS выключен, — видно, что они на него не влияют.
@@ -3751,6 +3857,15 @@ local function buildAim(page, api)
 				end
 			end
 		end
+		-- качество: сначала точки ближе к прицелу — они чаще открыты и дают менее «кривой» угол,
+		-- края хитбокса проверяются следом (раньше порядок был произвольным)
+		local keyed = {}
+		for _, pt in pts do
+			local sp = camera:WorldToViewportPoint(pt)
+			table.insert(keyed, {pt = pt, d = (V2(sp.X, sp.Y) - SP.aim).Magnitude})
+		end
+		table.sort(keyed, function(a, b) return a.d < b.d end)
+		for i, k in keyed do pts[i] = k.pt end
 		local found
 		for _, pt in pts do
 			local r = Workspace:Raycast(origin, pt - origin, rayParams)
@@ -3839,7 +3954,7 @@ local function buildAim(page, api)
 		local ev = part.AssemblyLinearVelocity
 		if ev.Magnitude > 150 then ev = Vector3.zero end
 		if not k then
-			k = {p = pos, t = now, v = ev, a = Vector3.zero, warm = false}
+			k = {p = pos, t = now, v = ev, a = Vector3.zero, warm = false, hist = {{t = now, p = pos}}}
 			trk[part] = k
 			return k
 		end
@@ -3856,7 +3971,23 @@ local function buildAim(page, api)
 		end
 		-- позиция почти не меняется, а движок сообщает о движении — верим движку
 		if raw.Magnitude < 0.3 and ev.Magnitude > 1 then raw = ev end
-		local nv = k.v:Lerp(raw, 1 - math.exp(-dt / 0.06))
+		-- короткая история позиций: по ней считаем скорость, устойчивую к просадкам FPS
+		-- (однокадровый raw на лагающем телефоне дёргался и давал «перелёт» упреждения)
+		local hist = k.hist or {}
+		table.insert(hist, {t = now, p = pos})
+		while #hist > 1 and now - hist[1].t > 0.12 do table.remove(hist, 1) end
+		k.hist = hist
+		local first = hist[1]
+		local span = now - first.t
+		local nv = raw
+		if span > 0.03 then
+			local avg = (pos - first.p) / span
+			if avg.Magnitude < 220 then
+				-- смесь мгновенной и усреднённой скорости: резкий старт виден сразу, шум давится
+				nv = raw:Lerp(avg, 0.55)
+			end
+		end
+		nv = k.v:Lerp(nv, 1 - math.exp(-dt / 0.05))
 		local an = (nv - k.v) / dt
 		if an.Magnitude > 80 then an = an.Unit * 80 end
 		k.a = k.a:Lerp(an, 1 - math.exp(-dt / 0.15))
@@ -3878,7 +4009,7 @@ local function buildAim(page, api)
 
 	-- Basic predict: линейная экстраполяция (на земле вертикаль не экстраполируем — шаги и неровности дают шум)
 	local function basicPoint(part, pos)
-		local lead = getLead()
+		local lead = getLead() * (A.LeadMul / 100) -- LeadMul: подстроить упреждение под игру, не меняя пинг
 		if lead <= 0 then return pos end
 		local v = trackPart(part).v
 		if v.Magnitude > 80 then v = v.Unit * 80 end
@@ -3918,7 +4049,7 @@ local function buildAim(page, api)
 		-- стрейф / разворот: заметное ускорение против движения — экстраполяцию укорачиваем
 		local strafeK = 1
 		if flatV.Magnitude > 3 and flatA.Magnitude > 12 and flatA.Unit:Dot(flatV.Unit) < -0.3 then strafeK = 0.55 end
-		local g, lead = Workspace.Gravity, getLead()
+		local g, lead = Workspace.Gravity, getLead() * (A.LeadMul / 100)
 		local useFlight = ADV_FLIGHT_LEAD and hasSpeed
 		local target = pos
 		for _ = 1, useFlight and 3 or 1 do
@@ -4022,11 +4153,20 @@ local function buildAim(page, api)
 		if currentTarget and currentTarget.Parent then
 			local model = humModel(currentTarget)
 			if model and getTargetPart(model) == currentTarget then
+				-- пока цель «своя», радиус удержания не меньше круга: удержание не зависит от того,
+				-- насколько далеко она успела уйти (раньше при Sticky → 1 цель терялась на краю круга)
 				currentDistance = evaluate(model, currentTarget, nil, true)
 			end
 		end
 		bestPart = nil
-		bestDistance = currentDistance and (currentDistance * A.Sticky) or SP.fov
+		bestDistance = currentDistance and (currentDistance * math.min(A.Sticky, 1)) or SP.fov
+		if not bestDistance or bestDistance < SP.fov then bestDistance = SP.fov end
+		-- StickTime: пока цель молодая, никакая другая её не перебивает (антидребезг между двумя рядом)
+		local hold = currentTarget and targetSince and (os.clock() - targetSince < A.StickTime)
+		if hold then
+			local model = humModel(currentTarget)
+			if model and evaluate(model, currentTarget, nil, false) then return currentTarget end
+		end
 		eachTarget(consider)
 		if bestPart then
 			if A.TargetLock then lockedModel = humModel(bestPart) end
@@ -4415,12 +4555,27 @@ local function buildAim(page, api)
 			local lm = humModel(lp)
 			if lm and evaluate(lm, lp, rad) then return lp end
 		end
-		local best, bestD = nil, rad
+		-- качество: если наводка уже держит цель в радиусе silent, пуля летит в неё же —
+		-- камера и выстрел больше не «спорят» из-за разных целей (частая причина промахов)
+		if A.Enabled and currentTarget and currentTarget.Parent then
+			local cm = humModel(currentTarget)
+			if cm and evaluate(cm, currentTarget, rad) then return currentTarget end
+		end
+		-- иначе берём цель, чья точка ПОПАДАНИЯ ближе всего к прицелу, а не чей центр в круге:
+		-- у крупной цели у края круга точка тела реально ближе, и выстрел точнее
+		local best, bestScore = nil, math.huge
 		local function try(model)
 			local part = getTargetPart(model)
 			if not part then return end
-			local d = evaluate(model, part, rad, true)
-			if d and d < bestD then best, bestD = part, d end
+			if not evaluate(model, part, rad, true) then return end
+			local pos = getAimPoint(part)
+			local sp, on = camera:WorldToViewportPoint(pos)
+			if not on then return end
+			local d = (V2(sp.X, sp.Y) - SP.aim).Magnitude
+			local dist = (pos - camera.CFrame.Position).Magnitude
+			-- оценка: близость к прицелу + небольшая поправка на дистанцию (у равных — ближняя цель)
+			local score = d + dist * 0.02
+			if score < bestScore then best, bestScore = part, score end
 		end
 		eachTarget(try)
 		return best
@@ -4546,6 +4701,7 @@ local function buildAim(page, api)
 		if not editing and isActive() then
 			local okP, pt = pcall(pickTarget)
 			if okP then
+				if pt ~= currentTarget then targetSince = pt and os.clock() or nil end
 				currentTarget = pt
 			else
 				currentTarget = nil
@@ -4583,6 +4739,7 @@ local function buildAim(page, api)
 			local okA, eA = pcall(NX.animStep, now, dt, mdl, sx, sy)
 			if not okA and not NX.warnA then NX.warnA = true warn("[Enkaisy] target animation error: " .. tostring(eA)) end
 		end
+		if not aimPt then camLag = nil end -- цель потеряна: следующий захват начнёт с реальной камеры
 		local circleCol = (A.FovTarget and currentTarget) and C.On or hsv(A.FovCol)
 		if A.TargetAnim then -- плавная смена цвета круга
 			local kc = 1 - math.exp(-math.clamp(dt, 0, 0.1) * 10 * math.clamp(A.AnimSpeed, 0.25, 3))
@@ -4634,13 +4791,28 @@ local function buildAim(page, api)
 		local smooth = math.clamp(A.Smoothness, 0.01, 1)
 		local alpha = 1 - (1 - smooth) ^ (math.clamp(dt, 0, 0.1) * 60)
 		local step = angle * alpha
-		-- v4.2: при Smoothness < 1 ограничиваем скорость поворота (нет резкого рывка на далёкую цель) и гасим микро-дрожь у цели
+		-- качество: мёртвая зона в ЭКРАННЫХ пикселях (раньше угол в градусах — на телефоне это была заметная дрожь),
+		-- ограничение угловой скорости и плавное «догоняние» реальной камеры (камера игры не прыгает мгновенно)
+		local deadPx = smooth < 1 and 0.6 or 0.2
 		if smooth < 1 then
-			if angle < math.rad(0.08) then return end
+			local sp, on = camera:WorldToViewportPoint(aimPt)
+			if on and (V2(sp.X, sp.Y) - SP.aim).Magnitude < deadPx then return end
 			step = math.min(step, math.rad(900) * math.clamp(dt, 0, 0.1))
 		end
 		local cf = camera.CFrame
-		camera.CFrame = CFrame.new(cf.Position) * CFrame.fromAxisAngle(axis.Unit, step) * (cf - cf.Position)
+		if not camLag then camLag = cf end
+		-- лаг обновляем долей от кадра: при Smoothness 1 камера идёт за мышью/игрой почти мгновенно
+		camLag = camLag:Lerp(cf, math.clamp((1 - smooth) * 0.35 + 0.65, 0, 1))
+		-- Shake: продолжение того же поворота (камера уже на цели) плюс небольшое дрожание.
+		-- Дрожание сидит поверх поворота, поэтому при Shake = 0 прицел идёт ровно по цели.
+		local stepCF = camLag * CFrame.fromAxisAngle(axis.Unit, step)
+		if A.Shake > 0 then
+			local amp = math.rad(A.Shake)
+			shakeOff = CFrame.fromEulerAnglesYXZ((math.noise(os.clock() * 7) - 0.5) * amp, (math.noise(os.clock() * 9 + 13) - 0.5) * amp, 0)
+		elseif shakeOff ~= CFrame.new() then
+			shakeOff = CFrame.new()
+		end
+		camera.CFrame = stepCF * shakeOff
 	end)
 
 	-- ===== RCS: отдельный шаг после наводки, чтобы Smoothness и возврат отдачи не спорили =====
@@ -5264,7 +5436,7 @@ local function startMain()
 	end
 	sectionLabel(pm, "ОТОБРАЖЕНИЕ", 4)
 	makeChips(chipGrid(pm, 5), {
-		{"Highlight", "Hl"}, {"Names", "Names"}, {"HP bar", "HP"}, {"HP %", "Pct"},
+		{"Highlight", "Hl"}, {"Names", "Names"}, {"HP bar", "HP"}, {"HP %", "Pct"}, {"ESP box", "Box"},
 		{"Team check", "TeamCheck", updAll}, {"Hide dead", "HideDead"},
 		{"Rainbow", "Rainbow", refreshHL}, {"Display name", "Disp"},
 	})
@@ -5294,6 +5466,8 @@ local function startMain()
 	slider("Name length", "NameLen", 3, 20)
 	slider("ESP max distance", "MaxDist", 50, DIST_MAX, false, function(v) return v >= DIST_MAX and "∞" or v .. "m" end)
 	slider("Limit count", "LimitN", 1, 31)
+	-- Min dist: ближе этого ESP не рисуется — вплотную рамка и подписи только мешают
+	slider("Min distance (studs)", "MinDist", 0, 500, 5, 0)
 
 	-- фильтры целей: рядом с размерами, потому что тоже влияют только на подсветку
 	sectionLabel(pm, "ФИЛЬТРЫ", 13)
