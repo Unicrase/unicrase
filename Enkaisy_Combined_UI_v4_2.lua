@@ -7144,6 +7144,14 @@ stop = function()
 	table.clear(npcs)
 	for p in pconn do untrack(p) end
 	for ch in esp do unhl(ch) end
+	-- Выгрузка с «затуханием»: интерфейс тает за 0.2 с, а не исчезает одним кадром.
+	-- При выключенных анимациях удаление происходит сразу.
+	if CFG.Anim and gui.Parent then
+		local fade = new("Frame", {Name = "FadeOut", Size = S(1, 1), BackgroundColor3 = C.B,
+			BackgroundTransparency = 1, Active = true, ZIndex = 200}, gui)
+		tween(fade, TWEEN.ui, {BackgroundTransparency = 0.5})
+		task.wait(0.2)
+	end
 	if blur then blur:Destroy() end
 	if TC.gui then TC.gui:Destroy() end
 	gui:Destroy()
