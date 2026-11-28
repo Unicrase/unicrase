@@ -35,8 +35,9 @@ class MenuLayout(unittest.TestCase):
         sticky = aim_ui.index('"Sticky (lower = stickier)"')
         self.assertEqual(aim_ui.count("\n", smooth, sticky), 1, "Smoothness и Sticky должны идти подряд")
         trigger = aim_ui.index('{"Triggerbot"')
-        trigger_delay = aim_ui.index('"Trigger delay (sec)"')
-        self.assertLess(trigger_delay - trigger, 300, "Triggerbot и его ползунки — рядом")
+        trigger_delay = aim_ui.index('"Reaction delay (sec)"')
+        # между карточкой и первым ползунком теперь стоит выбор Fire mode — допуск чуть шире
+        self.assertLess(trigger_delay - trigger, 500, "Triggerbot и его ползунки — рядом")
         hitbox = aim_ui.index('"Hitbox size (studs)"')
         head_hitbox = aim_ui.index('"Head hitbox size (studs)"')
         self.assertEqual(aim_ui.count("\n", hitbox, head_hitbox), 1, "Обычный и головной хитбокс — подряд")

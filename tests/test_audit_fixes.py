@@ -1,7 +1,7 @@
 """Regression guards for the audit fixes (v4.3).
 
 Covered here:
-  * the access key lives on the server only, and shots without it are rejected;
+  * the access key is checked in the client by hash (KEY_HASH), nothing accepted on the server;
   * head hitbox uses its own size (falls back to the body size when it is 0);
   * weapon cooldowns are tracked per Tool (server + client + triggerbot);
   * the triggerbot reaches as far as the weapon Range, not "Aim max distance";
@@ -15,7 +15,6 @@ SOURCE = Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua"
 TEXT = SOURCE.read_text(encoding="utf-8")
 
 ACCESS_KEY = "61937"
-AUTH_SALT = "enkaisy.v4.2:"
 
 
 def djb2(value):
@@ -30,25 +29,28 @@ def between(start, end):
 
 
 class AccessKey(unittest.TestCase):
-    def test_key_hash_is_checked_on_the_server(self):
-        server = TEXT.split("if RS:IsServer() then", 1)[1].split("\n    return\nend", 1)[0]
-        self.assertIn("OnServerInvoke", server)
-        self.assertIn("AUTH_HASH", server)
-        self.assertIn("authorized[plr] = true", server)
-        self.assertIn("authTries", server, "нужен лимит попыток ввода")
+    def test_key_is_checked_in_the_client(self):
+        screen = between("local function keyScreen(done)", "stop = function()")
+        self.assertIn('hashKey((box.Text:gsub("%s", ""))) == KEY_HASH', screen)
+        self.assertNotIn("InvokeServer", screen, "окно ключа не должно ходить на сервер")
 
-    def test_client_has_no_key_material(self):
-        self.assertNotIn("KEY_HASH", TEXT, "хеш ключа не должен жить в клиенте")
+    def test_server_does_not_know_the_key(self):
+        server = TEXT.split("if RS:IsServer() then", 1)[1].split("\n    return\nend", 1)[0]
+        self.assertNotIn("AUTH_HASH", server)
+        self.assertNotIn("OnServerInvoke", server)
+        self.assertNotIn("RemoteFunction", server)
+
+    def test_key_is_not_stored_as_plain_text(self):
         self.assertNotIn(f'"{ACCESS_KEY}"', TEXT, "ключ не должен лежать в файле текстом")
-        self.assertIn("InvokeServer", TEXT, "клиент спрашивает сервер, а не проверяет сам")
 
     def test_current_key_still_matches_the_hash(self):
-        auth_hash = int(re.search(r"local AUTH_HASH = (\d+)", TEXT).group(1))
-        self.assertEqual(auth_hash, djb2(AUTH_SALT + ACCESS_KEY))
+        key_hash = int(re.search(r"local KEY_HASH = (\d+)", TEXT).group(1))
+        self.assertEqual(key_hash, djb2(ACCESS_KEY))
 
-    def test_shots_require_authorization(self):
+    def test_shots_do_not_depend_on_the_key(self):
         shot = between("local function handleShot(", "-- 1. Типы данных")
-        self.assertIn('if not authorized[plr] then return "not activated" end', shot)
+        self.assertNotIn("not activated", shot)
+        self.assertNotIn("authorized", shot)
 
 
 class HeadHitbox(unittest.TestCase):

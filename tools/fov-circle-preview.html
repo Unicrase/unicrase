@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOV Circle — стили круга</title>
+<style>
+  :root { --bg:#0b0d12; --card:#151922; --line:#242a36; --txt:#eef1f6; --mut:#8b94a6; --acc:#ff7a2f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; padding:18px; }
+  h1 { font-size:16px; font-weight:600; margin:0 0 4px; }
+  p.sub { color:var(--mut); margin:0 0 16px; font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+  .cell { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .cell h2 { font-size:12px; font-weight:600; margin:0 0 10px; color:var(--txt); letter-spacing:.02em; }
+  .stage { position:relative; height:190px; background:radial-gradient(circle at 50% 45%, #1b2230, #0d1015 70%);
+           border-radius:10px; overflow:hidden; }
+  .circle { position:absolute; left:50%; top:50%; width:150px; height:150px; margin:-75px 0 0 -75px;
+            border-radius:50%; }
+  .seg { position:absolute; left:50%; top:50%; border-radius:2px; }
+  .halo { position:absolute; inset:0; border-radius:50%; }
+  .note { color:var(--mut); font-size:11px; margin-top:8px; }
+  .ctl { display:flex; gap:14px; align-items:center; margin:0 0 14px; flex-wrap:wrap; font-size:12px; color:var(--mut); }
+  input[type=range] { width:150px; accent-color:var(--acc); }
+</style>
+</head>
+<body>
+<h1>FOV Circle — четыре стиля</h1>
+<p class="sub">Проверка того, что стили действительно разные: Glow светится и «дышит», Gradient переливается вращением, Dashed — вращающийся пунктир, Classic — ровная линия.</p>
+
+<div class="ctl">
+  <label>Толщина <input id="thick" type="range" min="1" max="5" step="0.5" value="1.5"></label>
+  <label>Прозрачность <input id="alpha" type="range" min="10" max="100" step="5" value="65"></label>
+  <label><input id="anim" type="checkbox" checked> Animation</label>
+</div>
+
+<div class="grid">
+  <div class="cell"><h2>Glow</h2><div class="stage" id="s-glow"><div class="circle" id="c-glow"></div></div>
+    <div class="note">Ореол из 5 контуров + «дыхание» яркости</div></div>
+  <div class="cell"><h2>Gradient</h2><div class="stage" id="s-grad"><div class="circle" id="c-grad"></div></div>
+    <div class="note">Градиент из 4 цветов, вращается</div></div>
+  <div class="cell"><h2>Dashed</h2><div class="stage" id="s-dash"><div class="circle" id="c-dash"></div></div>
+    <div class="note">24 сегмента по окружности, вращаются</div></div>
+  <div class="cell"><h2>Classic</h2><div class="stage" id="s-classic"><div class="circle" id="c-classic"></div></div>
+    <div class="note">Ровная линия, без анимации</div></div>
+</div>
+
+<script>
+const LINE = '#ffffff';
+const ACC = '#ff7a2f';
+const DASH_N = 24;
+
+function stage(id) { return document.getElementById(id); }
+
+// Glow: 5 концентрических контуров с падающей непрозрачностью + яркая линия
+function buildGlow(root) {
+  const halos = [];
+  for (let i = 1; i <= 5; i++) {
+    const h = document.createElement('div');
+    h.className = 'halo';
+    h.dataset.k = i;
+    root.appendChild(h);
+    halos.push(h);
+  }
+  return halos;
+}
+
+// Dashed: 24 сегмента, позиция относительно КРУГА (0.5 ± 0.5), а не экрана
+function buildDashed(root) {
+  const segs = [];
+  for (let i = 0; i < DASH_N; i++) {
+    const s = document.createElement('div');
+    s.className = 'seg';
+    root.appendChild(s);
+    segs.push(s);
+  }
+  return segs;
+}
+
+const glowHalos = buildGlow(document.getElementById('c-glow'));
+const dashSegs = buildDashed(document.getElementById('c-dash'));
+
+function thick() { return +document.getElementById('thick').value; }
+function alpha() { return +document.getElementById('alpha').value / 100; }
+function animate() { return document.getElementById('anim').checked; }
+
+function render(t) {
+  const th = thick(), a = alpha(), anim = animate();
+  const breathe = anim ? (0.82 + 0.18 * Math.sin(t * 2.2)) : 1;
+
+  // ---- Glow: линия + ореолы
+  const cg = document.getElementById('c-glow');
+  cg.style.border = Math.max(1, th * 0.8) + 'px solid ' + LINE;
+  cg.style.opacity = 1;
+  cg.style.boxShadow = 'none';
+  cg.style.borderColor = 'rgba(255,255,255,' + Math.min(1, a * 0.55 * breathe) + ')';
+  glowHalos.forEach((h, idx) => {
+    const k = idx + 1;
+    const w = th * (1.6 + k * 1.5);
+    const op = Math.max(0.25, 1 - (1 - a * (0.34 - k * 0.055) * breathe));
+    // контур рисуем через box-shadow с размытием 0 — концентрические кольца
+    h.style.boxShadow = 'inset 0 0 0 ' + (w / 2) + 'px rgba(255,255,255,' + (a * (0.34 - k * 0.055) * breathe) + ')';
+    h.style.border = '0';
+  });
+
+  // ---- Gradient: перелив вращением
+  const cgr = document.getElementById('c-grad');
+  const rot = anim ? (t * 125) % 360 : 45;
+  cgr.style.border = th + 'px solid transparent';
+  cgr.style.backgroundImage =
+    'linear-gradient(' + rot + 'deg, ' + ACC + ' 0%, #ffffff 35%, ' + ACC + ' 60%, #ffffff 100%)';
+  cgr.style.backgroundOrigin = 'border-box';
+  cgr.style.mask = 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)';
+  cgr.style.webkitMask = 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)';
+  cgr.style.maskComposite = 'xor';
+  cgr.style.webkitMaskComposite = 'xor';
+  cgr.style.padding = '0';
+  cgr.style.backgroundColor = 'transparent';
+
+  // ---- Dashed: сегменты в координатах круга
+  const spin = anim ? t * 0.6 : 0;
+  dashSegs.forEach((s, i) => {
+    const ang = (i / DASH_N) * Math.PI * 2 + spin;
+    const r = 75;                     // радиус круга в px
+    const x = 75 + Math.cos(ang) * r; // центр круга = 75,75 внутри .circle
+    const y = 75 + Math.sin(ang) * r;
+    s.style.left = x + 'px';
+    s.style.top = y + 'px';
+    s.style.width = Math.max(3, th * 4) + 'px';
+    s.style.height = Math.max(1.5, th) + 'px';
+    s.style.marginLeft = (-Math.max(3, th * 4) / 2) + 'px';
+    s.style.marginTop = (-Math.max(1.5, th) / 2) + 'px';
+    s.style.transform = 'rotate(' + (ang * 180 / Math.PI + 90) + 'deg)';
+    s.style.background = LINE;
+    s.style.opacity = a;
+  });
+
+  // ---- Classic
+  const cc = document.getElementById('c-classic');
+  cc.style.border = th + 'px solid rgba(255,255,255,' + a + ')';
+  cc.style.background = 'transparent';
+}
+
+let start = performance.now();
+function loop(now) {
+  render((now - start) / 1000);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+['thick', 'alpha', 'anim'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => render((performance.now() - start) / 1000)));
+</script>
+</body>
+</html>

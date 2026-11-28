@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enkaisy — заставка после ключа (превью)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Michroma&display=swap" rel="stylesheet">
+<style>
+  :root{--acc:#5b8cff;--w:#fff;--mut:#8b929d;--line:#24262d;--panel:#0d0e12}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0b0b0d;color:#dfe4ec;overflow:hidden;
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #stage{position:fixed;inset:0;background:#0b0b0d;overflow:hidden}
+  #vignette{position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to bottom,rgba(0,0,0,.9) 0%,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 74%,rgba(0,0,0,.9) 100%),
+      radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%)}
+  #beams{position:absolute;inset:0;overflow:hidden}
+  /* луч: жёсткий у источника, растворяется к краю — как в контровом свете */
+  .ray{position:absolute;left:50%;top:47%;transform-origin:50% 0;pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.95) 0%,rgba(228,238,252,.42) 32%,
+      rgba(200,214,236,.12) 62%,rgba(190,204,228,0) 100%);
+    opacity:0;will-change:transform,opacity,width,height;filter:blur(.4px)}
+  #haze0,#haze1,#haze2{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    opacity:0;pointer-events:none}
+  #crystals{position:absolute;inset:0;pointer-events:none}
+  .crystal{position:absolute;left:50%;top:47%;transform-origin:50% 50%;opacity:0;
+    background:linear-gradient(160deg,#ffffff 0%,#c6cede 40%,#5f6674 100%);
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 0 10px rgba(220,235,255,.45);
+    clip-path:polygon(50% 0%,100% 38%,50% 100%,0% 38%);}
+  #core{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle,#ffffff 0%,rgba(248,252,255,.95) 28%,rgba(206,222,246,.42) 52%,rgba(190,205,230,0) 72%);
+    opacity:0;pointer-events:none;filter:blur(.3px)}
+  #halo{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;opacity:0;
+    background:radial-gradient(circle,rgba(91,140,255,.5) 0%,rgba(91,140,255,.16) 45%,rgba(91,140,255,0) 70%)}
+  #ring1,#ring2{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    opacity:0;border:2px solid rgba(255,255,255,.9)}
+  #ring2{border-color:rgba(91,140,255,.95)}
+  #shards{position:absolute;inset:0}
+  .shard{position:absolute;left:50%;top:50%;border-radius:3px;opacity:0;
+    background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(91,140,255,.5));
+    box-shadow:0 0 7px rgba(170,200,255,.5)}
+  #stage{overflow:hidden}
+  #word{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);max-width:92vw;
+    display:flex;align-items:center;justify-content:center;white-space:nowrap;
+    font-family:'Michroma','Gill Sans',"Segoe UI",Roboto,sans-serif;font-weight:400;color:#fff;z-index:3}
+  #word span{display:inline-block;opacity:0;transform-origin:50% 50%;text-align:left;
+    will-change:transform,opacity;
+    /* серебро: белое сверху, серое в середине, холодная тень снизу + светлая кромка */
+    color:transparent;
+    /* хром: белая кромка сверху, серое тело, яркий блик, тёмный низ */
+    background:linear-gradient(180deg,#ffffff 0%,#c9d0dd 22%,#eef2f8 34%,#8d95a4 50%,
+      #f6f9ff 62%,#9aa2b1 78%,#4e5563 100%);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-stroke:0.03em rgba(250,252,255,.95);
+    /* 3D: несколько тёмных смещений подряд = толщина металла */
+    filter:drop-shadow(2px 2px 0 #3c4250) drop-shadow(3px 3px 0 #2b2f3a)
+           drop-shadow(5px 5px 0 #1c1f26) drop-shadow(0 6px 14px rgba(0,0,0,.8));}
+  #shineClip{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);overflow:hidden;z-index:4;pointer-events:none}
+  #shine{position:absolute;top:50%;left:-40%;transform:translate(-50%,-50%) rotate(16deg);opacity:0;
+    background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0))}
+  #sub{position:absolute;left:50%;top:60%;transform:translateX(-50%);opacity:0;color:#9aa1ac;
+    letter-spacing:.34em;text-transform:uppercase;white-space:nowrap;z-index:4;
+    font-family:'Michroma',Roboto,sans-serif}
+  #rule{position:absolute;left:50%;top:67.5%;transform:translate(-50%,-50%);height:2px;width:0;
+    background:var(--acc);opacity:0;border-radius:1px;z-index:4}
+  #fade{position:absolute;inset:0;background:#050506;opacity:0;pointer-events:none;z-index:6}
+
+  #stage{bottom:132px}
+  .hud{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(8,9,12,.98);min-height:132px;
+    border-top:1px solid var(--line);padding:9px 12px 11px;display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut)}
+  .btn{border:1px solid var(--line);background:#14161c;color:#e6eaf2;padding:6px 11px;border-radius:8px;
+    cursor:pointer;font-size:12px;font-family:inherit}
+  .btn:hover{background:#1b1e26}
+  .btn.on{border-color:#5c6577;background:#22262f;color:#fff}
+  .time{font-variant-numeric:tabular-nums;color:#cfd6e2;min-width:74px}
+  #scrub{width:100%;accent-color:var(--acc);height:18px}
+  #err{position:fixed;left:0;right:0;top:0;z-index:30;background:#7d1d24;color:#fff;
+    font-size:12px;padding:8px 12px;display:none;font-family:ui-monospace,monospace}
+  .tag{position:fixed;left:12px;top:12px;z-index:10;font-size:11px;color:#6b7280;line-height:1.55;max-width:270px}
+  .tag b{color:#9aa5b6;font-weight:600}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="beams"></div>
+  <div id="haze0"></div><div id="haze1"></div><div id="haze2"></div>
+  <div id="crystals"></div>
+  <div id="core"></div>
+  <div id="vignette"></div>
+  <div id="halo"></div>
+  <div id="ring1"></div>
+  <div id="ring2"></div>
+  <div id="shards"></div>
+  <div id="word"></div>
+  <div id="shineClip"><div id="shine"></div></div>
+  <div id="sub">Mobile aim assist</div>
+  <div id="rule"></div>
+  <div id="fade"></div>
+</div>
+
+<div class="tag">
+  <b>Заставка после ключа</b><br>
+  шрифт Michroma · 3.1 с · пропустить нельзя<br>
+  таймлайн чистой функцией от t: перемотка и покадровый просмотр работают в любую сторону
+</div>
+<div id="err"></div>
+
+<div class="hud">
+  <input id="scrub" type="range" min="0" max="3.1" step="0.01" value="0">
+  <div class="row">
+    <span class="time" id="time">0.00 / 3.10 с</span>
+    <button class="btn" id="play">пауза</button>
+    <button class="btn" id="replay">повторить</button>
+    <button class="btn" id="prev">‹ кадр</button>
+    <button class="btn" id="next">кадр ›</button>
+    <button class="btn" id="slow">1×</button>
+    <button class="btn" id="loop">автоцикл: вкл</button>
+    <span id="fps" style="margin-left:auto"></span>
+  </div>
+  <div class="row">
+    <span>перейти:</span>
+    <button class="btn" data-t="0.25">осколки</button>
+    <button class="btn" data-t="1.20">сборка</button>
+    <button class="btn" data-t="1.60">кольца</button>
+    <button class="btn" data-t="2.10">подпись</button>
+    <button class="btn" data-t="2.35">блик</button>
+    <button class="btn" data-t="2.80">уход</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const LEN = 3.1;
+  const WORD = "UNICRASE";
+  const SUB = "MOBILE AIM ASSIST";
+  const LETTER_START = 1.02, LETTER_STEP = 0.055, LETTER_DUR = 0.5;
+  const HOLDOUT = 2.62, FADE_DUR = 0.45;
+  const LOOP_HOLD = 0.7;
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), halo = $('halo'), ring1 = $('ring1'), ring2 = $('ring2'),
+        shardsLayer = $('shards'), wordEl = $('word'), shineClip = $('shineClip'), shineEl = $('shine'),
+        subEl = $('sub'), ruleEl = $('rule'), fadeEl = $('fade'), scrub = $('scrub');
+
+  const SPEEDS = [1, 0.5, 0.25];
+  let speedIdx = 0, speed = 1, playing = true, looping = true;
+  let t = 0, last = 0, rafId = 0, holdTimer = null;
+  let geo = {h: 60, total: 300, pad: 2};
+  let shards = [];
+  let letters = [];
+
+  function fail(msg) {
+    const el = $('err');
+    el.style.display = 'block';
+    el.textContent = 'Ошибка превью: ' + msg + ' — пришли этот текст, починю.';
+  }
+  window.addEventListener('error', e => fail(e.message));
+  window.addEventListener('unhandledrejection', e => fail(String(e.reason)));
+
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const easeOutQuint = k => 1 - Math.pow(1 - k, 5);
+
+  /* ---------- построение сцены ---------- */
+  function buildWord() {
+    wordEl.innerHTML = '';
+    letters = [];
+    const stageW = stage.clientWidth || window.innerWidth || 390;
+    const maxW = Math.max(120, Math.min(stageW * 0.84, 820));
+
+    for (let i = 0; i < WORD.length; i++) {
+      const s = document.createElement('span');
+      s.textContent = WORD[i];
+      wordEl.appendChild(s);
+      letters.push(s);
+    }
+
+    // Ширину не угадываем: ставим кегль, меряем РЕАЛЬНУЮ ширину каждой буквы,
+    // и если слово не влезло — уменьшаем кегль и меряем снова (как в скрипте).
+    let h = clamp(Math.floor(stageW * 0.185), 18, 180);
+    let total = 0, gap = 1;
+    for (let pass = 0; pass < 5; pass++) {
+      wordEl.style.fontSize = h + 'px';
+      letters.forEach(s => { s.style.width = 'auto'; s.style.marginRight = '0px'; });
+      const widths = letters.map(s => {
+        const r = s.getBoundingClientRect();
+        return r.width || s.offsetWidth || h * 0.62;
+      });
+      // трекинг 16% от кегля: как в скрипте, иначе широкие буквы слипаются
+      gap = Math.max(1, Math.floor(h * 0.16));
+      total = widths.reduce((a, b) => a + b, 0) + gap * (letters.length - 1);
+      if (total <= maxW || h <= 18) {
+        letters.forEach((s, i) => {
+          s.style.width = Math.ceil(widths[i]) + 'px';
+          s.style.marginRight = (i === letters.length - 1 ? 0 : gap) + 'px';
+          s.dataset.cx = String(Math.round((i + 0.5) * (total / letters.length)));
+        });
+        break;
+      }
+      h = Math.max(18, Math.floor(h * clamp(maxW / total, 0.5, 0.95)));
+    }
+
+    wordEl.style.width = Math.min(total, maxW) + 'px';
+    const lineH = Math.ceil(h * 1.25);
+    geo = {h: h, total: Math.min(total, maxW), pad: gap, lineH: lineH,
+           ruleW: Math.round(Math.min(total, maxW) * 0.5)};
+    subEl.style.fontSize = clamp(Math.round(h * 0.2), 9, 20) + 'px';
+    halo.style.width = halo.style.height = Math.round(geo.total * 1.5) + 'px';
+    shineClip.style.width = Math.round(geo.total + gap * 2) + 'px';
+    shineClip.style.height = lineH + 'px';
+    shineEl.style.width = Math.round(Math.max(24, h * 0.8)) + 'px';
+    shineEl.style.height = Math.round(lineH * 2.6) + 'px';
+  }
+
+  let beams = [];
+  function buildBeams() {
+    const layer = document.getElementById('beams');
+    layer.innerHTML = '';
+    beams = [];
+    const N = 44;
+    for (let i = 0; i < N; i++) {
+      const b = document.createElement('div');
+      b.className = 'ray';
+      layer.appendChild(b);
+      beams.push({
+        el: b,
+        w0: 4 + Math.random() * 5,
+        base: (i * 360) / N + (Math.random() * 4 - 2),
+        phase: Math.random() * Math.PI * 2,
+        boost: (i % 4 === 0) ? 1.35 : 1,
+        twinkle: 0.6 + Math.random() * 0.8,
+        warm: (i % 3 === 0)
+      });
+    }
+  }
+
+  let crystals = [];
+  function buildCrystals() {
+    const layer = document.getElementById('crystals');
+    layer.innerHTML = '';
+    crystals = [];
+    for (let i = 0; i < 18; i++) {
+      const el = document.createElement('div');
+      el.className = 'crystal';
+      layer.appendChild(el);
+      crystals.push({
+        el: el,
+        a: Math.random() * Math.PI * 2,
+        k: Math.random() * 0.5,
+        spin: (Math.random() - 0.5) * 260,
+        size: 10 + Math.random() * 16,
+        speed: 0.5 + Math.random() * 0.7
+      });
+    }
+  }
+
+  function buildShards() {
+    shardsLayer.innerHTML = '';
+    shards = [];
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2 + (Math.random() - 0.5) * 0.22;
+      const tall = i % 3 !== 0;
+      const el = document.createElement('div');
+      el.className = 'shard';
+      shardsLayer.appendChild(el);
+      shards.push({
+        el: el, a: a,
+        w: tall ? 2 + Math.random() * 2 : 5 + Math.random() * 3,
+        h: tall ? 16 + Math.random() * 26 : 6 + Math.random() * 4,
+        spin: (Math.random() - 0.5) * 180,
+        delay: Math.random() * 0.3,
+        dur: 0.55 + Math.random() * 0.3
+      });
+    }
+  }
+
+  /* ---------- рендер одного кадра: только из t, без накопления состояния ---------- */
+  function render(time) {
+    const tt = clamp(time, 0, LEN);
+
+    for (const s of shards) {
+      const k = clamp((tt - s.delay) / s.dur, 0, 1);
+      const ease = k * k;
+      const d = 0.62 * (1 - ease);
+      s.el.style.left = (50 + Math.cos(s.a) * d * 100).toFixed(2) + '%';
+      s.el.style.top = (47 + Math.sin(s.a) * d * 0.94 * 100).toFixed(2) + '%';
+      s.el.style.transform = 'translate(-50%,-50%) rotate(' + (s.a * 57.2958 + s.spin * ease).toFixed(1) + 'deg)';
+      s.el.style.width = Math.max(1, s.w * (1 - ease * 0.85)).toFixed(1) + 'px';
+      s.el.style.height = Math.max(2, s.h * (1 - ease * 0.45)).toFixed(1) + 'px';
+      const vis = clamp(k * 3, 0, 1);
+      s.el.style.opacity = (vis * 0.95 * (1 - ease)).toFixed(3);
+    }
+
+    // СВЕТ ИЗ ГЛУБИНЫ: взрыв света из точки за словом (god rays).
+    // Вспышка нарастает к сборке букв, потом ровное горение и затухание на выходе.
+    const blast = clamp(tt / 1.15, 0, 1);
+    const decay = 1 - clamp((tt - 2.45) / 0.55, 0, 1);
+    const lightK = (0.22 + blast * 0.78) * decay;
+    const diag = Math.max(stage.clientWidth || window.innerWidth || 390,
+                          stage.clientHeight || 700) * 1.45;
+    beams.forEach(b => {
+      const rot = b.base + tt * b.twinkle * 6 * (1.2 - blast * 0.4);
+      const len = diag * b.boost * (0.68 + Math.sin(tt * b.twinkle * 2.4 + b.phase) * 0.12);
+      const w = Math.max(1, b.w0 * (0.85 + Math.sin(tt * 1.7 + b.phase) * 0.3));
+      b.el.style.transform = 'rotate(' + rot.toFixed(1) + 'deg)';
+      b.el.style.width = w.toFixed(1) + 'px';
+      b.el.style.height = len.toFixed(0) + 'px';
+      b.el.style.opacity = clamp(lightK * (0.9 + Math.sin(tt * 3.1 + b.phase) * 0.1), 0, 1).toFixed(3);
+    });
+    // дымка: три мягких ореола, растут с вспышкой
+    [[0, 0.30, 0.55], [1, 0.62, 0.32], [2, 1.05, 0.18]].forEach(([idx, k, a]) => {
+      const el = document.getElementById('haze' + idx);
+      const size = diag * k * (0.9 + blast * 0.35);
+      el.style.width = el.style.height = size.toFixed(0) + 'px';
+      el.style.opacity = (lightK * a).toFixed(3);
+      el.style.background = 'radial-gradient(circle,rgba(252,254,255,.95) 0%,rgba(214,228,248,.32) 45%,rgba(190,205,230,0) 70%)';
+    });
+    // кристаллы: летят на камеру, растут, вращаются и вспыхивают
+    crystals.forEach(c => {
+      const k = (tt * c.speed * 0.55 + c.k) % 1;
+      const r = 0.45 * (1 - k * 0.85);
+      const s2 = c.size * (0.5 + k * 2.1);
+      c.el.style.left = (50 + Math.cos(c.a) * r * 100).toFixed(2) + '%';
+      c.el.style.top = (47 + Math.sin(c.a) * r * 90).toFixed(2) + '%';
+      c.el.style.transform = 'translate(-50%,-50%) rotate(' + (c.a * 57 + c.spin * tt).toFixed(1) + 'deg)';
+      c.el.style.width = s2.toFixed(1) + 'px';
+      c.el.style.height = (s2 * 1.7).toFixed(1) + 'px';
+      c.el.style.opacity = (Math.sin(k * Math.PI) * decay).toFixed(3);
+    });
+
+    const coreK = clamp((tt - 0.25) / 0.85, 0, 1) * decay;
+    const coreEl = document.getElementById('core');
+    const cs = 18 + coreK * 120 + Math.sin(tt * 6.5) * 4;
+    coreEl.style.width = coreEl.style.height = cs.toFixed(0) + 'px';
+    coreEl.style.opacity = (coreK * 0.95).toFixed(3);
+
+    const pulse = clamp((tt - 0.55) / 0.6, 0, 1);
+    const breathe = 1 + Math.sin((tt - 1.1) * 3) * 0.02;
+    halo.style.opacity = (pulse * 0.85 * (1 - clamp((tt - 2.6) / 0.5, 0, 1))).toFixed(3);
+    halo.style.transform = 'translate(-50%,-50%) scale(' + breathe.toFixed(4) + ')';
+
+    [[ring1, 1.02, 1], [ring2, 1.11, 0.85]].forEach(function (r) {
+      const k = clamp((tt - r[1]) / 0.75, 0, 1);
+      const size = 30 + k * 620;
+      r[0].style.width = r[0].style.height = size.toFixed(0) + 'px';
+      r[0].style.opacity = k <= 0 || k >= 1 ? '0' : (r[2] * (1 - k)).toFixed(3);
+    });
+
+    letters.forEach(function (s, i) {
+      const start = LETTER_START + i * LETTER_STEP;
+      const p = clamp((tt - start) / LETTER_DUR, 0, 1);
+      const e = easeOutQuint(p);
+      const scale = lerp(0.7, 1, e) * (1 + Math.sin(p * Math.PI) * 0.06);
+      s.style.opacity = clamp(p * 2, 0, 1).toFixed(3);
+      s.style.transform = 'scale(' + scale.toFixed(4) + ') rotate(' + (-6 * (1 - e)).toFixed(2) + 'deg)';
+      s.style.textShadow = '0 3px 0 #000, 0 0 ' + Math.round(22 * e) + 'px rgba(91,140,255,' + (0.5 * e).toFixed(2) + ')';
+    });
+
+    const subK = clamp((tt - 2.02) / 0.4, 0, 1);
+    subEl.style.opacity = subK.toFixed(3);
+    ruleEl.style.opacity = subK.toFixed(3);
+    ruleEl.style.width = (geo.ruleW * subK).toFixed(1) + 'px';
+
+    const shK = clamp((tt - 2.22) / 0.5, 0, 1);
+    // полоса идёт слева направо и видна только пока внутри слова
+    shineEl.style.opacity = (0.6 * Math.sin(shK * Math.PI)).toFixed(3);
+    shineEl.style.left = (-12 + shK * 124).toFixed(1) + '%';
+
+    const out = clamp((tt - HOLDOUT) / FADE_DUR, 0, 1);
+    fadeEl.style.opacity = out.toFixed(3);
+    // разлёт от центра на выходе: позиция буквы * 1.06
+    letters.forEach(function (s) {
+      const base = s.dataset.cx ? parseFloat(s.dataset.cx) : 0;
+      s.style.marginLeft = (base * out * 0.06).toFixed(2) + 'px';
+    });
+
+    $('time').textContent = tt.toFixed(2) + ' / ' + LEN.toFixed(2) + ' с';
+    if (document.activeElement !== scrub) scrub.value = String(tt);
+  }
+
+  /* ---------- цикл проигрывания ---------- */
+  function tick(now) {
+    if (!playing) return;
+    if (!last) last = now;
+    const dt = (now - last) / 1000;
+    last = now;
+    t += dt * speed;
+    if (t >= LEN) {
+      if (looping) {
+        t = 0; last = 0;
+        render(0);
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
+      t = LEN; render(LEN); playing = false; setPlayBtn(); return;
+    }
+    render(t);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    cancelAnimationFrame(rafId);
+    clearTimeout(holdTimer);
+    last = 0;
+    if (playing) rafId = requestAnimationFrame(tick);
+  }
+  function setPlayBtn() { $('play').textContent = playing ? 'пауза' : 'играть'; }
+  function pause() { playing = false; cancelAnimationFrame(rafId); clearTimeout(holdTimer); setPlayBtn(); }
+  function resume() { if (t >= LEN) t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); }
+  function seek(v) { pause(); t = clamp(v, 0, LEN); render(t); }
+
+  /* ---------- управление ---------- */
+  $('play').onclick = function () { playing ? pause() : resume(); };
+  $('replay').onclick = function () { t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); };
+  scrub.oninput = function () { seek(parseFloat(scrub.value)); };
+  document.querySelectorAll('[data-t]').forEach(function (b) {
+    b.onclick = function () { seek(parseFloat(b.dataset.t)); };
+  });
+  $('prev').onclick = function () { seek(t - 0.05); };
+  $('next').onclick = function () { seek(t + 0.05); };
+  $('slow').onclick = function (e) {
+    speedIdx = (speedIdx + 1) % SPEEDS.length;
+    speed = SPEEDS[speedIdx];
+    e.currentTarget.textContent = speed === 1 ? '1×' : speed + '×';
+  };
+  $('loop').onclick = function (e) {
+    looping = !looping;
+    e.currentTarget.textContent = 'автоцикл: ' + (looping ? 'вкл' : 'выкл');
+  };
+  stage.addEventListener('pointerdown', function () { t = 0; playing = true; last = 0; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); setPlayBtn(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : resume(); }
+    if (e.code === 'ArrowRight') { e.preventDefault(); seek(t + 0.05); }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); seek(t - 0.05); }
+  });
+  let resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { buildWord(); render(t); }, 150);
+  });
+
+  /* ---------- старт ---------- */
+  buildWord();
+  buildShards();
+  buildBeams();
+  buildCrystals();
+  render(0);
+  // шрифт может подъехать позже: пересчитываем геометрию, когда он загрузился
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { buildWord(); render(t); }).catch(function () {});
+  }
+  setPlayBtn();
+  start();
+})();
+</script>
+</body>
+</html>

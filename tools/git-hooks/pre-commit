@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Не даёт закоммитить скрипт, который не компилируется или роняет тесты.
+# Именно так в 4.6.1 в коммит попала правка без таблицы CH.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if git diff --cached --name-only | grep -q "Enkaisy_Combined_UI_v4_2.lua"; then
+	if ! ./tools/check_all.sh > /tmp/precommit.log 2>&1; then
+		echo "КОММИТ ОТМЕНЁН: проверки не прошли"
+		grep -E "ПРОВАЛ|FAIL|ERROR" /tmp/precommit.log | head -n 10
+		exit 1
+	fi
+	echo "pre-commit: проверки зелёные"
+fi
