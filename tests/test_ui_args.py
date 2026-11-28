@@ -247,6 +247,25 @@ class OtherHelpers(unittest.TestCase):
         self.assertNotIn('(step and "" or "")', SOURCE)
 
 
+class LocalVariableLimit(unittest.TestCase):
+    """Скрипт обязан компилироваться: Lua/Luau разрешает не больше 200 локалей на функцию."""
+
+    def test_script_compiles(self):
+        """Регрессия: buildAim переполнялся локалями и скрипт не загружался вообще."""
+        import os
+        import subprocess
+        import sys
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        checker = os.path.join(root, "tools", "luau_check.py")
+        if not os.path.exists(checker):
+            self.skipTest("нет tools/luau_check.py")
+        src = Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua"
+        r = subprocess.run([sys.executable, checker, str(src)], capture_output=True, text=True)
+        out = (r.stdout + r.stderr).strip()
+        self.assertIn("LUAU COMPILE OK", out,
+                      "скрипт не компилируется (лимит 200 локалей / синтаксис): " + out[-400:])
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -276,6 +295,25 @@ class HelperVisibility(unittest.TestCase):
         head = SOURCE.split("local function startMain", 1)[0]
         self.assertIn("local function on(sig, fn)", head)
 
+
+
+class LocalVariableLimit(unittest.TestCase):
+    """Скрипт обязан компилироваться: Lua/Luau разрешает не больше 200 локалей на функцию."""
+
+    def test_script_compiles(self):
+        """Регрессия: buildAim переполнялся локалями и скрипт не загружался вообще."""
+        import os
+        import subprocess
+        import sys
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        checker = os.path.join(root, "tools", "luau_check.py")
+        if not os.path.exists(checker):
+            self.skipTest("нет tools/luau_check.py")
+        src = Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua"
+        r = subprocess.run([sys.executable, checker, str(src)], capture_output=True, text=True)
+        out = (r.stdout + r.stderr).strip()
+        self.assertIn("LUAU COMPILE OK", out,
+                      "скрипт не компилируется (лимит 200 локалей / синтаксис): " + out[-400:])
 
 
 if __name__ == "__main__":
@@ -312,6 +350,25 @@ class NumericConstants(unittest.TestCase):
         self.assertIsNotNone(m, "outline(o, t) должна оставаться с двумя аргументами")
         self.assertIn("return stroke(o, PURE, t or OUT.Idle", m.group(0))
 
+
+
+class LocalVariableLimit(unittest.TestCase):
+    """Скрипт обязан компилироваться: Lua/Luau разрешает не больше 200 локалей на функцию."""
+
+    def test_script_compiles(self):
+        """Регрессия: buildAim переполнялся локалями и скрипт не загружался вообще."""
+        import os
+        import subprocess
+        import sys
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        checker = os.path.join(root, "tools", "luau_check.py")
+        if not os.path.exists(checker):
+            self.skipTest("нет tools/luau_check.py")
+        src = Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua"
+        r = subprocess.run([sys.executable, checker, str(src)], capture_output=True, text=True)
+        out = (r.stdout + r.stderr).strip()
+        self.assertIn("LUAU COMPILE OK", out,
+                      "скрипт не компилируется (лимит 200 локалей / синтаксис): " + out[-400:])
 
 
 if __name__ == "__main__":

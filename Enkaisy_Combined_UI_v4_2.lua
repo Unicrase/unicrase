@@ -28,6 +28,10 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.4.1: ИСПРАВЛЕНО ГЛАВНОЕ — скрипт снова загружается. В buildAim и в главном блоке файла было
+--         больше 200 локальных переменных: Lua/Luau отказывался компилировать файл, и не появлялось
+--         даже окно ключа. Редкие константы и ссылки переехали в таблицы GLB / AIM (обращения вида
+--         GLB.BUILD), число локалей упало ниже предела. В тесты добавлена проверка компиляции.
 -- v4.4.0: CHAMS LOOK стал текстурой: материал частей тела (Neon светится, CrackedLava — лава,
 --         ForceField — сетка, Glass/Ice, Foil-хром) + PointLight для светящихся стилей; исходные
 --         материалы возвращаются при снятии подсветки и выгрузке.
@@ -80,12 +84,13 @@
 -- v3.2: переписан предикт (скорость по позиции, трекер ускорения), триггер (допуск, Activate-режим, статусы), фон-картинка в Appearance.
 -- v3.1: окно меню растягивается за правый нижний угол (значок из точек). Двойное касание угла — вернуть размер.
 -- Размер, положение окна и последняя вкладка сохраняются; карточки переходят во вторую колонку только в широком окне.
+local GLB = {} -- общие константы и ссылки: вынесены в таблицу, иначе лимит Lua на локали
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BUILD = "4.4.0" -- версия сборки: показывается в меню и на экране ключа
-local REMOTE_NAME = "EnkaisyAimFire"
-local CLIENT_NAME = "EnkaisyAimClient"
+GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
+GLB.BUILD = "4.4.0" -- версия сборки: показывается в меню и на экране ключа
+GLB.REMOTE_NAME = "EnkaisyAimFire"
+GLB.CLIENT_NAME = "EnkaisyAimClient"
 
 -- ===== Виртуальные хитбоксы (Hitbox / Head hitbox): общий код клиента и сервера =====
 -- Хитбокс = каждая часть тела цели, раздутая на N студов во все стороны (у головы — свой размер).
@@ -171,21 +176,21 @@ if RS:IsServer() then
     local HITBOX_MAX_HEAD = HB_HEAD_MAX -- максимум расширения головы, студов
 
     local remote = Instance.new("RemoteEvent")
-    remote.Name = REMOTE_NAME
+    remote.Name = GLB.REMOTE_NAME
     remote:SetAttribute("SilentMaxAngle", SILENT_MAX_ANGLE) -- клиент подгоняет свой SilentFOV под этот угол
     remote:SetAttribute("HitboxMaxBody", HITBOX_ALLOWED and HITBOX_MAX_BODY or 0) -- клиент ограничивает ползунки хитбоксов
     remote:SetAttribute("HitboxMaxHead", HITBOX_ALLOWED and HITBOX_MAX_HEAD or 0)
-    remote.Parent = ReplicatedStorage
+    remote.Parent = GLB.ReplicatedStorage
 
     -- Client Scripts не запускаются из ReplicatedStorage: выдаём копию каждому PlayerScripts.
     local function installClient(plr)
         task.spawn(function()
             local scripts = plr:WaitForChild("PlayerScripts", 30)
             if not scripts or plr.Parent ~= Players then return end
-            local old = scripts:FindFirstChild(CLIENT_NAME)
+            local old = scripts:FindFirstChild(GLB.CLIENT_NAME)
             if old then old:Destroy() end
             local copy = script:Clone()
-            copy.Name = CLIENT_NAME
+            copy.Name = GLB.CLIENT_NAME
             copy.RunContext = Enum.RunContext.Client
             copy.Parent = scripts
         end)
@@ -403,17 +408,17 @@ if _G.TH_Stop then pcall(_G.TH_Stop) end
 local UIS = game:GetService("UserInputService")
 local TS = game:GetService("TweenService")
 local STS = game:GetService("TextService") -- ширина напечатанной части текста: позиция курсора
-local Lighting = game:GetService("Lighting")
+GLB.Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
-local HttpService = game:GetService("HttpService")
-local Stats = game:GetService("Stats")
+GLB.HttpService = game:GetService("HttpService")
+GLB.Stats = game:GetService("Stats")
 local LP = Players.LocalPlayer
 local U, S, O, V2 = UDim2.new, UDim2.fromScale, UDim2.fromOffset, Vector2.new
 -- Встроенное семейство с кириллицей; используем настоящие начертания, а не обводку букв.
 local GR = Font.fromEnum(Enum.Font.Roboto)
 local GB, GM, XL = Font.new(GR.Family, Enum.FontWeight.Bold), Font.new(GR.Family, Enum.FontWeight.Medium), Enum.TextXAlignment.Left
 
-local MODES = {"Players", "NPC", "Both"}
+GLB.MODES = {"Players", "NPC", "Both"}
 local DIST_MAX = 2000
 local CFG = {
 	On = true, Mode = "Players",
@@ -633,10 +638,10 @@ local THEMES = {
 	Crimson = {Win = {14, 9, 10}, Side = {20, 12, 14}, Card = {30, 18, 21}, Input = {40, 24, 28}, Line = {58, 34, 40}, Sel = {52, 30, 36}, Hi = {80, 48, 56}, Mut = {160, 137, 146}, W = {247, 238, 240}},
 }
 local THEME_ORDER = {"Dark", "Midnight", "Amoled", "Forest", "Crimson"}
-local PAL = {"Win", "Side", "Card", "Input", "Line", "Sel", "Hi", "Mut", "W"}
+GLB.PAL = {"Win", "Side", "Card", "Input", "Line", "Sel", "Hi", "Mut", "W"}
 local function applyPalette(name)
 	local t = THEMES[name] or THEMES.Dark
-	for _, k in PAL do
+	for _, k in GLB.PAL do
 		C[k] = Color3.fromRGB(t[k][1], t[k][2], t[k][3])
 	end
 	C.Dark = C.Win
@@ -654,16 +659,16 @@ end
 -- Idle — покой, Hover — наведение/нажатие, Active — выбранное, Soft — информационные плашки
 local OUT = {Idle = 0.95, Hover = 0.84, Active = 0.74, Soft = 0.96, Window = 0.89, Focus = 0.5}
 -- Окно ключа: затемнение и размытие игры под окном.
-local KEY_DIM = 0.50
-local KEY_BLUR = 10
+GLB.KEY_DIM = 0.50
+GLB.KEY_BLUR = 10
 -- статусы FPS / пинга: белый = хорошо, приглушённые жёлтый и красный = хуже
 local GOOD, MID, BAD = Color3.fromRGB(226, 226, 230), Color3.fromRGB(214, 190, 120), Color3.fromRGB(222, 100, 100)
 
 -- FPS unlocker (нужен executor с setfpscap; 0 = без лимита)
-local canFps = type(setfpscap) == "function"
-local FPS_STEPS = {60, 90, 120, 144, 240, 0}
+GLB.canFps = type(setfpscap) == "function"
+GLB.FPS_STEPS = {60, 90, 120, 144, 240, 0}
 local function applyFps()
-	if not canFps then return end
+	if not GLB.canFps then return end
 	pcall(setfpscap, CFG.FpsUnlock and CFG.FpsCap or 60)
 end
 local fast = TweenInfo.new(0.16, Enum.EasingStyle.Quad)
@@ -682,23 +687,23 @@ local counterLbl, statsFps, statsPing, statsCard, plrHook, statusFn
 local statFpsVal, statPingVal -- последние показанные значения FPS/пинга: от них считается анимация цифр
 local marks = {} -- [UserId] = "Mark" | "Hide" (только на время сессии)
 local pset = {}  -- [tostring(UserId)] = {Name/Hl/Fill/Outline/HP/Dist = "On"|"Off", cols = {Fill/Outline/Name = {h,s,v}}}
-local PKEYS = {"Name", "Hl", "Fill", "Outline", "HP", "Dist"}
-local PCOLS = {"Fill", "Outline", "Name"}
+GLB.PKEYS = {"Name", "Hl", "Fill", "Outline", "HP", "Dist"}
+GLB.PCOLS = {"Fill", "Outline", "Name"}
 local fps, lastT, lastStat = 60, os.clock(), 0
 local alive = true
 
 -- ===== Сохранение настроек =====
 local friendCache, NpcWords = {}, {}
-local FILE = "TH_Settings.json"
-local canFile = type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
-local lastSaved = ""
-local function serialize() return HttpService:JSONEncode({CFG = CFG, col = col, pset = pset, AIM = AIMCFG, UI = UICFG}) end
+GLB.FILE = "TH_Settings.json"
+GLB.canFile = type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+GLB.lastSaved = ""
+local function serialize() return GLB.HttpService:JSONEncode({CFG = CFG, col = col, pset = pset, AIM = AIMCFG, UI = UICFG}) end
 local function saveNow()
-	if not canFile then return end
+	if not GLB.canFile then return end
 	local ok, s = pcall(serialize)
-	if ok and s ~= lastSaved then
-		lastSaved = s
-		pcall(writefile, FILE, s)
+	if ok and s ~= GLB.lastSaved then
+		GLB.lastSaved = s
+		pcall(writefile, GLB.FILE, s)
 	end
 end
 local function deepCopy(t)
@@ -707,10 +712,10 @@ local function deepCopy(t)
 	return r
 end
 local DEF = {CFG = deepCopy(CFG), col = deepCopy(col), AIM = deepCopy(AIMCFG), UI = deepCopy(UICFG)}
-if canFile then
+if GLB.canFile then
 	pcall(function()
-		if not isfile(FILE) then return end
-		local d = HttpService:JSONDecode(readfile(FILE))
+		if not isfile(GLB.FILE) then return end
+		local d = GLB.HttpService:JSONDecode(readfile(GLB.FILE))
 		if type(d) ~= "table" then return end
 		for k, v in d.CFG or {} do
 			if CFG[k] ~= nil and type(CFG[k]) == type(v) then CFG[k] = v end
@@ -725,12 +730,12 @@ if canFile then
 		for id, t in d.pset or {} do
 			if type(t) == "table" then
 				local e = {}
-				for _, k in PKEYS do
+				for _, k in GLB.PKEYS do
 					if t[k] == "On" or t[k] == "Off" then e[k] = t[k] end
 				end
 				if type(t.cols) == "table" then
 					local cc = {}
-					for _, n in PCOLS do
+					for _, n in GLB.PCOLS do
 						local c = t.cols[n]
 						if type(c) == "table" and type(c.h) == "number" and type(c.s) == "number" and type(c.v) == "number" then
 							cc[n] = {h = math.clamp(c.h, 0, 1), s = math.clamp(c.s, 0, 1), v = math.clamp(c.v, 0, 1)}
@@ -791,7 +796,7 @@ AIMCFG.DynSmooth = math.clamp(AIMCFG.DynSmooth, 0, 0.95)
 AIMCFG.AnimSpeed = math.clamp(AIMCFG.AnimSpeed, 0.25, 3)
 if not table.find({"Linear", "Smooth"}, AIMCFG.DynMode) then AIMCFG.DynMode = "Smooth" end
 if not table.find({"Ring", "Square", "Dot"}, AIMCFG.AnimStyle) then AIMCFG.AnimStyle = "Ring" end
-if not table.find(MODES, CFG.Mode) then CFG.Mode = "Players" end
+if not table.find(GLB.MODES, CFG.Mode) then CFG.Mode = "Players" end
 if not table.find({"Off", "Color", "Hide"}, CFG.FriendMode) then CFG.FriendMode = "Off" end
 if not TC.FP[CFG.TcFP] then CFG.TcFP = "Custom" end
 if not TC.EP[CFG.TcEP] then CFG.TcEP = "Custom" end
@@ -803,7 +808,7 @@ CFG.NameSize = math.clamp(CFG.NameSize, 10, 30)
 CFG.NameLen = math.clamp(CFG.NameLen, 3, 20)
 CFG.Fill = math.clamp(CFG.Fill, 0, 1)
 CFG.Outline = math.clamp(CFG.Outline, 0, 1)
-if not table.find(FPS_STEPS, CFG.FpsCap) then CFG.FpsCap = 0 end
+if not table.find(GLB.FPS_STEPS, CFG.FpsCap) then CFG.FpsCap = 0 end
 if not table.find({60, 30, 20, 10}, CFG.EspHz) then CFG.EspHz = 60 end
 AIMCFG.HoldToAim = false -- только сенсорное управление
 AIMCFG.FovAlpha = math.clamp(AIMCFG.FovAlpha, 0, 1)
@@ -852,7 +857,7 @@ local function parseWords()
 	end
 end
 parseWords()
-pcall(function() lastSaved = serialize() end)
+pcall(function() GLB.lastSaved = serialize() end)
 
 -- ===== Хелперы =====
 local function hsv(t) return Color3.fromHSV(t.h, t.s, t.v) end
@@ -1157,37 +1162,37 @@ function new(class, props, parent)
 end
 local function round(o, r) return new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
 -- реестры для живой настройки вида: скругления, акцентные элементы, плавающие элементы (UI Scale)
-local corners = setmetatable({}, {__mode = "k"})
+GLB.corners = setmetatable({}, {__mode = "k"})
 local function cornerPx(r, cap)
 	return math.clamp(r + UICFG.Corner - DEF.UI.Corner, 0, cap or math.huge)
 end
 function rr(o, r, cap)
 	local c = round(o, cornerPx(r, cap))
-	corners[c] = {r, cap}
+	GLB.corners[c] = {r, cap}
 	return c
 end
 local function applyRadius()
-	for c, d in corners do
+	for c, d in GLB.corners do
 		if c.Parent then
 			c.CornerRadius = UDim.new(0, cornerPx(d[1], d[2]))
 		else
-			corners[c] = nil
+			GLB.corners[c] = nil
 		end
 	end
 end
-local accents = setmetatable({}, {__mode = "k"})
+GLB.accents = setmetatable({}, {__mode = "k"})
 local function accent(inst, prop, token)
 	token = token or "Acc"
-	accents[inst] = accents[inst] or {}
-	accents[inst][prop] = token
+	GLB.accents[inst] = GLB.accents[inst] or {}
+	GLB.accents[inst][prop] = token
 	inst[prop] = C[token]
 	return inst
 end
-local floatScales = setmetatable({}, {__mode = "k"})
+GLB.floatScales = setmetatable({}, {__mode = "k"})
 -- цвета палитры хранятся по имени, чтобы смена темы доезжала до hover-состояний
 local function nameOf(c)
 	if typeof(c) ~= "Color3" then return c end
-	for _, k in PAL do
+	for _, k in GLB.PAL do
 		if C[k] == c then return k end
 	end
 	return c
@@ -1294,7 +1299,7 @@ local function row(parent, h, pad, order)
 	return f
 end
 local function getPing()
-	local ok, v = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
+	local ok, v = pcall(function() return GLB.Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
 	if ok and type(v) == "number" then return v end
 	return LP:GetNetworkPing() * 2000
 end
@@ -1829,12 +1834,12 @@ function TC.get(plr, elem)
 	end
 	return hsv(col["TC" .. side .. elem])
 end
-local TC_R15 = {{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"}, {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"},
+GLB.TC_R15 = {{"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"}, {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"},
 	{"LeftLowerArm", "LeftHand"}, {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
 	{"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
 	{"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"}}
-local TC_R6 = {{"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"}, {"Torso", "Left Leg"}, {"Torso", "Right Leg"}}
-TC.R15, TC.R6 = TC_R15, TC_R6
+GLB.TC_R6 = {{"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"}, {"Torso", "Left Leg"}, {"Torso", "Right Leg"}}
+TC.R15, TC.R6 = GLB.TC_R15, GLB.TC_R6
 -- ESP Box: рамка по экранным границам модели. Считаем проекции восьми углов BoundingBox —
 -- так рамка остаётся точной при любом повороте камеры и не «плывёт» на наклонных целях.
 -- Четыре тонких Frame в том же ScreenGui, что линии: ни одного лишнего объекта на цель.
@@ -3112,27 +3117,28 @@ end
 -- ===== Aim assist (встроен в меню: папки Aim / Targets / Trigger / Hitbox / FOV) =====
 local aim
 local function buildAim(page, api)
+	local AIM = {} -- состояние панели Aim: редкие локали вынесены в таблицу (лимит Lua 200)
 	local A = AIMCFG
-	local CS = game:GetService("CollectionService")
-	local GuiService = game:GetService("GuiService")
+	AIM.CS = game:GetService("CollectionService")
+	AIM.GuiService = game:GetService("GuiService")
 	local camera = Workspace.CurrentCamera
-	local fireRemote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
+	local fireRemote = GLB.ReplicatedStorage:FindFirstChild(GLB.REMOTE_NAME)
 
-	local TAG = "AimTarget" -- NPC с этим тегом тоже считаются целями
+	AIM.TAG = "AimTarget" -- NPC с этим тегом тоже считаются целями
 	local tagged, aconns = {}, {}
 	local function connect(sig, fn)
 		local c = sig:Connect(fn)
 		table.insert(aconns, c)
 		return c
 	end
-	for _, inst in CS:GetTagged(TAG) do tagged[inst] = true end
-	connect(CS:GetInstanceAddedSignal(TAG), function(inst) tagged[inst] = true end)
-	connect(CS:GetInstanceRemovedSignal(TAG), function(inst) tagged[inst] = nil end)
+	for _, inst in AIM.CS:GetTagged(AIM.TAG) do tagged[inst] = true end
+	connect(AIM.CS:GetInstanceAddedSignal(AIM.TAG), function(inst) tagged[inst] = true end)
+	connect(AIM.CS:GetInstanceRemovedSignal(AIM.TAG), function(inst) tagged[inst] = nil end)
 
 	-- ответ сервера на выстрел (hit / miss / причина отказа) — показывается в HUD
 	local srvCode, srvT, remoteBound = "-", 0, nil
 	local function bindRemote()
-		fireRemote = fireRemote or ReplicatedStorage:FindFirstChild(REMOTE_NAME)
+		fireRemote = fireRemote or GLB.ReplicatedStorage:FindFirstChild(GLB.REMOTE_NAME)
 		if fireRemote and remoteBound ~= fireRemote then
 			remoteBound = fireRemote
 			connect(fireRemote.OnClientEvent, function(code) srvCode, srvT = tostring(code), os.clock() end)
@@ -3152,7 +3158,7 @@ local function buildAim(page, api)
 		local v = camera.ViewportSize
 		if v.X < 2 or v.Y < 2 then return end
 		-- InputObject.Position отсчитывается от нижней границы верхней панели: добавляем инсет
-		local p = V2(touch.Position.X, touch.Position.Y) + GuiService:GetGuiInset()
+		local p = V2(touch.Position.X, touch.Position.Y) + AIM.GuiService:GetGuiInset()
 		lastTouchN = V2(p.X / v.X, p.Y / v.Y)
 	end
 	connect(UIS.TouchStarted, rememberTouch)
@@ -3180,8 +3186,8 @@ local function buildAim(page, api)
 	local fovGlow = new("Frame", {Name = "FovGlow", Size = S(1, 1), BackgroundTransparency = 1,
 		Visible = false, Active = false}, fov)
 	new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, fovGlow)
-	local fovGlowStroke = stroke(fovGlow, C.W, 0.8, 5)
-	pcall(function() fovGlowStroke.LineJoinMode = Enum.LineJoinMode.Round end)
+	AIM.fovGlowStroke = stroke(fovGlow, C.W, 0.8, 5)
+	pcall(function() AIM.fovGlowStroke.LineJoinMode = Enum.LineJoinMode.Round end)
 	-- мягкое свечение: несколько концентрических контуров с падающей непрозрачностью (2..6 px)
 	local fovHalo = {}
 	for i = 1, 5 do
@@ -3193,13 +3199,13 @@ local function buildAim(page, api)
 	end
 	local fovGrad -- градиент обводки стиля Gradient (создаётся один раз)
 	-- пунктир: сегменты — ДЕТИ круга, координаты в его долях (0.5 ± радиус)
-	local fovDash = {}
+	AIM.fovDash = {}
 	local DASH_N = 24
 	for i = 1, DASH_N do
 		local d = new("Frame", {Name = "FovDash" .. i, AnchorPoint = V2(0.5, 0.5), Size = O(7, 2.5),
 			BackgroundColor3 = C.W, BackgroundTransparency = 0.2, Visible = false, Active = false}, fov)
 		rr(d, 2)
-		table.insert(fovDash, d)
+		table.insert(AIM.fovDash, d)
 	end
 	local fovSc -- масштаб круга при появлении (0.6 -> 1), совпадение с областью не страдает
 	local markHot = false
@@ -3208,19 +3214,19 @@ local function buildAim(page, api)
 		Name = "AimPoint", AnchorPoint = V2(0.5, 0.5), Size = O(16, 16), BackgroundTransparency = 1,
 		Visible = false, Active = false, ZIndex = 7,
 	}, og)
-	local markBar1 = new("Frame", {
+	AIM.markBar1 = new("Frame", {
 		AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0), Size = U(1, 0, 0, 2),
 		BackgroundColor3 = C.On, BorderSizePixel = 0, Active = false, ZIndex = 7,
 	}, aimMark)
-	local markBar2 = new("Frame", {
+	AIM.markBar2 = new("Frame", {
 		AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0), Size = U(0, 2, 1, 0),
 		BackgroundColor3 = C.On, BorderSizePixel = 0, Active = false, ZIndex = 7,
 	}, aimMark)
 	-- калибровочный ScreenGui С отступом экрана: нужен только режиму Crosshair (см. crosshairPoint)
-	local probeGui = new("ScreenGui", {
+	AIM.probeGui = new("ScreenGui", {
 		Name = "EnkaisyProbe", ResetOnSpawn = false, DisplayOrder = -1, IgnoreGuiInset = false,
 	}, LP:WaitForChild("PlayerGui"))
-	local probe = new("Frame", {Size = O(1, 1), BackgroundTransparency = 1, Active = false}, probeGui)
+	AIM.probe = new("Frame", {Size = O(1, 1), BackgroundTransparency = 1, Active = false}, AIM.probeGui)
 	local hudSc -- UIScale HUD: пружина при появлении
 	local hud = new("TextLabel", {
 		AnchorPoint = V2(0.5, 0), Position = U(0.5, 0, 0, 44), Size = O(320, 24), AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true,
@@ -3233,7 +3239,7 @@ local function buildAim(page, api)
 		local sc = new("UIScale", {Scale = UICFG.UIScale}, hud)
 		hudSc = sc -- тот же UIScale использует анимация появления: второй UIScale на одном объекте не работает
 		sc:SetAttribute("AnimOwned", true) -- масштабом владеет анимация: applyLook его не трогает
-		floatScales[sc] = true
+		GLB.floatScales[sc] = true
 		local function fitHud() hud.Size = O(math.clamp((og.AbsoluteSize.X - 24) / sc.Scale, 1, 660), 24) end
 		connect(og:GetPropertyChangedSignal("AbsoluteSize"), fitHud)
 		connect(sc:GetPropertyChangedSignal("Scale"), fitHud)
@@ -3247,15 +3253,15 @@ local function buildAim(page, api)
 	}, gui)
 	rr(quick, Skin.Radius)
 	hoverable(quick, outline(quick))
-	floatScales[new("UIScale", {Scale = UICFG.UIScale}, quick)] = true
-	local qIcon = icon("Aim", quick, 17, C.W)
-	qIcon.Position = U(0, 19, 0.5, 0)
+	GLB.floatScales[new("UIScale", {Scale = UICFG.UIScale}, quick)] = true
+	AIM.qIcon = icon("Aim", quick, 17, C.W)
+	AIM.qIcon.Position = U(0, 19, 0.5, 0)
 	new("TextLabel", {Size = O(38, 40), Position = O(36, 0), BackgroundTransparency = 1, Text = "AIM",
 		TextColor3 = C.W, FontFace = GB, TextSize = 14, TextXAlignment = XL, Active = false}, quick)
 	local qSwitch, qPaint = makeSwitch(quick)
 	qSwitch.AnchorPoint, qSwitch.Position = V2(1, 0.5), U(1, -10, 0.5, 0)
 
-	local CIRCLE_COLORS = {
+	AIM.CIRCLE_COLORS = {
 		White = C.W, Green = Color3.fromRGB(80, 220, 120), Red = Color3.fromRGB(240, 80, 80),
 		Cyan = Color3.fromRGB(80, 220, 255), Yellow = Color3.fromRGB(255, 220, 80),
 	}
@@ -3265,7 +3271,7 @@ local function buildAim(page, api)
 	local shakePrev = 0 -- прошлый сэмпл шума: тряска без «памяти» кадра
 	local lastPingT, autoLead = 0, 0.1
 	local editing = false
-	local previewFov = false -- живой предпросмотр круга, пока открыта вкладка FOV
+	AIM.previewFov = false -- живой предпросмотр круга, пока открыта вкладка FOV
 	-- ЭКРАННОЕ ПРОСТРАНСТВО, общее для логики и визуала; заполняется updateSpace() в начале каждого кадра:
 	--   vp     — размер экрана в пикселях (camera.ViewportSize)
 	--   aim    — ТОЧКА НАВЕДЕНИЯ (px экрана): выбор цели, поворот камеры, triggerbot, выстрел
@@ -3273,7 +3279,7 @@ local function buildAim(page, api)
 	--   fov / silent / lock — радиусы областей (px экрана); тот же fov использует и отрисовка круга
 	local SP = {vp = V2(1920, 1080), aim = V2(960, 540), circle = V2(960, 540), fov = 0, silent = 0, lock = 0}
 	local updateSpace, runSelfTest, setEditing -- задаются ниже
-	local testUntil = 0
+	AIM.testUntil = 0
 
 	-- ===== v4.0: состояние новых функций (одна таблица NX - не плодим локальные переменные) =====
 	local NX = {
@@ -3342,7 +3348,7 @@ local function buildAim(page, api)
 			NX.dynPx = (NX.dynPx or SP.fov) + (target - (NX.dynPx or SP.fov)) * a
 			SP.fov = NX.dynPx
 		end
-		if NX.radLbl and previewFov and now - NX.radT > 0.1 then
+		if NX.radLbl and AIM.previewFov and now - NX.radT > 0.1 then
 			NX.radT = now
 			local info = "normal FOV (Dynamic FOV is off)"
 			if A.DynFov then
@@ -3465,7 +3471,7 @@ local function buildAim(page, api)
 	--   точка -> меняется только точка наведения; отвязанный круг остаётся на месте.
 	-- Само открытие редактора настройки не меняет.
 	fov.ZIndex, hud.ZIndex = 6, 7
-	local editLayer = new("Frame", {
+	AIM.editLayer = new("Frame", {
 		Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 0.7, Active = true, Visible = false, ZIndex = 5,
 	}, og)
 	local editBar = new("Frame", {
@@ -3483,38 +3489,38 @@ local function buildAim(page, api)
 			Text = "Тяни круг или точку", TextColor3 = C.Mut, FontFace = GR, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right}, head)
 		new("Frame", {Size = U(1, 0, 0, 1), Position = U(0, 0, 1, -1), BackgroundColor3 = C.Line}, head)
 	end
-	local doneBtn = button(editBar, "Готово", {
+	AIM.doneBtn = button(editBar, "Готово", {
 		Size = O(86, 32), Position = O(8, 36), TextSize = 13,
 	}, {primary = true})
-	local centerBtn = button(editBar, "В центр", {
+	AIM.centerBtn = button(editBar, "В центр", {
 		Size = O(86, 32), Position = O(107, 36), TextSize = 13,
 	})
-	local resetBtn = button(editBar, "Сброс", {
+	AIM.resetBtn = button(editBar, "Сброс", {
 		Size = O(86, 32), Position = O(206, 36), TextSize = 13,
 	})
 	movable(editBar, editBar, nil, function() clampGui(editBar) end) -- панель можно перетаскивать
-	connect(doneBtn.Activated, function() setEditing(false) end)
+	connect(AIM.doneBtn.Activated, function() setEditing(false) end)
 
 	-- шаг стрелок в пикселях экрана
 	new("TextLabel", {
 		Size = O(120, 18), Position = O(160, 74), BackgroundTransparency = 1, Text = "Шаг, px",
 		TextColor3 = C.Mut, FontFace = GM, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
 	}, editBar)
-	local stepBox = new("TextBox", {
+	AIM.stepBox = new("TextBox", {
 		Size = O(120, 32), Position = O(160, 94), BackgroundColor3 = C.Input, Text = tostring(A.StepPx),
 		TextColor3 = C.W, FontFace = GM, TextSize = 14, ClearTextOnFocus = true, PlaceholderText = "10", PlaceholderColor3 = C.Mut,
 	}, editBar)
-	Skin.field(stepBox)
+	Skin.field(AIM.stepBox)
 	local function readStep()
-		local n = tonumber(stepBox.Text)
+		local n = tonumber(AIM.stepBox.Text)
 		if n then A.StepPx = math.clamp(n, 0.5, 500) end
 		return A.StepPx
 	end
-	connect(stepBox.FocusLost, function() stepBox.Text = tostring(readStep()) end)
+	connect(AIM.stepBox.FocusLost, function() AIM.stepBox.Text = tostring(readStep()) end)
 
-	local targetBtn = button(editBar, "", {Size = O(120, 28), Position = O(160, 130), TextSize = 11})
-	local followBtn = button(editBar, "", {Size = O(284, 28), Position = O(8, 166), TextSize = 11})
-	local xyLabel = new("TextLabel", {
+	AIM.targetBtn = button(editBar, "", {Size = O(120, 28), Position = O(160, 130), TextSize = 11})
+	AIM.followBtn = button(editBar, "", {Size = O(284, 28), Position = O(8, 166), TextSize = 11})
+	AIM.xyLabel = new("TextLabel", {
 		Size = O(284, 30), Position = O(8, 198), BackgroundTransparency = 1, Text = "", TextWrapped = true,
 		TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
@@ -3659,19 +3665,19 @@ local function buildAim(page, api)
 	local function paintEdit()
 		local t1 = editTarget == "Aim" and "Двигаю: ТОЧКУ AIM" or "Двигаю: КРУГ"
 		local t2 = A.CircleFollow and "Связь круга с областью: ВКЛ" or "Связь круга с областью: ВЫКЛ"
-		if targetBtn.Text ~= t1 then targetBtn.Text = t1 end
-		if followBtn.Text ~= t2 then followBtn.Text = t2 end
+		if AIM.targetBtn.Text ~= t1 then AIM.targetBtn.Text = t1 end
+		if AIM.followBtn.Text ~= t2 then AIM.followBtn.Text = t2 end
 	end
 	paintEdit()
-	connect(targetBtn.Activated, function()
+	connect(AIM.targetBtn.Activated, function()
 		editTarget = editTarget == "Aim" and "Circle" or "Aim"
 		paintEdit()
 	end)
-	connect(followBtn.Activated, function()
+	connect(AIM.followBtn.Activated, function()
 		if A.CircleFollow then unlinkCircle() else A.CircleFollow = true end
 		paintEdit()
 	end)
-	connect(centerBtn.Activated, function()
+	connect(AIM.centerBtn.Activated, function()
 		if editTarget == "Aim" then
 			A.AimMode, A.AimX, A.AimY = "Center", 0.5, 0.5
 		else
@@ -3681,10 +3687,10 @@ local function buildAim(page, api)
 			A.CircleX, A.CircleY = 0.5, 0.5 -- только круг; точка наведения остаётся как была
 		end
 	end)
-	connect(resetBtn.Activated, function()
+	connect(AIM.resetBtn.Activated, function()
 		A.AimMode, A.AimX, A.AimY = "Center", 0.5, 0.5
 		A.CircleFollow, A.CircleX, A.CircleY, A.StepPx = true, 0.5, 0.5, 10
-		stepBox.Text = tostring(A.StepPx)
+		AIM.stepBox.Text = tostring(A.StepPx)
 		paintEdit()
 	end)
 
@@ -3695,26 +3701,26 @@ local function buildAim(page, api)
 		setTargetN(n.X + dx * st / v.X, n.Y + dy * st / v.Y)
 	end
 	-- удержание стрелки = непрерывный сдвиг
-	local holdToken = 0
+	AIM.holdToken = 0
 	local function arrow(txt, x, y, dx, dy)
 		local b = Skin.iconAction(editBar, "Next", math.deg(math.atan2(dy, dx)), {
 			Name = txt, Size = O(40, 32), Position = O(x, y),
 		})
 		connect(b.InputBegan, function(i)
 			if not press(i) then return end
-			holdToken += 1
-			local my = holdToken
+			AIM.holdToken += 1
+			local my = AIM.holdToken
 			nudge(dx, dy)
 			task.spawn(function()
 				task.wait(0.4)
-				while holdToken == my and b.Parent do
+				while AIM.holdToken == my and b.Parent do
 					nudge(dx, dy)
 					task.wait(0.05)
 				end
 			end)
 		end)
 	end
-	connect(UIS.InputEnded, function(i) if press(i) then holdToken += 1 end end)
+	connect(UIS.InputEnded, function(i) if press(i) then AIM.holdToken += 1 end end)
 	arrow("▲", 56, 72, 0, -1)
 	arrow("◀", 12, 108, -1, 0)
 	arrow("▼", 56, 108, 0, 1)
@@ -3722,7 +3728,7 @@ local function buildAim(page, api)
 
 	-- перетаскивание: новая позиция = позиция на старте + сдвиг пальца в ДОЛЯХ экрана (без накопления ошибки)
 	local dragInput, dragStart, dragN0
-	connect(editLayer.InputBegan, function(i)
+	connect(AIM.editLayer.InputBegan, function(i)
 		if press(i) then
 			dragInput, dragStart, dragN0 = i, V2(i.Position.X, i.Position.Y), getTargetN()
 		end
@@ -3881,26 +3887,26 @@ local function buildAim(page, api)
 	-- подавление без RCS не работает, поэтому его карточка тоже считается зависимой
 	table.insert(rcsSlaves, suppressCard)
 	-- 0% = RCS полностью выключен, 100% = снимает всю отдачу
-	local strengthCard = sliderCard(tgt, "RCS strength", nextOrder(), 0, 1,
+	AIM.strengthCard = sliderCard(tgt, "RCS strength", nextOrder(), 0, 1,
 		function() return A.RcsStrength end,
 		function(v) A.RcsStrength = math.clamp(tonumber(string.format("%.4f", v)), 0, 1) end,
 		function(v) return string.format("%.0f%%", v * 100) end, 0.05)
-	table.insert(refreshers, strengthCard)
-	table.insert(rcsSlaves, strengthCard)
-	local smoothCard = sliderCard(tgt, "RCS smoothness", nextOrder(), 0, 1,
+	table.insert(refreshers, AIM.strengthCard)
+	table.insert(rcsSlaves, AIM.strengthCard)
+	AIM.smoothCard = sliderCard(tgt, "RCS smoothness", nextOrder(), 0, 1,
 		function() return A.RcsSmooth end,
 		function(v) A.RcsSmooth = math.clamp(tonumber(string.format("%.4f", v)), 0, 1) end,
 		function(v) return v < 0.01 and "instant" or string.format("%.2f", v) end, 0.05)
-	table.insert(refreshers, smoothCard)
-	table.insert(rcsSlaves, smoothCard)
+	table.insert(refreshers, AIM.smoothCard)
+	table.insert(rcsSlaves, AIM.smoothCard)
 	table.insert(refreshers, paintRcs)
 
 	section("TARGET LOCK")
 	chips({
 		{"Target lock", "TargetLock", function(v) A.TargetLock = v; lockedModel = nil end, "Держит цель; смена — кнопкой ниже"},
 	})
-	local switchBtn = button(scroll, "Switch locked target", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	on(switchBtn.Activated, function() if switchTarget then switchTarget() end end)
+	AIM.switchBtn = button(scroll, "Switch locked target", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	on(AIM.switchBtn.Activated, function() if switchTarget then switchTarget() end end)
 	slider("Lock release radius, %", "LockR", 5, 90, 1, 0)
 
 	section("SILENT AIM")
@@ -3911,18 +3917,18 @@ local function buildAim(page, api)
 
 	section("AIM POINT")
 	cycle("Aim center", "AimMode", {"Auto", "Center", "Touch", "Custom", "Crosshair"})
-	local editBtn = button(scroll, "Edit aim point", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	on(editBtn.Activated, function() editTarget = "Aim"; paintEdit(); setEditing(true) end)
+	AIM.editBtn = button(scroll, "Edit aim point", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	on(AIM.editBtn.Activated, function() editTarget = "Aim"; paintEdit(); setEditing(true) end)
 	note("Точка наведения — куда поворачивается камера. Круг FOV настраивается в папке FOV.", 28)
 
 	section("DIAGNOSTICS")
 	chips({{"Debug HUD", "DebugHUD"}})
-	local testBtn = button(scroll, "Check coordinates", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	local selfLabel = new("TextLabel", {
+	AIM.testBtn = button(scroll, "Check coordinates", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	AIM.selfLabel = new("TextLabel", {
 		Size = U(1, 0, 0, 62), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = nextOrder(), Text = "",
 		TextColor3 = C.Mut, FontFace = GM, TextSize = 10, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top,
 	}, scroll)
-	on(testBtn.Activated, function() if runSelfTest then runSelfTest() end end)
+	on(AIM.testBtn.Activated, function() if runSelfTest then runSelfTest() end end)
 
 	-- ---------- Targets: по кому целиться, проверки и фильтр моделей ----------
 	tgt, ord = api.targetsPage or scroll, 0
@@ -3938,32 +3944,32 @@ local function buildAim(page, api)
 	chips({{"Invuln check", "CheckInvuln"}, {"Flash check", "CheckFlash"}, {"Smoke check", "CheckSmoke"}})
 
 	section("ФИЛЬТР NPC ПО ИМЕНИ")
-	local frow = row(tgt, 40, 6, nextOrder())
-	local fmode = button(frow, "", {Size = O(70, 40), LayoutOrder = 1})
-	local ftext = new("TextBox", {
+	AIM.frow = row(tgt, 40, 6, nextOrder())
+	AIM.fmode = button(AIM.frow, "", {Size = O(70, 40), LayoutOrder = 1})
+	AIM.ftext = new("TextBox", {
 		Size = U(1, -76, 1, 0), BackgroundColor3 = C.Input, LayoutOrder = 2,
 		Text = CFG.NpcText, PlaceholderText = "имена через запятую", TextColor3 = C.W,
 		PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12, ClearTextOnFocus = false,
-	}, frow)
-	Skin.field(ftext)
+	}, AIM.frow)
+	Skin.field(AIM.ftext)
 	local function paintFilter()
 		local off = CFG.NpcFilter == "Off"
-		fmode.Text = CFG.NpcFilter
-		fmode.TextColor3 = off and C.Mut or C.W
+		AIM.fmode.Text = CFG.NpcFilter
+		AIM.fmode.TextColor3 = off and C.Mut or C.W
 	end
-	on(fmode.Activated, function()
+	on(AIM.fmode.Activated, function()
 		local order = {"Off", "Only", "Hide"}
 		CFG.NpcFilter = order[(table.find(order, CFG.NpcFilter) or 1) % 3 + 1]
 		paintFilter()
 		updAll()
 	end)
-	on(ftext.FocusLost, function()
-		CFG.NpcText = ftext.Text
+	on(AIM.ftext.FocusLost, function()
+		CFG.NpcText = AIM.ftext.Text
 		parseWords()
 		updAll()
 	end)
 	paintFilter()
-	table.insert(refreshers, function() paintFilter(); ftext.Text = CFG.NpcText end)
+	table.insert(refreshers, function() paintFilter(); AIM.ftext.Text = CFG.NpcText end)
 	note("Only — только совпавшие, Hide — скрыть совпавших. Работает для NPC.", 28)
 
 	section("TARGET MODELS / МОДЕЛИ ДЛЯ AIM И ESP")
@@ -3981,12 +3987,12 @@ local function buildAim(page, api)
 		updAll()
 	end)
 	table.insert(refreshers, function() if not modelBox:IsFocused() then modelBox.Text = CFG.ModelNames end end)
-	local modelPick = button(tgt, "Выбрать модель: все", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	modelPick.TextTruncate = Enum.TextTruncate.AtEnd
+	AIM.modelPick = button(tgt, "Выбрать модель: все", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	AIM.modelPick.TextTruncate = Enum.TextTruncate.AtEnd
 	local function paintModelPick()
-		modelPick.Text = CFG.ModelNames:match("^%s*$") and "Выбрать модель: все" or ("Модель: " .. CFG.ModelNames)
+		AIM.modelPick.Text = CFG.ModelNames:match("^%s*$") and "Выбрать модель: все" or ("Модель: " .. CFG.ModelNames)
 	end
-	on(modelPick.Activated, function()
+	on(AIM.modelPick.Activated, function()
 		local paths, seen = {}, {}
 		local function add(m)
 			if m and m:IsDescendantOf(Workspace) and not seen[m] then
@@ -4092,11 +4098,11 @@ local function buildAim(page, api)
 
 	section("BODY PART PRIORITY")
 	note("Первая включённая часть - основная. Кнопки: ★ сделать основной, ▲▼ очередь; переключатель - вкл/выкл. Основная закрыта - цель берётся на следующую доступную часть.", 40)
-	local partPaint = {}
+	AIM.partPaint = {}
 	local function partsChanged()
 		V4.normalizeParts(A)
 		NX.gen += 1
-		for _, fn in partPaint do fn(true) end
+		for _, fn in AIM.partPaint do fn(true) end
 	end
 	local function partRank(slot)
 		for i, s in ipairs(A.PartOrder) do
@@ -4118,13 +4124,13 @@ local function buildAim(page, api)
 				partMain(V4.SLOTS[i % #V4.SLOTS + 1])
 			end)
 		table.insert(refreshers, mp)
-		table.insert(partPaint, mp)
+		table.insert(AIM.partPaint, mp)
 	end
 	chips({
 		{"Auto fallback", "PartFallback", function(v) A.PartFallback = v; NX.gen += 1 end, "Основная часть закрыта - цель на следующую доступную"},
 		{"Return to main", "PartReturn", function(v) A.PartReturn = v; NX.gen += 1 end, "Основная часть снова доступна - вернуться к ней"},
 	})
-	local partBase = ord
+	AIM.partBase = ord
 	ord += 9 -- 8 рядов частей тела: LayoutOrder = partBase + место в очереди
 	for _, slot in ipairs(V4.SLOTS) do
 		local f = new("Frame", {Size = U(1, 0, 0, 40), BackgroundColor3 = C.Card}, tgt)
@@ -4147,7 +4153,7 @@ local function buildAim(page, api)
 		local function paint(anim)
 			local isOn = A.PartOn[slot] == true
 			local rank = partRank(slot)
-			f.LayoutOrder = partBase + rank
+			f.LayoutOrder = AIM.partBase + rank
 			swPaint(isOn, anim)
 			local n = 0
 			for _, s in ipairs(A.PartOrder) do
@@ -4191,10 +4197,10 @@ local function buildAim(page, api)
 		end)
 		paint(false)
 		table.insert(refreshers, paint)
-		table.insert(partPaint, paint)
+		table.insert(AIM.partPaint, paint)
 	end
-	local resetParts = button(tgt, "Reset body part priority", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
-	on(resetParts.Activated, function()
+	AIM.resetParts = button(tgt, "Reset body part priority", {Size = U(1, 0, 0, 40), LayoutOrder = nextOrder()})
+	on(AIM.resetParts.Activated, function()
 		A.PartOrder, A.PartOn, A.TargetPart = deepCopy(DEF.AIM.PartOrder), deepCopy(DEF.AIM.PartOn), DEF.AIM.TargetPart
 		partsChanged()
 	end)
@@ -4392,10 +4398,10 @@ local function buildAim(page, api)
 		xhT, xhObj = t, nil
 		for _, o in LP.PlayerGui:GetDescendants() do
 			if o:IsA("GuiObject") and o.AbsoluteSize.X > 0 and o.AbsoluteSize.X < 150
-				and not o:IsDescendantOf(og) and not o:IsDescendantOf(gui) and not o:IsDescendantOf(probeGui)
+				and not o:IsDescendantOf(og) and not o:IsDescendantOf(gui) and not o:IsDescendantOf(AIM.probeGui)
 				and chainVisible(o) then
 				local n = o.Name:lower()
-				if n:find("crosshair") or n:find("reticle") or CS:HasTag(o, "Crosshair") then
+				if n:find("crosshair") or n:find("reticle") or AIM.CS:HasTag(o, "Crosshair") then
 					xhObj = o
 					break
 				end
@@ -4411,7 +4417,7 @@ local function buildAim(page, api)
 		local sg = o:FindFirstAncestorWhichIsA("ScreenGui")
 		local offset = V2(0, 0)
 		if sg and not sg.IgnoreGuiInset then
-			offset = GuiService:GetGuiInset() - probe.AbsolutePosition
+			offset = AIM.GuiService:GetGuiInset() - AIM.probe.AbsolutePosition
 		end
 		return o.AbsolutePosition + o.AbsoluteSize / 2 + offset
 	end
@@ -4455,10 +4461,10 @@ local function buildAim(page, api)
 	-- ВИЗУАЛ: только читает SP, ничего в логике не меняет
 	local function drawOverlay(now)
 		local v = SP.vp
-		local showCircle = editing or (A.Enabled and A.ShowFOV) or now < testUntil or (previewFov and A.ShowFOV)
+		local showCircle = editing or (A.Enabled and A.ShowFOV) or now < AIM.testUntil or (AIM.previewFov and A.ShowFOV)
 		-- Появление круга: он «расходится» из точки наведения масштабом и только затем живёт обычной жизнью.
 		-- Размер по-прежнему задаётся в px (через UIScale), поэтому совпадение с областью не теряется.
-		local circleOn = showCircle and (previewFov or editing or A.Enabled or now < testUntil)
+		local circleOn = showCircle and (AIM.previewFov or editing or A.Enabled or now < AIM.testUntil)
 		if showCircle and not fov.Visible then
 			if CFG.Anim and UICFG.AnimPulse and circleOn then
 				if not fovSc then fovSc = new("UIScale", {Scale = 0.6}, fov) end
@@ -4490,7 +4496,7 @@ local function buildAim(page, api)
 			fovGlow.Visible = (style == "Glow")
 			for _, ring in fovHalo do ring.f.Visible = (style == "Glow") end
 			local dashed = (style == "Dashed")
-			for _, seg in fovDash do seg.Visible = dashed end
+			for _, seg in AIM.fovDash do seg.Visible = dashed end
 			if fovGrad then fovGrad.Enabled = (style == "Gradient") end
 
 			if style == "Glow" then
@@ -4501,9 +4507,9 @@ local function buildAim(page, api)
 				fovStroke.Color = line
 				fovStroke.Thickness = math.max(1, thick * 0.8)
 				fovStroke.Transparency = math.clamp(1 - alpha * 0.55 * breathe, 0, 1)
-				fovGlowStroke.Color = line
-				fovGlowStroke.Thickness = thick * 3
-				fovGlowStroke.Transparency = math.clamp(1 - alpha * 0.85 * breathe, 0.1, 1)
+				AIM.fovGlowStroke.Color = line
+				AIM.fovGlowStroke.Thickness = thick * 3
+				AIM.fovGlowStroke.Transparency = math.clamp(1 - alpha * 0.85 * breathe, 0.1, 1)
 				for _, ring in fovHalo do
 					ring.st.Color = line
 					ring.st.Thickness = thick * (1.6 + ring.k * 1.5)
@@ -4514,7 +4520,7 @@ local function buildAim(page, api)
 				setp(fovStroke, "Transparency", 1)
 				setp(fov, "BackgroundTransparency", 1)
 				local spin = animate and (now * 0.6) or 0
-				for i, seg in fovDash do
+				for i, seg in AIM.fovDash do
 					local ang = ((i - 1) / DASH_N) * math.pi * 2 + spin
 					seg.Size = O(math.max(3, thick * 4), math.max(1.5, thick))
 					seg.Position = U(0.5 + math.cos(ang) * 0.5, 0.5 + math.sin(ang) * 0.5)
@@ -4551,10 +4557,10 @@ local function buildAim(page, api)
 		else
 			fovGlow.Visible = false
 			for _, ring in fovHalo do ring.f.Visible = false end
-			for _, seg in fovDash do seg.Visible = false end
+			for _, seg in AIM.fovDash do seg.Visible = false end
 			if fovGrad then fovGrad.Enabled = false end
 		end
-		local showMark = editing or (A.Enabled and A.ShowFOV and not A.CircleFollow) or now < testUntil
+		local showMark = editing or (A.Enabled and A.ShowFOV and not A.CircleFollow) or now < AIM.testUntil
 		aimMark.Visible = showMark
 		if showMark then aimMark.Position = S(SP.aim.X / v.X, SP.aim.Y / v.Y) end
 		-- Маркер «дышит», когда наводка держит цель: видно, что aimbot реально за кем-то следит.
@@ -4564,22 +4570,22 @@ local function buildAim(page, api)
 			markHot = hasT
 			if CFG.Anim and UICFG.AnimPulse then
 				tween(aimMark, TWEEN.ui, {Size = O(hasT and 22 or 16, hasT and 22 or 16)})
-				tween(markBar1, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
-				tween(markBar2, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
+				tween(AIM.markBar1, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
+				tween(AIM.markBar2, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
 			else
 				aimMark.Size = O(hasT and 22 or 16, hasT and 22 or 16)
-				markBar1.BackgroundColor3, markBar2.BackgroundColor3 = hasT and C.Acc or C.On, hasT and C.Acc or C.On
+				AIM.markBar1.BackgroundColor3, AIM.markBar2.BackgroundColor3 = hasT and C.Acc or C.On, hasT and C.Acc or C.On
 			end
 		end
 	end
 
 	-- Проверка на устройстве: кнопка Check coordinates (вкладка Aim)
 	runSelfTest = function()
-		testUntil = os.clock() + 3
+		AIM.testUntil = os.clock() + 3
 		if fovSc then fovSc.Scale = 1 end -- проверка измеряет реальный радиус: анимация появления не должна её сбивать
 		task.spawn(function()
 			task.wait(0.3) -- пусть цикл отрисует круг и движок пересчитает AbsolutePosition
-			if not updateSpace() then selfLabel.Text = "Экран ещё не готов, повтори" return end
+			if not updateSpace() then AIM.selfLabel.Text = "Экран ещё не готов, повтори" return end
 			local v = SP.vp
 			local ray = camera:ViewportPointToRay(SP.aim.X, SP.aim.Y)
 			local back = camera:WorldToViewportPoint(ray.Origin + ray.Direction.Unit * 100)
@@ -4594,7 +4600,7 @@ local function buildAim(page, api)
 				"%s\nэкран %.0f×%.0f, оверлей %.0f×%.0f (Δ%.1f px), проекция aim Δ%.1f px\nкруг: центр Δ%.1f px, радиус %.1f px (Δ%.1f), aim %.0f,%.0f",
 				ok and "OK: круг и область совпадают" or "ОШИБКА: есть расхождение", v.X, v.Y, ov.X, ov.Y, eOv, eProj,
 				eCenter, SP.fov, eRad, SP.aim.X, SP.aim.Y)
-			selfLabel.Text, selfLabel.TextColor3 = text, ok and C.On or C.Off
+			AIM.selfLabel.Text, AIM.selfLabel.TextColor3 = text, ok and C.On or C.Off
 			print("[Enkaisy] " .. text:gsub("\n", " | "))
 		end)
 	end
@@ -4602,7 +4608,7 @@ local function buildAim(page, api)
 	setEditing = function(s)
 		if s == editing then return end
 		editing = s
-		editLayer.Visible, editBar.Visible = s, s
+		AIM.editLayer.Visible, editBar.Visible = s, s
 		dragInput = nil
 		currentTarget = nil
 		refreshAll(false)
@@ -4674,7 +4680,7 @@ local function buildAim(page, api)
 		local t = os.clock()
 		if t - smokeT > 0.5 then -- список облаков обновляем раз в 0.5с, а не на каждую цель
 			smokeT = t
-			local clouds = CS:GetTagged("SmokeCloud")
+			local clouds = AIM.CS:GetTagged("SmokeCloud")
 			smokeN, smokeRP.FilterDescendantsInstances = #clouds, clouds
 		end
 		if smokeN == 0 then return false end
@@ -4715,21 +4721,21 @@ local function buildAim(page, api)
 	end
 
 	-- ===== Multipoint: ищем видимую точку по краям хитбокса (голова, плечи) =====
-	local scanCache = setmetatable({}, {__mode = "k"})
-	local GROUPS = {
+	AIM.scanCache = setmetatable({}, {__mode = "k"})
+	AIM.GROUPS = {
 		Head = {"Head"},
 		Torso = {"UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"},
 		Arms = {"LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftHand", "RightHand", "Left Arm", "Right Arm"},
 		Legs = {"LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg", "LeftFoot", "RightFoot", "Left Leg", "Right Leg"},
 	}
-	local GROUP_ORDER = {{"Head", "MPHead"}, {"Torso", "MPTorso"}, {"Arms", "MPArms"}, {"Legs", "MPLegs"}}
-	local EDGES = {{0, 0, 0}, {0.4, 0, 0}, {-0.4, 0, 0}, {0, 0.4, 0}, {0, -0.4, 0}}
-	local CENTER = {{0, 0, 0}}
+	AIM.GROUP_ORDER = {{"Head", "MPHead"}, {"Torso", "MPTorso"}, {"Arms", "MPArms"}, {"Legs", "MPLegs"}}
+	AIM.EDGES = {{0, 0, 0}, {0.4, 0, 0}, {-0.4, 0, 0}, {0, 0.4, 0}, {0, -0.4, 0}}
+	AIM.CENTER = {{0, 0, 0}}
 	-- порядок: выбранная часть (центр + края), затем включённые запасные части тела.
 	-- Если выбрана голова, а видны только ноги и включено "MP legs", прицел уйдёт на ноги.
 	local function scanPoint(model, part)
 		local now = os.clock()
-		local c = scanCache[model]
+		local c = AIM.scanCache[model]
 		if c and c.part == part and now - c.t < 0.05 then return c.pos end
 		local origin = eyePos()
 		local pts = {}
@@ -4737,11 +4743,11 @@ local function buildAim(page, api)
 			local cf, sz = p.CFrame, p.Size
 			for _, o in offsets do table.insert(pts, cf * Vector3.new(o[1] * sz.X, o[2] * sz.Y, o[3] * sz.Z)) end
 		end
-		add(part, A.MPEdges and EDGES or CENTER)
-		for _, g in GROUP_ORDER do
+		add(part, A.MPEdges and AIM.EDGES or AIM.CENTER)
+		for _, g in AIM.GROUP_ORDER do
 			if A[g[2]] then
-				local offs = (A.MPEdges and (g[1] == "Head" or g[1] == "Torso")) and EDGES or CENTER
-				for _, name in GROUPS[g[1]] do
+				local offs = (A.MPEdges and (g[1] == "Head" or g[1] == "Torso")) and AIM.EDGES or AIM.CENTER
+				for _, name in AIM.GROUPS[g[1]] do
 					local p = model:FindFirstChild(name)
 					if p and p:IsA("BasePart") and p ~= part then add(p, offs) end
 				end
@@ -4764,7 +4770,7 @@ local function buildAim(page, api)
 				break
 			end
 		end
-		scanCache[model] = {t = now, part = part, pos = found}
+		AIM.scanCache[model] = {t = now, part = part, pos = found}
 		return found
 	end
 
@@ -4772,7 +4778,7 @@ local function buildAim(page, api)
 	-- Очередь: A.PartOrder + A.PartOn; основная часть = первая включённая (A.TargetPart всегда равен ей).
 	-- Часть "доступна", если существует и (при Wall check) видна: тогда при закрытой основной берётся следующая.
 	-- Выбор кэшируется на 0.06 с на модель (лучи не летят на каждый вызов); любая смена настроек сбрасывает кэш (NX.gen).
-	local partState = setmetatable({}, {__mode = "k"})
+	AIM.partState = setmetatable({}, {__mode = "k"})
 	local function slotPart(model, slot)
 		for _, n in ipairs(V4.ALIAS[slot]) do
 			local p = RIG.part(model, n)
@@ -4790,7 +4796,7 @@ local function buildAim(page, api)
 	end
 	NX.resolve = function(model)
 		local now = os.clock()
-		local st = partState[model]
+		local st = AIM.partState[model]
 		if st and st.gen ~= NX.gen then st = nil end
 		if st and now - st.t < 0.06 and st.part and st.part.Parent then return st.part end
 		local fb = A.PartFallback
@@ -4829,7 +4835,7 @@ local function buildAim(page, api)
 		end
 		st = prev or {}
 		st.gen, st.t, st.part, st.rank = NX.gen, now, chosen, chosenRank
-		partState[model] = st
+		AIM.partState[model] = st
 		return chosen
 	end
 
@@ -4837,15 +4843,15 @@ local function buildAim(page, api)
 	-- Скорость и ускорение берутся из ИЗМЕНЕНИЯ ПОЗИЦИИ (сглаженно), а не только из AssemblyLinearVelocity:
 	-- у чужих персонажей на клиенте она часто равна 0 или шумит (CFrame-движение, интерполяция) — поэтому предикт «не работал».
 	-- Холодный старт (цель ещё не отслеживалась) берёт скорость движка; дальше работает трекер.
-	local trk = setmetatable({}, {__mode = "k"})
+	AIM.trk = setmetatable({}, {__mode = "k"})
 	local function trackPart(part)
 		local now, pos = os.clock(), part.Position
-		local k = trk[part]
+		local k = AIM.trk[part]
 		local ev = part.AssemblyLinearVelocity
 		if ev.Magnitude > 150 then ev = Vector3.zero end
 		if not k then
 			k = {p = pos, t = now, v = ev, a = Vector3.zero, warm = false, hist = {{t = now, p = pos}}}
-			trk[part] = k
+			AIM.trk[part] = k
 			return k
 		end
 		local dt = now - k.t
@@ -4919,7 +4925,7 @@ local function buildAim(page, api)
 	-- ВАЖНО: сервер проверяет попадание МГНОВЕННО вдоль всей дуги пули (цель за время полёта не двигается),
 	-- поэтому на время полёта цель опережать нельзя — это давало перелёт. Упреждение = только задержка сети (getLead),
 	-- а время полёта нужно лишь для компенсации падения пули. Для игр с настоящими снарядами поставь true.
-	local ADV_FLIGHT_LEAD = false
+	AIM.ADV_FLIGHT_LEAD = false
 	local function advancedPoint(part, pos)
 		local k = trackPart(part)
 		local vel = k.v
@@ -4940,7 +4946,7 @@ local function buildAim(page, api)
 		local strafeK = 1
 		if flatV.Magnitude > 3 and flatA.Magnitude > 12 and flatA.Unit:Dot(flatV.Unit) < -0.3 then strafeK = 0.55 end
 		local g, lead = Workspace.Gravity, getLead() * (A.LeadMul / 100)
-		local useFlight = ADV_FLIGHT_LEAD and hasSpeed
+		local useFlight = AIM.ADV_FLIGHT_LEAD and hasSpeed
 		local target = pos
 		for _ = 1, useFlight and 3 or 1 do
 			local flight = useFlight and (target - origin).Magnitude / speed or 0
@@ -5077,7 +5083,7 @@ local function buildAim(page, api)
 	-- Размеры хитбоксов в студах (0 = выключено). Фактическое значение режется лимитом сервера (атрибуты ремоута).
 	local function hbPads()
 		if not A.Hitbox and not A.HeadHitbox then return 0, 0 end
-		local fr = fireRemote or ReplicatedStorage:FindFirstChild(REMOTE_NAME)
+		local fr = fireRemote or GLB.ReplicatedStorage:FindFirstChild(GLB.REMOTE_NAME)
 		local capB = fr and fr:GetAttribute("HitboxMaxBody")
 		local capH = fr and fr:GetAttribute("HitboxMaxHead")
 		if type(capB) ~= "number" then capB = HB_BODY_MAX end
@@ -5430,7 +5436,7 @@ local function buildAim(page, api)
 	-- ===== Silent Aim: направление выстрела меняется только в момент выстрела, камера не двигается =====
 	-- SilentFOV в пикселях, а сервер режет отклонение по углу: переводим угол сервера в px
 	local function silentRadius()
-		local fr = fireRemote or ReplicatedStorage:FindFirstChild(REMOTE_NAME)
+		local fr = fireRemote or GLB.ReplicatedStorage:FindFirstChild(GLB.REMOTE_NAME)
 		local maxDeg = fr and fr:GetAttribute("SilentMaxAngle")
 		if type(maxDeg) ~= "number" then maxDeg = 25 end
 		local fovRad = math.rad(math.clamp(camera.FieldOfView, 1, 120))
@@ -5472,7 +5478,7 @@ local function buildAim(page, api)
 	end
 
 	-- встроенное оружие: Tool с атрибутом Damage
-	local hooked = setmetatable({}, {__mode = "k"})
+	AIM.hooked = setmetatable({}, {__mode = "k"})
 	local lastSent, shotsSent = setmetatable({}, {__mode = "k"}), 0 -- [Tool] = время последнего выстрела
 	local function shoot(tool, forcePart)
 		bindRemote()
@@ -5522,8 +5528,8 @@ local function buildAim(page, api)
 	end
 	fireTool = shoot
 	local function hookTool(inst)
-		if hooked[inst] or not inst:IsA("Tool") then return end
-		hooked[inst] = true
+		if AIM.hooked[inst] or not inst:IsA("Tool") then return end
+		AIM.hooked[inst] = true
 		connect(inst.Activated, function()
 			if inst:GetAttribute("Damage") ~= nil then shoot(inst) end
 		end)
@@ -5532,8 +5538,8 @@ local function buildAim(page, api)
 		for _, child in container:GetChildren() do hookTool(child) end
 		connect(container.ChildAdded, hookTool)
 	end
-	local backpack = LP:FindFirstChildOfClass("Backpack")
-	if backpack then watch(backpack) end
+	AIM.backpack = LP:FindFirstChildOfClass("Backpack")
+	if AIM.backpack then watch(AIM.backpack) end
 	if LP.Character then watch(LP.Character) end
 	connect(LP.CharacterAdded, watch)
 	connect(LP.ChildAdded, function(child) if child:IsA("Backpack") then watch(child) end end)
@@ -5574,7 +5580,7 @@ local function buildAim(page, api)
 		drawOverlay(now)
 		if editing then
 			paintEdit()
-			xyLabel.Text = string.format("экран %.0f×%.0f | aim: %.0f, %.0f | круг: %.0f, %.0f (%s)",
+			AIM.xyLabel.Text = string.format("экран %.0f×%.0f | aim: %.0f, %.0f | круг: %.0f, %.0f (%s)",
 				SP.vp.X, SP.vp.Y, SP.aim.X, SP.aim.Y, SP.circle.X, SP.circle.Y, A.CircleFollow and "связан" or "отвязан")
 			-- панель не уходит за экран
 			local ap, asz, vs, bp = editBar.AbsolutePosition, editBar.AbsoluteSize, og.AbsoluteSize, editBar.Position
@@ -5748,7 +5754,7 @@ local function buildAim(page, api)
 
 	return {
 		overlay = og,
-		preview = function(on) previewFov = on and true or false end,
+		preview = function(on) AIM.previewFov = on and true or false end,
 		cancelEdit = function() if editing then setEditing(false) end end,
 		refresh = function()
 			currentTarget = nil
@@ -5766,7 +5772,7 @@ local function buildAim(page, api)
 			table.clear(aconns)
 			clearHbVis()
 			og:Destroy()
-			probeGui:Destroy()
+			AIM.probeGui:Destroy()
 			quick:Destroy()
 		end,
 	}
@@ -5775,7 +5781,7 @@ end
 -- ===== Загрузка фона-картинки (общая для окна меню и окна ключа) =====
 -- ID / rbxassetid:// / ссылка roblox.com работают везде. Прямая ссылка (png/jpg) скачивается через request/HttpGet,
 -- сохраняется writefile и показывается через getcustomasset — это есть только в окружениях, где эти функции доступны.
-local CP = game:GetService("ContentProvider")
+GLB.CP = game:GetService("ContentProvider")
 local function trimS(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function bgHttp(url)
 	local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
@@ -5803,7 +5809,7 @@ local function bgFetch(src)
 	end
 	if not src:match("^https?://") then return nil, "Не похоже на ссылку или ID" end
 	local getAsset = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset)
-	if not (canFile and getAsset) then
+	if not (GLB.canFile and getAsset) then
 		return nil, "Прямые ссылки работают только где есть writefile и getcustomasset. Используй ID: rbxassetid://12345 или просто число."
 	end
 	local base = "TH_bg_" .. hashKey(src)
@@ -6009,7 +6015,7 @@ local function startMain()
 		Size = O(44, 44), AnchorPoint = V2(1, 0),
 		Position = U(1, -16, 0, 80), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Visible = false,
 	}, gui)
-	floatScales[new("UIScale", {Scale = UICFG.UIScale}, openBtn)] = true
+	GLB.floatScales[new("UIScale", {Scale = UICFG.UIScale}, openBtn)] = true
 	local _, openStroke = logo(44, openBtn)
 	hoverable(openBtn, openStroke, {base = OUT.Window})
 
@@ -6033,7 +6039,7 @@ local function startMain()
 	table.insert(bgFrames, titleBar)
 	local espDot = Skin.badge(titleBar, "ESP", 138, 46, true)
 	local aimDot = Skin.badge(titleBar, "AIM", 190, 46, true)
-	Skin.badge(titleBar, "v" .. BUILD .. " · Mobile", 242, 78)
+	Skin.badge(titleBar, "v" .. GLB.BUILD .. " · Mobile", 242, 78)
 	local chrome = {}
 	chrome.min = Skin.iconButton(titleBar, "Min", 66)
 	chrome.max, chrome.maxIcon = Skin.iconButton(titleBar, "Max", 36)
@@ -6440,7 +6446,7 @@ local function startMain()
 	outline(segInd, OUT.Hover)
 	local segBtns = {}
 	local function paintSeg(anim)
-		local idx = table.find(MODES, CFG.Mode) or 1
+		local idx = table.find(GLB.MODES, CFG.Mode) or 1
 		local pos = U((idx - 1) / 3, 3, 0, 3)
 		if anim then tween(segInd, fast, {Position = pos}) else segInd.Position = pos end
 		for i, b in segBtns do
@@ -6448,7 +6454,7 @@ local function startMain()
 		end
 	end
 	table.insert(repaints, function() paintSeg(false) end)
-	for i, m in MODES do
+	for i, m in GLB.MODES do
 		segBtns[i] = new("TextButton", {
 			Size = U(1 / 3, 0, 1, 0), Position = U((i - 1) / 3, 0, 0, 0), BackgroundTransparency = 1,
 			Text = m, FontFace = GB, TextSize = 12, TextColor3 = C.Mut, AutoButtonColor = false, ZIndex = 2,
@@ -6794,7 +6800,7 @@ local function startMain()
 			colorTabSel(t, n == pcur)
 		end
 	end
-	for i, n in PCOLS do
+	for i, n in GLB.PCOLS do
 		pctab[n] = colorTab(ctabs, n, U(1 / 3, -4, 1, 0), i, function() pcur = n; pickRefresh() end)
 	end
 	local function getPC(edit)
@@ -6960,13 +6966,13 @@ local function startMain()
 		{"FPS / ping", "ShowStats", function() statsCard.Visible = CFG.ShowStats end},
 	}
 
-	if canFps then
+	if GLB.canFps then
 		table.insert(perfChips, {"FPS unlock", "FpsUnlock", function() paintCap(); applyFps() end})
 	end
 	makeChips(chipGrid(pv2, 1), perfChips)
-	if canFps then
+	if GLB.canFps then
 		local _, p = cycleCard(pv2, "FPS cap", 2, function() return CFG.FpsCap == 0 and "Max" or CFG.FpsCap end, function()
-			CFG.FpsCap = FPS_STEPS[(table.find(FPS_STEPS, CFG.FpsCap) or 1) % #FPS_STEPS + 1]
+			CFG.FpsCap = GLB.FPS_STEPS[(table.find(GLB.FPS_STEPS, CFG.FpsCap) or 1) % #GLB.FPS_STEPS + 1]
 			applyFps()
 		end, function() return CFG.FpsUnlock end)
 		paintCap = p
@@ -7046,9 +7052,9 @@ local function startMain()
 		bgImg.ScaleType = FIT_TYPES[UICFG.BgImgFit] or Enum.ScaleType.Crop
 		applyGlass()
 		applyRadius()
-		for s in floatScales do
+		for s in GLB.floatScales do
 			if not s.Parent then
-				floatScales[s] = nil
+				GLB.floatScales[s] = nil
 			elseif not (s:GetAttribute("AnimOwned") and CFG.Anim and UICFG.AnimPulse) then
 				s.Scale = UICFG.UIScale -- у HUD масштабом владеет анимация появления, иначе пружина сбивается
 			end
@@ -7056,11 +7062,11 @@ local function startMain()
 	end
 	local function paintAccents()
 		applyAccent()
-		for inst, props in accents do
+		for inst, props in GLB.accents do
 			if inst.Parent then
 				for prop, token in props do inst[prop] = C[token] end
 			else
-				accents[inst] = nil
+				GLB.accents[inst] = nil
 			end
 		end
 	end
@@ -7088,7 +7094,7 @@ local function startMain()
 	local function setTheme(name)
 		if not THEMES[name] then return end
 		local old = {}
-		for _, k in PAL do old[C[k]:ToHex()] = k end
+		for _, k in GLB.PAL do old[C[k]:ToHex()] = k end
 		UICFG.Theme = name
 		applyPalette(name)
 		local function swap(inst, prop)
@@ -7214,7 +7220,7 @@ local function startMain()
 			local prev, loaded = bgAsset, false
 			if asset then
 				bgImg.Image, bgImg.Visible = asset, true
-				pcall(CP.PreloadAsync, CP, {bgImg})
+				pcall(GLB.CP.PreloadAsync, GLB.CP, {bgImg})
 				if my ~= bgToken or not alive then return end
 				loaded = bgImg.IsLoaded
 				if not loaded then err = "Картинка не загрузилась: проверь ID или ссылку" end
@@ -8112,10 +8118,10 @@ end
 local function keyScreen(done)
 	local KW, KH = 406, 302
 	pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end) -- центр = точный центр экрана, без отступа выреза
-	blur = new("BlurEffect", {Size = 0}, Lighting)
-	tween(blur, slow, {Size = KEY_BLUR})
+	blur = new("BlurEffect", {Size = 0}, GLB.Lighting)
+	tween(blur, slow, {Size = GLB.KEY_BLUR})
 	local dim = new("Frame", {Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 1, Active = true, ZIndex = 10}, gui)
-	tween(dim, slow, {BackgroundTransparency = KEY_DIM})
+	tween(dim, slow, {BackgroundTransparency = GLB.KEY_DIM})
 	local card = new("CanvasGroup", {
 		Name = "KeyWindow", Size = O(KW, KH), AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0),
 		BackgroundColor3 = C.Win, GroupTransparency = 1,
@@ -8131,7 +8137,7 @@ local function keyScreen(done)
 	tween(card, slow, {GroupTransparency = 0}) tween(sc, slow, {Scale = keyScale()})
 	local closed = false
 	local header = Skin.header(card)
-	Skin.badge(header, "v" .. BUILD .. " · Mobile", 138, 78)
+	Skin.badge(header, "v" .. GLB.BUILD .. " · Mobile", 138, 78)
 	local xBtn = Skin.iconButton(header, "Close", 6)
 	local keyIcon = icon("Key", card, 18, C.W)
 	keyIcon.Position = O(24, Skin.Header + 23)
@@ -8171,7 +8177,7 @@ local function keyScreen(done)
 				local asset = bgFetch(src)
 				if not asset or closed or not img.Parent then return end
 				img.Image, img.Visible = asset, true
-				pcall(CP.PreloadAsync, CP, {img})
+				pcall(GLB.CP.PreloadAsync, GLB.CP, {img})
 				if closed or not img.Parent then return end
 				if not img.IsLoaded then img.Visible, img.Image = false, "" return end
 				tween(img, slow, {ImageTransparency = UICFG.BgImgAlpha})
@@ -8300,7 +8306,7 @@ stop = function()
 	_G.TH_Stop = nil
 	plrHook = nil
 	statusFn = nil
-	if canFps then pcall(setfpscap, 60) end
+	if GLB.canFps then pcall(setfpscap, 60) end
 	for _, c in conns do c:Disconnect() end
 	for _, c in npcConn do c:Disconnect() end
 	table.clear(npcConn)
