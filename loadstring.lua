@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.6.5: САМОПРОВЕРКА В ИГРЕ: кнопка «Самопроверка подсветки» в ESP — создаёт настоящую цель, прогоняет рабочий цикл подсветки и печатает отчёт [OK]/[!!] на экране (консоль не нужна); тесты test_selftest.py; документация
 -- v4.6.4: СВЕРКА С API ROBLOX: tools/roblox_api_check.py (классы, свойства, перечисления по официальному дампу клиента) + тест; обновлена документация про границы автоматизации
 -- v4.6.3: АВТОМАТИЗАЦИЯ: tools/check_all.sh (5 проверок одной командой), tools/release.sh (выпуск одной командой), CI на GitHub, pre-commit хук, docs/AUTOMATION.md
 --
@@ -144,7 +145,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.6.4" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.6.5" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2607,6 +2608,7 @@ helpUI.info = {
  ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
 
  -- ===== ESP: объяснения к настройкам подсветки =====
+ ["Самопроверка подсветки"] = {"Создаёт тестовую цель рядом с вами и показывает отчёт: виден ли на ней Highlight. Если в отчёте [!!] — ищите причину там, а не гадайте.", "Spawns a test target near you and prints a report: whether its Highlight is actually visible. Any [!!] line tells you exactly what to fix."},
  ["Fill strength"] = {"Плотность внутренней заливки Highlight. Ниже — лучше виден материал тела.", "Density of the Highlight fill. Lower values show the body material better."},
  ["Transparency"] = {"Дополнительная прозрачность тела поверх прозрачности материала.", "Extra body transparency on top of the material's own transparency."},
  ["Animation speed"] = {"Общая скорость анимации: перелив цвета, узор, эффекты.", "Overall animation speed: color cycling, pattern, effects."},
@@ -5690,6 +5692,128 @@ CHCTX.XL, CHCTX.GB, CHCTX.GM, CHCTX.GR = XL, GB, GM, GR
 CHCTX.updAll, CHCTX.esp = updAll, esp
 CHCTX.refreshHL = refreshHL
 
+-- ===== САМОПРОВЕРКА В ИГРЕ =====
+-- Зачем: все остальные проверки статические. Они доказывают, что скрипт загрузится и
+-- настройки доходят до кода, но НЕ доказывают, что Highlight реально виден на экране.
+-- Здесь создаётся тестовая цель в мире, прогоняется через НАСТОЯЩИЙ путь подсветки
+-- (allowed -> dohl -> refreshHL) и результат печатается прямо на экране, без консоли.
+-- Ничего не остаётся после прогона: тестовая модель удаляется.
+function GLB.selfTest()
+	local out = {}
+	local function log(ok, text)
+		table.insert(out, (ok and "[OK] " or "[!!] ") .. text)
+	end
+	-- 1) окружение: подсветка может быть выключена или отфильтрована — тогда «пусто» это норма
+	log(CFG.On, CFG.On and "ESP включён" or "ESP ВЫКЛЮЧЕН (тумблер Enable ESP)")
+	log(true, "режим цели: " .. tostring(CFG.Mode))
+	log(not (CFG.MaxDist and CFG.MaxDist <= 0), "ESP max distance = " .. tostring(CFG.MaxDist))
+	log(not (CFG.LimitN and CFG.LimitN <= 0), "лимит целей = " .. tostring(CFG.LimitN))
+
+	-- 2) настоящая цель: человечек в 10 шагах от игрока, проходит обычные фильтры
+	local probe = Instance.new("Model")
+	probe.Name = "EnkaisySelfTest"
+	do
+		local cam = Workspace.CurrentCamera
+		local base = (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart"))
+			or (cam and cam.CFrame.Position) or Vector3.new(0, 0, 0)
+		local torso = Instance.new("Part")
+		torso.Name = "HumanoidRootPart"
+		torso.Size, torso.Anchored, torso.CanCollide = Vector3.new(2, 2, 1), true, false
+		torso.CFrame = CFrame.new(base + Vector3.new(0, 0, -10))
+		torso.Parent = probe
+		local hum = Instance.new("Humanoid")
+		hum.Parent = probe
+		probe.PrimaryPart = torso
+	end
+
+	-- 3) провод через настоящий путь подсветки. Если цель не проходит фильтры (режим,
+	--    дистанция, лимит), временно заводим её в список как NPC — но обязательно вернём
+	--    всё как было, иначе тест изменит состояние игры.
+	local savedNpc = npcs[probe]
+	local savedMode = CFG.Mode
+	if not CFG.On then CFG.On = true end
+	if CFG.Mode == "Players" then CFG.Mode = "Both" end
+	probe.Parent = Workspace
+	npcs[probe] = true
+	local okA, errA = pcall(upd, probe, nil)
+	log(okA, okA and "цель прошла цикл подсветки" or ("ошибка цикла: " .. tostring(errA)))
+	local got = esp[probe]
+	log(got ~= nil, got and "цель в списке подсветки" or "цель НЕ попала в список")
+	if got and got.h then
+		local h = got.h
+		log(h.Adornee == probe, "Highlight привязан к цели")
+		log(h.Parent ~= nil, "Highlight в мире (" .. tostring(h.Parent and h.Parent.Name) .. ")")
+		local fill = h.FillTransparency or 1
+		local outline = h.OutlineTransparency or 1
+		log(fill < 0.999 or outline < 0.999,
+			string.format("Highlight видим: заливка %.2f, контур %.2f", fill, outline))
+	else
+		log(false, "Highlight не создан — вот почему на экране пусто")
+	end
+
+	-- 4) уборка: ни модель, ни подсветка, ни изменённые настройки не остаются
+	pcall(unhl, probe)
+	if savedNpc == nil then npcs[probe] = nil else npcs[probe] = savedNpc end
+	CFG.Mode = savedMode
+	probe:Destroy()
+	log(esp[probe] == nil, "после теста подсветка снята")
+
+	-- 5) отчёт на экран
+	local title = "САМОПРОВЕРКА · v" .. tostring(GLB.BUILD)
+	local body = table.concat(out, "\n")
+	warn("[Enkaisy] " .. title .. "\n" .. body)
+	if gui then
+		local holder = gui:FindFirstChild("SelfTest")
+		if holder then holder:Destroy() end
+		local frame = Instance.new("Frame")
+		frame.Name = "SelfTest"
+		frame.Size = UDim2.fromOffset(340, 40 + #out * 18)
+		frame.Position = UDim2.fromScale(0.5, 0.5)
+		frame.AnchorPoint = Vector2.new(0.5, 0.5)
+		frame.BackgroundColor3 = Color3.fromRGB(14, 15, 20)
+		frame.BackgroundTransparency = 0.05
+		frame.BorderSizePixel = 0
+		frame.ZIndex = 300
+		frame.Parent = gui
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 12)
+		corner.Parent = frame
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(255, 138, 46)
+		stroke.Thickness = 1
+		stroke.Parent = frame
+		local head = Instance.new("TextLabel")
+		head.Size = UDim2.new(1, -20, 0, 24)
+		head.Position = UDim2.fromOffset(10, 8)
+		head.BackgroundTransparency = 1
+		head.Text = title
+		head.TextColor3 = Color3.fromRGB(255, 138, 46)
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.TextSize = 14
+		head.Font = Enum.Font.GothamBold
+		head.ZIndex = 301
+		head.Parent = frame
+		for i, line in ipairs(out) do
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.new(1, -20, 0, 16)
+			lbl.Position = UDim2.fromOffset(10, 30 + (i - 1) * 18)
+			lbl.BackgroundTransparency = 1
+			lbl.Text = line
+			lbl.TextWrapped = true
+			lbl.TextXAlignment = Enum.TextXAlignment.Left
+			lbl.TextSize = 11
+			lbl.Font = Enum.Font.Code
+			lbl.TextColor3 = line:sub(1, 4) == "[OK]" and Color3.fromRGB(140, 230, 160) or Color3.fromRGB(255, 120, 120)
+			lbl.ZIndex = 301
+			lbl.Parent = frame
+		end
+		task.delay(12, function()
+			if frame and frame.Parent then frame:Destroy() end
+		end)
+	end
+	return body
+end
+
 local function trimS(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function bgHttp(url)
 	local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
@@ -6427,6 +6551,17 @@ local function startMain()
 	slider("Limit count", "LimitN", 1, 31)
 	-- Min dist: ближе этого ESP не рисуется — вплотную рамка и подписи только мешают
 	slider("Min distance (studs)", "MinDist", 0, 500, false, function(v) return v .. " m" end)
+
+	-- Самопроверка: на телефоне консоли нет, поэтому кнопка здесь. Проверяет, что подсветка
+	-- реально создаётся для настоящей цели, и печатает отчёт на экране.
+	do
+		local btn = Skin.setting(pm, 12.5, true)
+		Skin.copy(btn, "Самопроверка подсветки", "Создаёт тестовую цель и показывает, виден ли на ней Highlight", 80)
+		on(btn.Activated, function()
+			local ok, res = pcall(GLB.selfTest)
+			if not ok and notify then notify("Самопроверка", tostring(res), true) end
+		end)
+	end
 
 	-- фильтры целей: рядом с размерами, потому что тоже влияют только на подсветку
 	sectionLabel(pm, "ФИЛЬТРЫ", 13)
