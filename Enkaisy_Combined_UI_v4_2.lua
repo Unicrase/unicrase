@@ -28,6 +28,8 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.6.1: после удаления Chams убран последний хвост — неиспользуемая переменная chWarn.
+--         Скрипт проверен на отсутствие обращений к удалённым функциям (тест «CHAMS удалён»).
 -- v4.6.0: ПАПКА CHAMS УДАЛЕНА ПОЛНОСТЬЮ по просьбе пользователя:
 --         вкладка CHAMS, панель пресетов/материалов/узоров/эффектов, движок (материал тела,
 --         текстуры, узоры, свет, частицы, обводка), старые стили подсветки (Outline/Chrome/Lava…)
@@ -135,7 +137,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.6.0" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.6.1" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -503,7 +505,7 @@ TC = {
 }
 function TC.put(side, c3) -- один цвет на все элементы стороны
 	local h, s, v = c3:ToHSV()
-	for _, e in TC.Elems do col["TC" .. side .. e] = {h = h, s = s, v = v} end
+	for _, e in ipairs(TC.Elems) do col["TC" .. side .. e] = {h = h, s = s, v = v} end
 end
 function TC.sync() -- имя пары = Custom, если Friendly / Enemy пресеты не образуют готовую пару
 	CFG.TcPair = "Custom"
@@ -2343,7 +2345,6 @@ local function scanModels()
 end
 
 local lastRank, lastChk, lastLbl, lastWork = 0, 0, 0, 0
-local chWarn = false -- ошибка Chams сообщается один раз, а не каждый кадр
 local function setp(o, k, v) if o[k] ~= v then o[k] = v end end
 local function frame()
 	local now = os.clock()
