@@ -228,9 +228,11 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("l.lbl.AbsoluteSize.X", intro)
         # серебро + свет из глубины + искры с блеском
         self.assertIn("ColorSequenceKeypoint.new(0.00, SILVER_TOP)", intro)
-        self.assertIn('Name = "Beam"', intro)
+        self.assertIn('Name = "Ray"', intro)
+        self.assertIn('Name = "Haze"', intro)
         self.assertIn('Name = "SparkGlow"', SOURCE)  # искры в тексте папок
-        self.assertIn('Name = "Beam"', intro)
+        self.assertIn('Name = "Ray"', intro)
+        self.assertIn('Name = "Haze"', intro)
         self.assertIn("sh.g.Offset = V2(0, math.clamp(math.sin(t * 1.15 + sh.shift) * 0.9, -1, 1))", intro)
         # UIOffset у градиента ограничен [-1, 1] — значение за пределами роняет кадр
         self.assertIn('if k == "Offset" and typeof(v) == "Vector2"', SOURCE)

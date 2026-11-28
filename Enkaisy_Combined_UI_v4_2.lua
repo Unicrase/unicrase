@@ -7190,24 +7190,42 @@ local function playIntro(after)
 	end
 	vignette(0, 0)
 	vignette(1, 1)
-	-- СВЕТ ИЗ ГЛУБИНЫ: пучок лучей, идущих из центра к камере. Он и есть источник блеска
-	-- на буквах и искрах: силуэты рисуются с прозрачностью по градиенту, поэтому лучи
-	-- выглядят как объёмный свет, а не как залитые треугольники.
-	local beams = {}
-	for i = 1, 9 do
-		local beam = new("Frame", {Name = "Beam" .. i, Size = U(0.9, 0, 2.6, 0), AnchorPoint = V2(0.5, 0.5),
-			Position = S(0.5, 0.5), BackgroundColor3 = C.W, BackgroundTransparency = 1,
-			Rotation = (i - 1) * 40 + 12, ZIndex = 3, Active = false}, stage)
-		new("UIGradient", {Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),      -- у центра луч прозрачный
-			NumberSequenceKeypoint.new(0.45, 0.15),
-			NumberSequenceKeypoint.new(1, 1),      -- и растворяется к краю экрана
-		}), Rotation = 90}, beam)
-		table.insert(beams, {f = beam, phase = i * 0.7, speed = 18 + (i % 3) * 6})
+	-- СВЕТ ИЗ ГЛУБИНЫ (god rays): из точки за словом бьёт объёмный взрыв света.
+	-- Источник блеска на металле и искрах — этот пучок: десятки тонких лучей, разной длины
+	-- и яркости, warm-white ядро и мягкая дымка вокруг.
+	-- Похоже на контровой свет в кадре: тёмный силуэт на фоне прожектора.
+	local LIGHT_WARM, LIGHT_GOLD = Color3.fromRGB(255, 246, 232), Color3.fromRGB(255, 198, 120)
+	local corePos = S(0.5, 0.47)
+
+	-- Дымка: несколько концентрических кругов с падающей прозрачностью — дешёвый «bloom»
+	local haze = {}
+	for i = 1, 7 do
+		local f = new("Frame", {Name = "Haze" .. i, Size = O(10, 10), AnchorPoint = V2(0.5, 0.5),
+			Position = corePos, BackgroundColor3 = i <= 3 and LIGHT_WARM or LIGHT_GOLD,
+			BackgroundTransparency = 1, ZIndex = 2, Active = false}, stage)
+		rr(f, 400)
+		table.insert(haze, {f = f, k = i / 7})
 	end
-	-- блик-«солнце»: маленький яркий диск точно в точке схода лучей
-	local core = new("Frame", {Name = "Core", Size = O(10, 10), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
-		BackgroundColor3 = C.W, BackgroundTransparency = 1, ZIndex = 3, Active = false}, stage)
+	-- Лучи: тонкие полосы, закреплённые в точке схода. Прозрачность по градиенту —
+	-- у центра луч яркий, к краю экрана полностью растворяется.
+	local rays = {}
+	for i = 1, 44 do
+		local long = (i % 4 == 0)
+		local ray = new("Frame", {Name = "Ray" .. i, Size = U(0, math.random(3, 9), 1, 0), AnchorPoint = V2(0.5, 0),
+			Position = corePos, BackgroundColor3 = (i % 3 == 0) and LIGHT_WARM or LIGHT_GOLD,
+			BackgroundTransparency = 1, Rotation = (i - 1) * (360 / 44) + math.random(-2, 2),
+			ZIndex = 3, Active = false}, stage)
+		new("UIGradient", {Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, math.random(2, 12) / 100), -- у источника почти не видно границы
+			NumberSequenceKeypoint.new(0.35, math.random(35, 55) / 100),
+			NumberSequenceKeypoint.new(1, 1),
+		}), Rotation = 90}, ray)
+		table.insert(rays, {f = ray, w0 = ray.Size.X.Offset, phase = math.random() * math.pi * 2,
+			boost = long and 1.35 or 1, twinkle = 0.6 + math.random() * 0.8})
+	end
+	-- яркое ядро в точке схода
+	local core = new("Frame", {Name = "Core", Size = O(10, 10), AnchorPoint = V2(0.5, 0.5), Position = corePos,
+		BackgroundColor3 = LIGHT_WARM, BackgroundTransparency = 1, ZIndex = 4, Active = false}, stage)
 	rr(core, 200)
 	-- свечение позади слова: акцентный круг, разгорается к сборке букв и гаснет на уходе
 	local halo = new("Frame", {Name = "Halo", Size = S(1, 1), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
@@ -7251,8 +7269,11 @@ local function playIntro(after)
 	local word = new("Frame", {Name = "Word", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
 		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
 	local letters = {}
+	-- Серебро с тёплым контровым светом: верх white-silver, низ уходит в пепел,
+	-- а средняя полоса подкрашена тёплым — отражение света из глубины.
 	local SILVER_TOP, SILVER_MID, SILVER_LOW = Color3.fromRGB(255, 255, 255),
-		Color3.fromRGB(214, 219, 228), Color3.fromRGB(138, 146, 160)
+		Color3.fromRGB(208, 214, 224), Color3.fromRGB(104, 110, 124)
+	local SILVER_WARM = Color3.fromRGB(255, 238, 210)
 	local function mkLetter(ch, color, z)
 		local o = new("TextLabel", {Size = O(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
 			AnchorPoint = V2(0.5, 0.5), Position = O(0, 0), BackgroundTransparency = 1, Text = ch,
@@ -7268,7 +7289,7 @@ local function playIntro(after)
 		local g = new("UIGradient", {Color = ColorSequence.new({
 			ColorSequenceKeypoint.new(0.00, SILVER_TOP),
 			ColorSequenceKeypoint.new(0.32, SILVER_MID),
-			ColorSequenceKeypoint.new(0.52, SILVER_TOP), -- узкая светлая полоса = блик металла
+			ColorSequenceKeypoint.new(0.52, SILVER_WARM), -- блик металла, подкрашенный светом
 			ColorSequenceKeypoint.new(0.78, SILVER_MID),
 			ColorSequenceKeypoint.new(1.00, SILVER_LOW),
 		}), Rotation = 90}, o)
@@ -7418,21 +7439,31 @@ local function playIntro(after)
 			sh.f.BackgroundTransparency = math.clamp(1 - vis * 0.9 + ease * 0.9, 0, 1)
 			sh.st.Transparency = math.clamp(1 - vis + ease, 0, 1)
 		end
-		-- СВЕТ ИЗ ГЛУБИНЫ: лучи медленно вращаются и «дышат», к моменту сборки разгораются.
-		-- Прозрачность лучей и есть источник блеска на металле и искрах.
-		local lightK = math.clamp((t - 0.2) / 1.0, 0, 1) * (1 - math.clamp((t - 2.6) / 0.5, 0, 1))
-		for _, b in beams do
-			b.f.Rotation = (b.phase * 40) + t * b.speed * 0.35
-			b.f.BackgroundTransparency = math.clamp(1 - lightK * 0.72, 0, 1)
-			local w = 0.72 + math.sin(t * 2.2 + b.phase) * 0.16
-			b.f.Size = U(w, 0, 2.6, 0)
+		-- СВЕТ: взрыв света к моменту сборки букв, затем ровное «горение» до ухода.
+		-- Яркость считается от времени, поэтому взрыв читается: вспышка → выдержка → затухание.
+		local blast = math.clamp(t / 1.15, 0, 1)          -- разгорание к сборке
+		local decay = 1 - math.clamp((t - 2.45) / 0.55, 0, 1)
+		local lightK = (0.22 + blast * 0.78) * decay
+		local diag = math.max(stage.AbsoluteSize.X, stage.AbsoluteSize.Y) * 1.45
+		-- лучи: длина и яркость дышат, у каждого свой ритм — пучок «живой», а не статичный
+		for _, r in rays do
+			r.f.Rotation = r.f.Rotation + dt * 2.2 * r.twinkle * (1.2 - blast * 0.4)
+			local len = math.floor(diag * r.boost * (0.68 + math.sin(t * r.twinkle * 2.4 + r.phase) * 0.12))
+			local wide = math.max(1, r.w0 * (0.85 + math.sin(t * 1.7 + r.phase) * 0.3))
+			r.f.Size = U(0, wide, 0, math.max(20, len))
+			r.f.BackgroundTransparency = math.clamp(1 - lightK * (0.9 + math.sin(t * 3.1 + r.phase) * 0.1), 0, 1)
 		end
-		local coreK = math.clamp((t - 0.5) / 0.7, 0, 1) * (1 - math.clamp((t - 2.55) / 0.45, 0, 1))
-		if coreK > 0 then
-			local cs = 14 + coreK * 46 + math.sin(t * 5.5) * 3
-			core.Size = O(cs, cs)
-			core.BackgroundTransparency = math.clamp(1 - coreK * 0.85, 0, 1)
+		-- дымка: мягкие круги, растут с вспышкой
+		for _, hz in haze do
+			local size = diag * (0.10 + hz.k * 0.55) * (0.9 + blast * 0.35)
+			hz.f.Size = O(math.floor(size), math.floor(size))
+			hz.f.BackgroundTransparency = math.clamp(1 - lightK * (1.05 - hz.k * 0.75), 0, 1)
 		end
+		-- ядро: маленькое и плотное, на вспышке раскрывается
+		local coreK = math.clamp((t - 0.25) / 0.85, 0, 1) * decay
+		local cs = math.floor(18 + coreK * 120 + math.sin(t * 6.5) * 4)
+		core.Size = O(cs, cs)
+		core.BackgroundTransparency = math.clamp(1 - coreK * 0.92, 0, 1)
 		-- СЕРЕБРЯНЫЙ ПЕРЕЛИВ: у каждой буквы градиент едет по вертикали с разным сдвигом —
 		-- по слову бежит волна, как по полированному металлу
 		for _, sh in shimmer do
@@ -7471,7 +7502,8 @@ local function playIntro(after)
 			sub.TextTransparency = out
 			rule.BackgroundTransparency = math.max(0.1, out)
 			bg.BackgroundTransparency = out
-			for _, b in beams do b.f.BackgroundTransparency = math.max(b.f.BackgroundTransparency, out) end
+			for _, r in rays do r.f.BackgroundTransparency = math.max(r.f.BackgroundTransparency, out) end
+			for _, hz in haze do hz.f.BackgroundTransparency = math.max(hz.f.BackgroundTransparency, out) end
 			core.BackgroundTransparency = math.max(core.BackgroundTransparency, out)
 			-- уход: буквы чуть разлетаются от центра и гаснут вместе с фоном
 			for _, l in letters do
