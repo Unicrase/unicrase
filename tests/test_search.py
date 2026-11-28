@@ -71,6 +71,25 @@ class Search(unittest.TestCase):
         self.assertNotIn("resultSigs", TEXT)
 
 
+class NavGlyphs(unittest.TestCase):
+    """В меню y растёт вниз: у стрелки вверх концы ниже середины, у стрелки вниз — наоборот."""
+
+    def glyph(self, name):
+        line = next(l for l in TEXT.splitlines() if l.strip().startswith(name + " = {paths"))
+        xs = [float(v) for v in re.findall(r"\d+\.?\d*", line.split("{{", 1)[1])]
+        return xs
+
+    def test_up_arrow_points_up(self):
+        x1, y1, xm, ym, x2, y2 = self.glyph("Up")
+        self.assertLess(ym, y1, "середина стрелки вверх должна быть выше её концов")
+        self.assertLess(ym, y2)
+
+    def test_down_arrow_points_down(self):
+        x1, y1, xm, ym, x2, y2 = self.glyph("Down")
+        self.assertGreater(ym, y1, "середина стрелки вниз должна быть ниже её концов")
+        self.assertGreater(ym, y2)
+
+
 class HelpRegistry(unittest.TestCase):
     def test_card_owner_lookup_exists(self):
         self.assertIn("helpUI.cardOwner", TEXT, "поиску нужен объект карточки для прокрутки")
