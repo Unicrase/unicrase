@@ -1,83 +1,62 @@
-"""Guards for the smoothness (плавность) system in the Aim folder.
+"""Наводка после удаления раздела SMOOTHNESS (4.7.0).
 
-Covered here:
-  * three smoothing curves (Linear / Ease / Human) with sane defaults and load-time validation;
-  * the turn speed limit, dead zone and camera follow are real settings used by the aim step;
-  * the shake noise is filtered per frame instead of jumping between samples;
-  * the settings live in the Aim page next to Smoothness/Sticky and have bilingual help.
+Пользователь попросил убрать Smooth curve, Max turn speed, Dead zone, Camera follow
+и Shake. Осталась одна настройка плавности — Smoothness (и Sticky рядом с ней).
+
+Эти тесты стерегут две вещи:
+1) удалённые настройки не вернулись ни в интерфейс, ни в движок;
+2) оставшаяся плавность работает и не превращает наводку в телепорт.
 """
 import unittest
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua"
-TEXT = SOURCE.read_text(encoding="utf-8")
+TEXT = (Path(__file__).resolve().parents[1] / "Enkaisy_Combined_UI_v4_2.lua").read_text(encoding="utf-8")
 
 
 def between(start, end):
     return TEXT.split(start, 1)[1].split(end, 1)[0]
 
 
-class SmoothingConfig(unittest.TestCase):
-    def test_defaults(self):
-        config = between("local AIMCFG = {", "local col = {")
-        self.assertIn('SmoothMode = "Linear"', config)
-        self.assertIn("SmoothMaxSpeed = 900", config)
-        self.assertIn("SmoothDeadPx = 0.6", config)
-        self.assertIn("SmoothCamFollow = 65", config)
+class RemovedSmoothingSettings(unittest.TestCase):
+    """Удалённые настройки не должны остаться нигде."""
 
-    def test_values_are_sanitised(self):
-        self.assertIn('if not table.find({"Linear", "Ease", "Human"}, AIMCFG.SmoothMode)', TEXT)
-        self.assertIn("AIMCFG.SmoothMaxSpeed = math.clamp(", TEXT)
-        self.assertIn("AIMCFG.SmoothDeadPx = math.clamp(", TEXT)
-        self.assertIn("AIMCFG.SmoothCamFollow = math.clamp(", TEXT)
+    REMOVED = [
+        ("SmoothMode", "выбор кривой (Linear/Ease/Human)"),
+        ("SmoothMaxSpeed", "предел скорости поворота"),
+        ("SmoothDeadPx", "мёртвая зона"),
+        ("SmoothCamFollow", "догон камеры"),
+        ("A.Shake", "тряска прицела"),
+        ("SMOOTHNESS — ПЛАВНОСТЬ", "раздел целиком"),
+    ]
 
-    def test_linear_is_the_default_look(self):
-        fn = between("\tlocal function smoothAlpha(angle, dt)", "\tlocal function clampStep")
-        self.assertIn('if A.SmoothMode == "Ease" then', fn)
-        self.assertIn('elseif A.SmoothMode == "Human" then', fn)
-        self.assertIn("return math.clamp(alpha, 0, 1)", fn)
+    def test_settings_are_gone(self):
+        for key, what in self.REMOVED:
+            self.assertNotIn(key, TEXT, "%s (%s) всё ещё в коде" % (key, what))
 
-
-class SmoothingLogic(unittest.TestCase):
-    def test_speed_limit_is_per_second(self):
-        fn = between("local function clampStep(step, dt)", "local function camFollow")
-        self.assertIn("math.rad(maxDeg) * math.clamp(dt, 0, 0.1)", fn)
-
-    def test_aim_step_uses_the_core(self):
-        step = between("\t\tlocal smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
-        self.assertIn("smoothAlpha(angle, dt)", step)
-        self.assertIn("clampStep(step, dt)", step)
-        self.assertIn("A.SmoothDeadPx", step)
-
-    def test_camera_follow_is_a_setting(self):
-        self.assertIn("local follow = smooth < 1 and camFollow() or 1", TEXT)
-        self.assertIn("local function camFollow()", TEXT)
-
-    def test_shake_is_filtered(self):
-        step = between("if A.Shake > 0 then", "camera.CFrame = stepCF * shakeOff")
-        self.assertIn("shakePrev = shakePrev + (", step)
-        self.assertIn("1 - math.exp(-math.clamp(dt, 0, 0.1) / 0.12)", step)
+    def test_help_lines_are_gone(self):
+        for title in ("Smooth curve", "Max turn speed, deg/s", "Dead zone, px", "Camera follow, %", "Shake (soft aim), deg"):
+            self.assertNotIn('["%s"]' % title, TEXT, "справка описывает удалённую настройку: " + title)
 
 
-class SmoothingUi(unittest.TestCase):
-    def setUp(self):
-        self.aim_ui = between("-- ===== UI папок Aim / Targets / Trigger / Hitbox / FOV =====", "-- ===== Координаты")
+class SmoothnessStillWorks(unittest.TestCase):
+    """Оставшаяся плавность: одна формула и одна настройка."""
 
-    def test_section_and_cards(self):
-        self.assertIn('section("SMOOTHNESS — ПЛАВНОСТЬ")', self.aim_ui)
-        self.assertIn('cycleKeep("Smooth curve", "SmoothMode", {"Linear", "Ease", "Human"})', self.aim_ui)
-        self.assertIn('slider("Max turn speed, deg/s", "SmoothMaxSpeed"', self.aim_ui)
-        self.assertIn('slider("Dead zone, px", "SmoothDeadPx"', self.aim_ui)
-        self.assertIn('slider("Camera follow, %", "SmoothCamFollow"', self.aim_ui)
+    def test_single_smoothing_function(self):
+        fn = between("\tlocal function smoothAlpha(angle, dt)", "\t-- ===== RCS")
+        self.assertIn("A.Smoothness", fn)
+        self.assertIn("return math.clamp", fn)
+        # никаких ветвлений по удалённым кривым
+        self.assertNotIn("SmoothMode", fn)
+        self.assertNotIn("math.noise", fn, "шум относился к удалённому Shake")
 
-    def test_sticky_still_follows_smoothness(self):
-        smooth = self.aim_ui.index('"Smoothness (higher = faster)"')
-        sticky = self.aim_ui.index('"Sticky (lower = stickier)"')
-        self.assertEqual(self.aim_ui.count("\n", smooth, sticky), 1)
+    def test_slider_and_setting_exist(self):
+        self.assertIn('slider("Smoothness (higher = faster)", "Smoothness"', TEXT)
+        self.assertIn('slider("Sticky (lower = stickier)", "Sticky"', TEXT)
+        self.assertIn("Smoothness = 0.16", TEXT)
 
-    def test_help_is_bilingual(self):
-        for name in ("Smooth curve", "Max turn speed, deg/s", "Dead zone, px", "Camera follow, %"):
-            self.assertIn(f'["{name}"] = {{', TEXT)
+    def test_aim_uses_it(self):
+        step = TEXT[TEXT.index("local step = angle * smoothAlpha(angle, dt)"):]
+        self.assertIn("CFrame.fromAxisAngle", step[:400], "поворот камеры должен применяться сразу")
 
 
 if __name__ == "__main__":

@@ -21,48 +21,16 @@ def between(start, end):
 
 
 class AimQuality(unittest.TestCase):
+    """Качество наводки после удаления SMOOTHNESS: остались Stick time и упреждение."""
+
     def test_defaults_are_neutral(self):
         config = between("local AIMCFG = {", "local col = {")
         self.assertIn("StickTime = 0.25", config)
-        self.assertIn("Shake = 0", config, "тряска по умолчанию выключена")
-        self.assertIn("LeadMul = 100", config, "множитель упреждения по умолчанию нейтральный")
+        self.assertIn("LeadMul = 100", config)
 
-    def test_sticky_holds_at_least_the_circle(self):
-        pick = between("local function pickTarget()", "local function ")
-        self.assertIn("bestDistance < SP.fov then bestDistance = SP.fov", pick,
-                      "цель у края круга не должна теряться из-за Sticky")
-        self.assertIn("os.clock() - targetSince < A.StickTime", pick)
-
-    def test_dead_zone_is_in_screen_pixels(self):
-        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
-        self.assertIn("local deadPx = smooth < 1 and A.SmoothDeadPx or 0.2", step)
-        self.assertIn("WorldToViewportPoint(aimPt)", step)
-        self.assertNotIn("math.rad(0.08)", step, "старая угловая мёртвая зона слишком грубая")
-
-    def test_camera_lag_does_not_snap(self):
-        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
-        self.assertIn("camLag = camLag:Lerp(cf, follow)", step)
-        self.assertIn("if not aimPt then camLag = nil end", TEXT, "лаг сбрасывается вместе с целью")
-
-    def test_shake_is_optional_and_applied_over_aim(self):
-        step = between("local smooth = math.clamp(A.Smoothness, 0.01, 1)\n\t\tlocal step", "end)")
-        self.assertIn("if A.Shake > 0 then", step)
-        self.assertIn("camera.CFrame = stepCF * shakeOff", TEXT)
-
-    def test_lead_multiplier_is_used(self):
-        self.assertEqual(TEXT.count("getLead() * (A.LeadMul / 100)"), 2, "простое и продвинутое упреждение")
-
-
-class SilentQuality(unittest.TestCase):
-    def test_reuses_aim_target_inside_its_radius(self):
-        silent = between("silentTarget = function(rOverride)", "\n\tend")
-        self.assertIn("if A.Enabled and currentTarget and currentTarget.Parent then", silent)
-        self.assertIn("if cm and evaluate(cm, currentTarget, rad) then return currentTarget end", silent)
-
-    def test_scores_by_real_hit_point(self):
-        silent = between("silentTarget = function(rOverride)", "\n\tend")
-        self.assertIn("local pos = getAimPoint(part)", silent)
-        self.assertIn("local score = d + dist * 0.02", silent)
+    def test_removed_quality_settings_are_gone(self):
+        for key in ("SmoothMaxSpeed", "SmoothDeadPx", "SmoothCamFollow", "A.Shake"):
+            self.assertNotIn(key, TEXT, key + " удалён, но остался в коде")
 
 
 class MultipointQuality(unittest.TestCase):

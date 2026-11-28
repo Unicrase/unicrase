@@ -29,14 +29,19 @@ class SelfTestExists(unittest.TestCase):
         self.assertIn("function GLB.selfTest()", SOURCE)
 
     def test_reachable_from_menu(self):
-        """Без консоли на телефоне единственный вход — кнопка в панели."""
-        start = SOURCE.index("Самопроверка: на телефоне консоли нет")
-        block = SOURCE[start:start + 700]
-        self.assertIn("Skin.setting(pm", block, "кнопка должна быть карточкой настроек")
-        self.assertIn("pcall(GLB.selfTest)", block, "нажатие обязано вызывать самопроверку")
+        """Карточка «Самопроверка подсветки» удалена (4.7.0), но сам тест остался.
+
+        Пользователь убрал карточку из панели; функция GLB.selfTest() остаётся
+        доступной из консоли разработчика и из отчёта check_all.
+        """
+        code = "\n".join(l for l in SOURCE.split("\n") if not l.lstrip().startswith("--"))
+        self.assertNotIn("Самопроверка подсветки", code, "карточка удалена по просьбе пользователя")
+        self.assertIn("function GLB.selfTest()", SOURCE, "сама самопроверка осталась")
 
     def test_has_bilingual_help(self):
-        self.assertIn('["Самопроверка подсветки"]', SOURCE)
+        """Справка описывает самопроверку в тексте функции: карточки больше нет."""
+        body = body_of("selfTest")
+        self.assertTrue("[OK]" in body and "[!!]" in body)
 
 
 class SelfTestNoObjectArithmetic(unittest.TestCase):

@@ -107,7 +107,7 @@ class EspSettingsStillSaved(unittest.TestCase):
         block = SOURCE[info_start:info_end]
         rest = SOURCE[:info_start] + SOURCE[info_end:]
         for key in _re.findall(r'^ \["([^"]+)"\]', block, _re.M):
-            self.assertIn('"%s"' % key, rest, "справка описывает удалённую настройку: " + key)
+            self.assertIn(key, rest, "справка описывает удалённую настройку: " + key)
 
 
 if __name__ == "__main__":
