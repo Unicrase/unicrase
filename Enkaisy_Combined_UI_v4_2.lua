@@ -31,6 +31,9 @@
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
 --       Head hitbox: размер головы берётся из Head hitbox size (0 = как тело), раньше всегда был max(тело, голова).
 --       ESP update rate теперь реально ограничивает частоту (в т.ч. 60 Гц на 120-Гц экране).
+--       RCS (Recoil Control System) в папке Aim: возврат камеры к прицелу после отдачи, сила 0–100%,
+--       плавность и режим «без отдачи» (отдача не отрисовывается). Пуля летит по прицелу ДО отдачи.
+--       Настройки видны всегда, но гаснут, пока RCS выключен.
 --       Поиск: запрос ищется по словам (порядок не важен), папки без совпадений скрываются;
 --       клик по папке прокручивает страницу к ближайшей настройке, дальше — стрелки ▲▼ справа от страницы.
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
@@ -437,6 +440,8 @@ AimMode = "Center", AimX = 0.5, AimY = 0.5,        -- точка наведен�
 CircleFollow = true, CircleX = 0.5, CircleY = 0.5, -- круг (ВИЗУАЛ): связан с областью наведения или стоит сам по себе
 ShowFOV = true, DebugHUD = true,
 Smoothness = 0.16, Prediction = 0.1, MaxDistance = 500, Sticky = 0.7,
+-- RCS (Recoil Control System): возвращает камеру к точке прицела после отдачи и (по желанию) гасит её
+Rcs = false, RcsStrength = 1, RcsSmooth = 0.35, RcsSuppress = false,
 	TargetPart = "Head", Priority = "Crosshair", VisFromHead = true,
 TargetLock = false, SilentAim = false,
 FovR = 18, SilentR = 14, LockR = 28, -- радиусы областей в % короткой стороны экрана (не зависят от разрешения)
@@ -707,6 +712,8 @@ AIMCFG.TriggerR = math.clamp(AIMCFG.TriggerR, 0.5, 15)
 AIMCFG.LeadBias = math.clamp(AIMCFG.LeadBias, 0, 300)
 AIMCFG.MaxDistance = math.clamp(AIMCFG.MaxDistance, 50, 2000)
 AIMCFG.Sticky = math.clamp(AIMCFG.Sticky, 0.2, 1)
+AIMCFG.RcsStrength = math.clamp(tonumber(AIMCFG.RcsStrength) or 1, 0, 1)
+AIMCFG.RcsSmooth = math.clamp(tonumber(AIMCFG.RcsSmooth) or 0.35, 0, 1)
 AIMCFG.SilentR = math.clamp(AIMCFG.SilentR, 2, 60)
 AIMCFG.LockR = math.clamp(AIMCFG.LockR, 5, 90)
 AIMCFG.TriggerDelay = math.clamp(AIMCFG.TriggerDelay, 0, 0.5)
@@ -2084,6 +2091,10 @@ helpUI.info = {
  ["Return to main"] = {"Возвращается к основной части, когда она доступна.", "Returns to the main body part when available."},
  ["Debug HUD"] = {"Показывает диагностическую информацию.", "Shows diagnostic information."},
  ["Trigger delay (sec)"] = {"Задержка автоматического выстрела в секундах.", "Delay before an automatic shot, in seconds."},
+ ["RCS (recoil control)"] = {"Возвращает камеру в точку прицела после отдачи и гасит увод ствола.", "Pulls the camera back to the aim point after recoil and cancels the muzzle climb."},
+ ["RCS strength"] = {"Насколько сильно RCS гасит отдачу: 100% — полностью, 50% — половину, 0% — RCS выключен.", "How much recoil RCS removes: 100% — all of it, 50% — half, 0% — RCS off."},
+ ["RCS smoothness"] = {"Скорость выравнивания: 0 — мгновенно, выше — плавнее и мягче.", "How fast recoil is levelled out: 0 — instantly, higher — smoother."},
+ ["RCS suppress (no kick)"] = {"Не даёт камере уходить вверх при выстреле: отдача не отрисовывается, ствол не задран.", "Stops the camera from kicking up while shooting: recoil is not shown and the barrel never climbs."},
  ["Smoothness (higher = faster)"] = {"Скорость наведения: большее значение означает быстрее.", "Aim speed: a higher value means faster."},
  ["Manual predict (sec)"] = {"Ручное упреждение в секундах.", "Manual prediction time in seconds."},
  ["Auto predict bias (ms)"] = {"Поправка автоматического упреждения в миллисекундах.", "Automatic prediction bias in milliseconds."},
@@ -2606,6 +2617,11 @@ local function buildAim(page, api)
 		local st = NX.STYLES[A.AnimStyle] or NX.STYLES.Ring
 		local speed = math.clamp(A.AnimSpeed, 0.25, 3)
 		dt = math.clamp(dt, 0, 0.1)
+		if A.RcsStrength <= 0 then
+			-- 0% — RCS выключен на деле, даже если галочка включена
+			rcsRef = nil
+			return false
+		end
 		local k = 1 - math.exp(-dt * 9 * speed)
 		if not sx then model = nil end
 		if model ~= an.mdl then
@@ -2739,6 +2755,90 @@ local function buildAim(page, api)
 	local function clampN(x) return math.clamp(x, 0.02, 0.98) end
 	local function circleN() return V2(SP.circle.X / SP.vp.X, SP.circle.Y / SP.vp.Y) end
 	local function aimN() return V2(SP.aim.X / SP.vp.X, SP.aim.Y / SP.vp.Y) end
+
+	-- ===== RCS (Recoil Control System) =====
+	-- Игра может сама двигать камеру вверх при выстреле (Tool.Attributes RecoilPitch / RecoilYaw
+	-- в градусах, периодическое дрожание — MuzzleOffset как Vector3 в градусах). RCS это гасит:
+	--   * запоминает прицел перед выстрелом и возвращает его после отдачи (плавность = RcsSmooth);
+	--   * при RcsSuppress отдача камеры не отрисовывается вовсе — ствол не задирается;
+	--   * точка выстрела считается от прицела ДО отдачи (shoot), поэтому пуля не уходит выше цели.
+	local rcsRef -- {cf = прицел до выстрела, t = когда}
+	local rcsPulses, rcsCorr = {}, CFrame.new() -- остатки отдачи (MuzzleOffset) и текущая компенсация
+	local function rcsReset()
+		rcsRef = nil
+		if #rcsPulses > 0 then table.clear(rcsPulses) end
+		rcsCorr = CFrame.new()
+	end
+	-- необязательные крючки: игра может разрешить отдачу атрибутами Tool (иначе стрельба ведёт себя как раньше)
+	local function rcsAngles(tool)
+		if not tool then return 0, 0, 0 end
+		local function num(name) local v = tool:GetAttribute(name) return type(v) == "number" and v or 0 end
+		return num("RecoilPitch"), num("RecoilYaw"), num("RecoilRoll")
+	end
+	local function rcsPulse(tool)
+		local p, y, r = rcsAngles(tool)
+		local off = tool:GetAttribute("MuzzleOffset")
+		if typeof(off) == "Vector3" then p, y, r = p + off.X, y + off.Y, r + off.Z end
+		local amp = math.max(math.abs(p), math.abs(y), math.abs(r))
+		if amp >= 0.05 then table.insert(rcsPulses, {p = math.rad(p), y = math.rad(y), r = math.rad(r)}) end
+	end
+	-- луч прицела на момент ДО отдачи: на миг возвращаем камере прежний поворот,
+	-- считаем ViewportPointToRay и сразу возвращаем всё как было (иначе пуля летит в небо вместе с камерой)
+	local function rcsAimRay()
+		local ray = camera:ViewportPointToRay(SP.aim.X, SP.aim.Y)
+		if not (A.Rcs and rcsRef) then return ray end
+		local now = camera.CFrame
+		camera.CFrame = CFrame.new(now.Position) * (rcsRef.cf - rcsRef.cf.Position)
+		local ok, before = pcall(function() return camera:ViewportPointToRay(SP.aim.X, SP.aim.Y) end)
+		camera.CFrame = now
+		return ok and before or ray
+	end
+	-- шаг RCS: гасим отрисовку отдачи и мягко возвращаем камеру к прицелу
+	local function rcsStep(now, dt)
+		if not A.Rcs or A.RcsStrength <= 0 then
+			-- RCS выключен (или сила 0%): отдаём назад уже снятую отдачу, чтобы камера не прыгнула
+			if rcsRef or (A.RcsSuppress and not A.Rcs and rcsCorr ~= CFrame.new()) then
+				local cf = camera.CFrame
+				if rcsCorr ~= CFrame.new() then
+					camera.CFrame = CFrame.new(cf.Position) * rcsCorr * (cf - cf.Position)
+				end
+			end
+			if rcsRef or rcsCorr ~= CFrame.new() then rcsReset() end
+			return false
+		end
+		local cf = camera.CFrame
+		local changed = false
+		dt = math.clamp(dt, 0, 0.1)
+		-- 1. подавление отрисовки дрожания: снимаем ровно то, что добавила игра
+		if A.RcsSuppress and #rcsPulses > 0 then
+			local want = CFrame.new()
+			for _, q in rcsPulses do
+				want = want * CFrame.fromEulerAnglesYXZ(q.p * A.RcsStrength, q.y * A.RcsStrength, q.r * A.RcsStrength)
+			end
+			local undo = rcsCorr:Inverse() * want
+			camera.CFrame = CFrame.new(cf.Position) * undo * (cf - cf.Position)
+			rcsCorr = want
+			changed = true
+		end
+		-- 2. возврат к прицелу после отдачи: сначала полностью, затем остаток мягко
+		if rcsRef then
+			local toRef = cf.LookVector:Dot(rcsRef.cf.LookVector)
+			if toRef > 0.999999 then -- камера уже ровно на прицеле
+				rcsRef = nil
+			else
+				-- сила задаёт долю отдачи, которую снимаем за кадр; плавность растягивает возврат
+				local ease = A.RcsSmooth > 0.01 and math.clamp(1 - A.RcsSmooth * 0.75, 0.05, 1) or 1
+				local alpha = (1 - (1 - math.max(A.RcsStrength, 0.05)) ^ (dt * 60)) * ease
+				local axis = cf.LookVector:Cross(rcsRef.cf.LookVector)
+				local ang = math.acos(math.clamp(toRef, -1, 1))
+				if axis.Magnitude > 1e-6 and ang > 1e-5 then
+					camera.CFrame = CFrame.new(cf.Position) * CFrame.fromAxisAngle(axis.Unit, ang * math.clamp(alpha, 0, 1)) * (cf - cf.Position)
+					changed = true
+				end
+			end
+		end
+		return changed
+	end
 	-- отвязать круг от области наведения, оставив его ровно там, где он сейчас (без скачка)
 	local function unlinkCircle()
 		if not A.CircleFollow then return end
@@ -2850,7 +2950,7 @@ local function buildAim(page, api)
 	local lockedModel, skipModel, skipUntil, switchTarget -- Target Lock
 	local function setEnabled(state)
 		A.Enabled = state
-		if not state then currentTarget = nil; lockedModel = nil end
+		if not state then currentTarget = nil; lockedModel = nil; rcsReset() end
 		refreshAll(true)
 	end
 	movable(quick, quick, function() setEnabled(not A.Enabled) end, function() clampGui(quick) end)
@@ -2943,6 +3043,49 @@ local function buildAim(page, api)
 	slider("Auto predict bias (ms)", "LeadBias", 0, 300, 5, 0)
 	slider("Manual predict (sec)", "Prediction", 0, 0.6, 0.01, 2)
 	slider("Aim max distance", "MaxDistance", 50, 2000, 25, 0)
+
+	-- RCS живёт рядом с наводкой: это та же работа с камерой, но против отдачи.
+	-- Ползунки гаснут, пока сам RCS выключен, — видно, что они на него не влияют.
+	local rcsSlaves = {}
+	local function paintRcs()
+		local dim = A.Rcs and 0 or 0.55
+		for _, card in rcsSlaves do
+			if card.Parent then
+				for _, d in card:GetDescendants() do
+					-- гасим подпись, но не значение справа: видно, какое число выставлено
+					if d:IsA("TextLabel") and d.Name ~= "Value" then d.TextTransparency = dim end
+				end
+			end
+		end
+	end
+	section("RCS — RECOIL CONTROL")
+	local _, paintRcsMaster = toggleCard(tgt, "RCS (recoil control)", nextOrder(), function() return A.Rcs end,
+		function(v)
+			A.Rcs = v
+			if not v then rcsReset() end
+			paintRcs()
+		end, "Возвращает камеру в точку прицела после отдачи и гасит увод ствола")
+	table.insert(refreshers, paintRcsMaster)
+	local suppressCard, paintRcsSuppress = toggleCard(tgt, "RCS suppress (no kick)", nextOrder(), function() return A.RcsSuppress end,
+		function(v) A.RcsSuppress = v; if not v then rcsReset() end end,
+		"Камера не уходит вверх при выстреле: отдача не отрисовывается")
+	table.insert(refreshers, paintRcsSuppress)
+	-- подавление без RCS не работает, поэтому его карточка тоже считается зависимой
+	table.insert(rcsSlaves, suppressCard)
+	-- 0% = RCS полностью выключен, 100% = снимает всю отдачу
+	local strengthCard = sliderCard(tgt, "RCS strength", nextOrder(), 0, 1,
+		function() return A.RcsStrength end,
+		function(v) A.RcsStrength = math.clamp(tonumber(string.format("%.4f", v)), 0, 1) end,
+		function(v) return string.format("%.0f%%", v * 100) end, 0.05)
+	table.insert(refreshers, strengthCard)
+	table.insert(rcsSlaves, strengthCard)
+	local smoothCard = sliderCard(tgt, "RCS smoothness", nextOrder(), 0, 1,
+		function() return A.RcsSmooth end,
+		function(v) A.RcsSmooth = math.clamp(tonumber(string.format("%.4f", v)), 0, 1) end,
+		function(v) return v < 0.01 and "instant" or string.format("%.2f", v) end, 0.05)
+	table.insert(refreshers, smoothCard)
+	table.insert(rcsSlaves, smoothCard)
+	table.insert(refreshers, paintRcs)
 
 	section("TARGET LOCK")
 	chips({
@@ -4299,7 +4442,8 @@ local function buildAim(page, api)
 		if t - (lastSent[tool] or 0) < cd * 1.05 then return false, "cooldown" end
 		local origin = head.Position
 		-- куда реально смотрит прицел (SP.aim), а не mouse.Hit; свой персонаж исключён через rayParams
-		local ray = camera:ViewportPointToRay(SP.aim.X, SP.aim.Y)
+		-- RCS: если включён, целимся по прицелу до отдачи — пуля не уходит вверх вместе с камерой
+		local ray = rcsAimRay()
 		local hit = Workspace:Raycast(ray.Origin, ray.Direction.Unit * 1000, rayParams)
 		local point = hit and hit.Position or (ray.Origin + ray.Direction.Unit * 1000)
 		local dir = point - origin
@@ -4321,6 +4465,11 @@ local function buildAim(page, api)
 			if toTarget.Magnitude > 0.01 then shotDir = toTarget.Unit end
 		end
 		lastSent[tool] = t
+		if A.Rcs then
+			-- RCS: прицел до выстрела и остаток отдачи, который затем гасится в кадре
+			rcsRef = {cf = camera.CFrame, t = t}
+			rcsPulse(tool)
+		end
 		shotsSent += 1
 		local hbB, hbH = hbPads()
 		fireRemote:FireServer(tool, origin, shotDir, aimDir, hbB, hbH)
@@ -4459,7 +4608,8 @@ local function buildAim(page, api)
 			local off = aimPt and (aimPt - currentTarget.Position).Magnitude or 0
 			hud.Text = string.format("target: %s | %dm | lead %dms%s%s%s | off %.1fst | pick %.2fms | shots %d", name, math.floor(dist + 0.5),
 				math.floor(getLead() * 1000 + 0.5), A.AutoPredict and " auto" or "", A.AdvPredict and " adv" or "",
-				(lockedModel and " | LOCK" or "") .. (A.Trigger and (" | trig: " .. trigStatus) or "")
+				(A.Rcs and (" | RCS " .. math.floor(A.RcsStrength * 100 + 0.5) .. "%" .. (A.RcsSuppress and " no-kick" or "")) or "")
+				.. (lockedModel and " | LOCK" or "") .. (A.Trigger and (" | trig: " .. trigStatus) or "")
 				.. (os.clock() - srvT < 4 and (" | srv: " .. srvCode) or ""), off, pickMs, shotsSent)
 			if A.DynFov then hud.Text ..= string.format(" | fov %.1f%%", NX.dynR) end
 		end
@@ -4493,6 +4643,20 @@ local function buildAim(page, api)
 		camera.CFrame = CFrame.new(cf.Position) * CFrame.fromAxisAngle(axis.Unit, step) * (cf - cf.Position)
 	end)
 
+	-- ===== RCS: отдельный шаг после наводки, чтобы Smoothness и возврат отдачи не спорили =====
+	pcall(function() RS:UnbindFromRenderStep("EnkaisyRCS") end)
+	RS:BindToRenderStep("EnkaisyRCS", Enum.RenderPriority.Camera.Value + 2, function(dt)
+		camera = Workspace.CurrentCamera
+		if not camera then return end
+		local okR, eR = pcall(rcsStep, os.clock(), dt)
+		if not okR then
+			if not NX.warnR then NX.warnR = true warn("[Enkaisy] RCS error: " .. tostring(eR)) end
+			rcsReset()
+		end
+	end)
+	-- выгрузка снимает шаг вместе с остальными соединениями модуля
+	table.insert(aconns, {Disconnect = function() pcall(function() RS:UnbindFromRenderStep("EnkaisyRCS") end) end})
+
 	return {
 		overlay = og,
 		preview = function(on) previewFov = on and true or false end,
@@ -4507,6 +4671,8 @@ local function buildAim(page, api)
 		end,
 		destroy = function()
 			pcall(function() RS:UnbindFromRenderStep("EnkaisyAimAssist") end)
+			pcall(function() RS:UnbindFromRenderStep("EnkaisyRCS") end)
+			rcsReset()
 			for _, c in aconns do c:Disconnect() end
 			table.clear(aconns)
 			clearHbVis()
