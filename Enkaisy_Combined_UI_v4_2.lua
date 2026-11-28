@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.6.3: АВТОМАТИЗАЦИЯ: tools/check_all.sh (5 проверок одной командой), tools/release.sh (выпуск одной командой), CI на GitHub, pre-commit хук, docs/AUTOMATION.md
 --
 -- УСТАНОВКА: один обычный Script в ServerScriptService (RunContext не трогать).
 -- Скрипт создаёт клиентскую копию в PlayerScripts каждого игрока.
@@ -142,7 +143,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.6.2" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.6.3" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
