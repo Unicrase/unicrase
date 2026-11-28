@@ -160,7 +160,8 @@
         const r = s.getBoundingClientRect();
         return r.width || s.offsetWidth || h * 0.62;
       });
-      gap = Math.max(1, Math.floor(h * 0.05));
+      // трекинг 16% от кегля: как в скрипте, иначе широкие буквы слипаются
+      gap = Math.max(1, Math.floor(h * 0.16));
       total = widths.reduce((a, b) => a + b, 0) + gap * (letters.length - 1);
       if (total <= maxW || h <= 18) {
         letters.forEach((s, i) => {

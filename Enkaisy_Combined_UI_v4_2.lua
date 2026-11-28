@@ -7265,7 +7265,8 @@ local function playIntro(after)
 					o.TextSize = h
 				end
 			end
-			gap = math.max(1, math.floor(h * 0.05))
+			-- трекинг 16% от кегля: у Michroma буквы широкие, при меньшем зазоре они слипаются
+			gap = math.max(1, math.floor(h * 0.16))
 			task.wait() -- кадр на пересчёт AutomaticSize
 			if layoutGen ~= my or not stage.Parent then return end
 			total = 0
