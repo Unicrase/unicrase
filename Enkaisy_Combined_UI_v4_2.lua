@@ -28,6 +28,22 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.5.0: CHAMS — полноценная система материалов, узоров и эффектов (как Pulse Hub):
+--         отдельная вкладка CHAMS (пресеты · материалы · текстуры · свой ID · эффекты · цвет).
+--         31 материал меняет настоящее свойство BasePart.Material (Foil — хром, CrackedLava —
+--         лава, Glass/Ice — прозрачность, Neon/ForceField — свечение) плюс Reflectance и Transparency.
+--         35 узоров (соты, сетка, скан-линии, волны, блик) рисуются реальными элементами GUI
+--         (UIGridLayout + Frame/UICorner/UIStroke, UIGradient) — придуманных rbxassetid больше нет,
+--         а свой настоящий ассет можно ввести в CUSTOM TEXTURE ID (сохраняется).
+--         21 эффект включается по отдельности и комбинируется: свет PointLight (Glow, InnerGlow,
+--         Rim, Fresnel, Bloom, Pulse), слой GUI (Scan, MovingHi, Waves, Gradient, Shimmer, Aura,
+--         Hologram, Chroma), частицы (Particles, Trails, Aura) и отражение (Reflect).
+--         Своя обводка тела регулируемой толщины (BoxHandleAdornment): у Highlight толщины нет.
+--         Каждая настройка реально влияет на вид: цвет/второй цвет/цвет света/цвет обводки,
+--         плотность заливки, отражения, прозрачность, яркость, контраст, размер и скорость узора,
+--         скорость анимации и поворот. Настройки сохраняются, старые сейвы не ломаются.
+--         Тесты: tests/test_chams_settings.py проверяет, что нет «мёртвых» настроек, нет
+--         выдуманных ID и у каждой текстуры есть настоящий узор.
 -- v4.4.1: CHAMS LOOK: заливка Highlight рисуется ПОВЕРХ тела и была почти непрозрачной —
 --         материал и свет под ней не видны, поэтому все стили выглядели одинаковым силуэтом.
 --         Заливка ограничена 55%, свет ярче (1.5..2.2 вместо 0.3..1.1), добавлена поддержка
@@ -94,7 +110,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.4.1" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.5.0" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -412,7 +428,7 @@ end
 ----------------------------------------------------------------
 if _G.TH_Stop then pcall(_G.TH_Stop) end
 local UIS = game:GetService("UserInputService")
-local TS = game:GetService("TweenService")
+GLB.TS = game:GetService("TweenService") -- TweenService (в таблице: лимит локалей)
 local STS = game:GetService("TextService") -- ширина напечатанной части текста: позиция курсора
 GLB.Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
@@ -450,7 +466,7 @@ local col = {
 -- ===== v4.1 TEAM COLORS =====
 -- Цвета лежат в col (ключи TC<Side><Elem>), флаги и пресеты - в CFG: сохраняются вместе с остальными настройками.
 -- Команды игроков не трогаем: только читаем LP.Team и plr.Team.
-local TC = {
+TC = {
 	Sides = {"Friend", "Enemy", "NPC"}, Elems = {"Team", "Box", "Skeleton", "Tracer"},
 	Label = {Friend = "Friendly", Enemy = "Enemy", NPC = "NPC"},
 	FP = {Blue = Color3.fromRGB(60, 130, 255), Green = Color3.fromRGB(70, 220, 110), Cyan = Color3.fromRGB(60, 225, 255)},
@@ -643,7 +659,7 @@ local THEMES = {
 	Forest = {Win = {9, 14, 12}, Side = {12, 19, 16}, Card = {18, 28, 23}, Input = {24, 37, 30}, Line = {34, 52, 43}, Sel = {30, 46, 38}, Hi = {48, 72, 60}, Mut = {135, 157, 144}, W = {236, 245, 239}},
 	Crimson = {Win = {14, 9, 10}, Side = {20, 12, 14}, Card = {30, 18, 21}, Input = {40, 24, 28}, Line = {58, 34, 40}, Sel = {52, 30, 36}, Hi = {80, 48, 56}, Mut = {160, 137, 146}, W = {247, 238, 240}},
 }
-local THEME_ORDER = {"Dark", "Midnight", "Amoled", "Forest", "Crimson"}
+GLB.THEME_ORDER = {"Dark", "Midnight", "Amoled", "Forest", "Crimson"}
 GLB.PAL = {"Win", "Side", "Card", "Input", "Line", "Sel", "Hi", "Mut", "W"}
 local function applyPalette(name)
 	local t = THEMES[name] or THEMES.Dark
@@ -873,7 +889,7 @@ local function tween(o, i, g)
 		for k, v in g do o[k] = v end
 		return
 	end
-	TS:Create(o, i, g):Play()
+	GLB.TS:Create(o, i, g):Play()
 end
 -- Опережающие локали: анимационные хелперы (pulse/popIn/notify) создают элементы и обводки,
 -- а фабрики new/rr/outline объявлены ниже — без этих строк обращения ушли бы в глобалы (nil).
@@ -884,25 +900,27 @@ local function spring(o, goal, info)
 		for k, v in goal do o[k] = v end
 		return
 	end
-	TS:Create(o, info or TWEEN.pop, goal):Play()
+	GLB.TS:Create(o, info or TWEEN.pop, goal):Play()
 end
+-- Состояние анимаций одной таблицей: иначе три локали верхнего уровня упираются в лимит.
+ANIM = {shaking = setmetatable({}, {__mode = "k"}), revealers = setmetatable({}, {__mode = "k"}),
+	counters = setmetatable({}, {__mode = "k"})}
 -- Тряска элемента (ошибка ввода, неверный ключ): амплитуда гаснет к концу
-local shaking = setmetatable({}, {__mode = "k"})
 local function shake(o, amp, times)
-	if not CFG.Anim or shaking[o] then return end
-	shaking[o] = true
+	if not CFG.Anim or ANIM.shaking[o] then return end
+	ANIM.shaking[o] = true
 	task.spawn(function()
 		local base = o.Position
 		for i = 1, times or 5 do
 			local k = (times or 5) - i + 1
-			local t = TS:Create(o, TweenInfo.new(0.05, Enum.EasingStyle.Sine), {
+			local t = GLB.TS:Create(o, TweenInfo.new(0.05, Enum.EasingStyle.Sine), {
 				Position = U(base.X.Scale, base.X.Offset + (i % 2 == 0 and 1 or -1) * amp * k / (times or 5), base.Y.Scale, base.Y.Offset),
 			})
 			t:Play()
 			t.Completed:Wait()
 		end
 		o.Position = base
-		shaking[o] = nil
+		ANIM.shaking[o] = nil
 	end)
 end
 -- Мягкая пульсация: элемент «дышит» масштабом, пока pulse(o, nil) не остановит.
@@ -925,11 +943,11 @@ local function pulse(o, amp)
 	local info = TweenInfo.new(0.75, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 	task.spawn(function()
 		while pulseState[o] == amp and o.Parent and sc.Parent do
-			local up = TS:Create(sc, info, {Scale = 1 + amp})
+			local up = GLB.TS:Create(sc, info, {Scale = 1 + amp})
 			up:Play()
 			up.Completed:Wait()
 			if pulseState[o] ~= amp or not sc.Parent then break end
-			local down = TS:Create(sc, info, {Scale = 1})
+			local down = GLB.TS:Create(sc, info, {Scale = 1})
 			down:Play()
 			down.Completed:Wait()
 		end
@@ -956,11 +974,10 @@ end
 -- Один твин на искру и на букву, без кадровых циклов; волна идёт слева направо.
 -- Ширина букв меряется TextService, поэтому волна ровная и на пропорциональном шрифте.
 -- Сам текст никуда не сдвигается: анимируются только прозрачность и масштаб на месте.
-local revealers = setmetatable({}, {__mode = "k"})
 local function revealText(label, text, opt)
 	opt = opt or {}
-	local gen = (revealers[label] or 0) + 1
-	revealers[label] = gen
+	local gen = (ANIM.revealers[label] or 0) + 1
+	ANIM.revealers[label] = gen
 	local layer = label:FindFirstChild("Reveal")
 	if not (CFG.Anim and UICFG.AnimText) or text == "" then
 		label.Text, label.TextTransparency = text, 0
@@ -1046,9 +1063,9 @@ local function revealText(label, text, opt)
 	task.spawn(function()
 		-- искры: летят к центру буквы, по дороге уменьшаются и гаснут
 		for _, sp in sparks do
-			if revealers[label] ~= gen then return end
+			if ANIM.revealers[label] ~= gen then return end
 			task.delay(sp.delay, function()
-				if revealers[label] ~= gen or not sp.f.Parent then return end
+				if ANIM.revealers[label] ~= gen or not sp.f.Parent then return end
 				local info = TweenInfo.new(sp.dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 				tween(sp.f, info, {Position = O(sp.x, sp.y), BackgroundTransparency = 0.85,
 					Size = O(math.max(1, sp.size * 0.4), math.max(1, sp.size * 0.4)), Rotation = sp.spin})
@@ -1059,9 +1076,9 @@ local function revealText(label, text, opt)
 		end
 		-- буквы: проявляются, когда искры почти долетели; масштаб «садится» с 1.22 до 1
 		for _, it in items do
-			if revealers[label] ~= gen then return end
+			if ANIM.revealers[label] ~= gen then return end
 			task.delay(it.delay + dur * 0.45, function()
-				if revealers[label] ~= gen or not it.lbl.Parent then return end
+				if ANIM.revealers[label] ~= gen or not it.lbl.Parent then return end
 				tween(it.lbl, TweenInfo.new(dur * 0.8, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0})
 				spring(it.sc, {Scale = 1}, TWEEN.pop)
 			end)
@@ -1069,28 +1086,27 @@ local function revealText(label, text, opt)
 		local wave = dense and 0.12 or math.max(0, #items - 1) * stepDelay
 		local wait = wave + dur * 1.3 + 0.12
 		task.wait(wait)
-		if revealers[label] ~= gen then return end
+		if ANIM.revealers[label] ~= gen then return end
 		-- финал: возвращаем обычный текст (цвета темы и обрезка работают как раньше)
 		label.Text, label.TextTransparency = text, 0
 		if layer.Parent then layer:Destroy() end
 		if opt.onDone then opt.onDone() end
 	end)
-	return function() return revealers[label] == gen end
+	return function() return ANIM.revealers[label] == gen end
 end
 -- Анимация цифры: значение «доезжает» до нового числа, а не прыгает
-local counters = setmetatable({}, {__mode = "k"})
 local function animateNumber(label, from, to, fmt, dur)
 	if not (UICFG.AnimCounters and CFG.Anim) or math.abs(to - from) < 1e-6 then
 		label.Text = fmt(to)
 		return
 	end
-	local gen = (counters[label] or 0) + 1
-	counters[label] = gen
+	local gen = (ANIM.counters[label] or 0) + 1
+	ANIM.counters[label] = gen
 	local t0 = os.clock()
 	task.spawn(function()
 		while true do
 			local k = math.clamp((os.clock() - t0) / (dur or 0.28), 0, 1)
-			if counters[label] ~= gen then return end -- значение поменяли снова: старая анимация уступает
+			if ANIM.counters[label] ~= gen then return end -- значение поменяли снова: старая анимация уступает
 			local e = 1 - (1 - k) ^ 3
 			label.Text = fmt(from + (to - from) * e)
 			if k >= 1 then return end
@@ -1232,9 +1248,9 @@ local function bind(sig, fn)
 	end
 	return c
 end
-local UT = Enum.UserInputType
-local function press(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 end
-local function move(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseMovement end
+GLB.UT = Enum.UserInputType -- UserInputType (в таблице: лимит локалей)
+local function press(i) return i.UserInputType == GLB.UT.Touch or i.UserInputType == GLB.UT.MouseButton1 end
+local function move(i) return i.UserInputType == GLB.UT.Touch or i.UserInputType == GLB.UT.MouseMovement end
 
 -- Наведение / нажатие: плавно меняется только прозрачность обводки (и при желании цвет фона).
 -- Лёгкий эффект без свечения и теней — не просаживает FPS. h.base можно менять (выбранное состояние).
@@ -1451,7 +1467,7 @@ ea[]I?CHDEQWWRPU[[\VPLKHGIGGFEFKJFDEJNRVVWXYY[STa]ZWWVTRQPNMLJIIGHKTUIFWYHKWTNML
 b^[RADJGEA@CFFHHFECCEGJMKHGECFHHIMTYWWWXXXZ[\]_`^]WTSSRPONMKIHFEBCFRODFufFDPQGIFDEFHIKLOQRTUX]fkkkkklkloec_\^KKa[^_]Z[WUX`GDSFFPc`bf~|yu{~|yyhbc
 a[ZFDPLFD@????????AFKONJHFBBDHLT_a[YYYXY[[]^^^^`acky~~~~~~~~~~~~by~h|S@IH@Rth~[V~~~~~~~~~~~{tlikkfftkokpkfc_cNNc^`_]VUSUYMCIIDIX_]`~y~~{~zywlee^
 ^\ODOVNHC@?@@???@DHKMMJFDABIP]ze]]\[[ZY]]^^^_^__beeeffhffeccbaa_bcbf^~M@@N~_ecefcb`_eefhfeeeffedk~~]hhkkqkf`_QSc`b_\SPRURBBDCFVYa`f~{{z{~ythba\N
-\[FHWVTE@?????@BFLOPLHEFFM]~~f__`]YXZ]\]_`_```^]ehhklooooookmmolkookf]~CD~^imorotmhkokkhfffecez~bRJFXtfholk]\UT^a_YSQLT^FADCBM^Y`hhcy~~~yoh`_YPJ
+\[FHWVTE@?????@BFLOPLHEFFM]~~f__`]YXZ]\]_`_```^]ehhklooooookmmolkookf]~CD~^imorotmhkokkhfffecez~bRJFXtfholk]\GLB.UT^a_YSQLT^FADCBM^Y`hhcy~~~yoh`_YPJ
 \WINWVULEAACDGJNRONLJJOW~~hbdeab_\YU\]]\`aaaa^\[]hhmooroqsooottttttokbyNPydmtuuzykkhhhffheck~yVMGEEDL~bfhph^aZY]^ZVOINYJACBBG^\_hhcftyuttob][RNP
 []TM^XNJEBDIJLJLLLNQZy~yef^^`bbba]YY]]]^`caca][WZkkoorrookooqttuuvvtqookkoptwz~uhhgffhfdf~~]PIFEEFEEF_ffhkeca]Z\[VSHJWM@BB?C[`acohhyyqY^lb\\WQIJ
 `_hOLLGDBCFFGHKPT`|~yfkkac[Vhfgcc][WW\]^ab`ba^]Zekkpplookhoosttyyyvtwvroryuy{{keffhfeem~mTKFEEFFFEEEDP~befhfb[Y[UVKGROABAAANb_dhrytohb[Z^][[YKDL
@@ -1706,6 +1722,7 @@ end
 -- Один и тот же знак используется на плитке папки и в заголовке открытой страницы.
 Skin.glyphs = {
 	Main = {paths = {{8,1, 14,3.5, 13.5,9.5, 11.5,12.5, 8,15, 4.5,12.5, 2.5,9.5, 2,3.5, 8,1}}}, -- щит
+	Chams = {paths = {{8,1, 15,8, 8,15, 1,8, 8,1}}, rings = {{8,8,2.5}}}, -- грань материала (ромб)
 	Aim = {rings = {{8,8,14}, {8,8,9}, {8,8,3}}}, -- концентрическая мишень
 	Targets = {rings = {{8,8,11}, {8,8,2}}, paths = {{8,1, 8,4}, {8,12, 8,15}, {1,8, 4,8}, {12,8, 15,8}}}, -- прицел с точкой
 	Trigger = {paths = {{9,1, 4,9, 8,9, 6,15, 12,7, 8,7, 9,1}}}, -- молния
@@ -1934,9 +1951,9 @@ function TC.fade(f, on)
 		local wasHidden = not f.Visible
 		f.Visible = true
 		if wasHidden then f.BackgroundTransparency = 1 end
-		TS:Create(f, TWEEN.ui, {BackgroundTransparency = 0}):Play()
+		GLB.TS:Create(f, TWEEN.ui, {BackgroundTransparency = 0}):Play()
 	else
-		TS:Create(f, TWEEN.snap, {BackgroundTransparency = 1}):Play()
+		GLB.TS:Create(f, TWEEN.snap, {BackgroundTransparency = 1}):Play()
 		task.delay(0.14, function()
 			-- цель могла вернуться: гасим, только если линия всё ещё «выключена»
 			if f.Parent and not TC.faded[f] then
@@ -2085,6 +2102,1019 @@ local function allowed(plr, char)
 	return true
 end
 
+
+-- ============================================================
+-- CHAMS ENGINE: настоящие материалы, текстуры и эффекты на теле
+-- ============================================================
+-- Highlight умеет только заливку и обводку, поэтому Chams собирается из слоёв:
+--   1) BasePart.Material + Color + TextureID  — сам «материал» (хром блестит, стекло прозрачно);
+--   2) PointLight на HumanoidRootPart          — свечение, которое видно на полу и стенах;
+--   3) Highlight (заливка/обводка)             — контур и внутренняя заливка;
+--   4) BillboardGui-оболочка                   — градиент/сканирование/голограмма поверх тела;
+--   5) частицы (Sparkles/ParticleEmitter)      — искры, плазма, электричество.
+-- Каждый слой включается отдельно, поэтому комбинации (Chrome + Rainbow + Glow) работают.
+
+-- МАТЕРИАЛЫ: 31 штука. Поля:
+--   mat    — BasePart.Material (отражения, прозрачность, блик)
+--   col    — базовый цвет материала
+--   refl   — Reflectance (настоящее отражение Roblox)
+--   trans  — прозрачность тела: стекло и лёд просвечивают
+--   glow   — яркость PointLight (0 = без света)
+--   lcol   — цвет света
+--   spin   — цвет переливается со временем (радуга, иридец, плазма)
+--   spinSpd— скорость перелива
+--   pulse  — «дышащее» свечение
+--   col2   — второй цвет: для градиентов и двухцветных материалов
+--   tex    — ключ текстуры из CH_TEX (накладывается на тело)
+CH_MATS = {
+	{key = "Chrome", name = "Chrome", mat = Enum.Material.Foil, col = Color3.fromRGB(245, 248, 255),
+		refl = 0.9, glow = 0.4, lcol = Color3.fromRGB(230, 240, 255)},
+	{key = "Metallic", name = "Metallic", mat = Enum.Material.Metal, col = Color3.fromRGB(198, 208, 226),
+		refl = 0.55, glow = 0.2, lcol = Color3.fromRGB(210, 220, 240)},
+	{key = "LiquidMetal", name = "Liquid Metal", mat = Enum.Material.Foil, col = Color3.fromRGB(215, 222, 235),
+		refl = 0.85, spin = true, spinSpd = 0.03, glow = 0.3, lcol = Color3.fromRGB(225, 235, 255)},
+	{key = "Glass", name = "Glass", mat = Enum.Material.Glass, col = Color3.fromRGB(210, 240, 255),
+		trans = 0.55, refl = 0.2, glow = 0},
+	{key = "Translucent", name = "Translucent", mat = Enum.Material.ForceField, col = Color3.fromRGB(180, 230, 255),
+		trans = 0.35, glow = 0.5, lcol = Color3.fromRGB(140, 200, 255)},
+	{key = "Neon", name = "Neon", mat = Enum.Material.Neon, col = Color3.fromRGB(60, 220, 255),
+		glow = 1.6, lcol = Color3.fromRGB(80, 220, 255), pulse = true},
+	{key = "Emissive", name = "Emissive", mat = Enum.Material.Neon, col = Color3.fromRGB(255, 235, 150),
+		glow = 2.2, lcol = Color3.fromRGB(255, 230, 140)},
+	{key = "Holographic", name = "Holographic", mat = Enum.Material.ForceField, col = Color3.fromRGB(120, 200, 255),
+		trans = 0.25, refl = 0.2, spin = true, spinSpd = 0.15, glow = 1.0,
+		lcol = Color3.fromRGB(120, 200, 255), tex = "Hologram"},
+	{key = "Diamond", name = "Diamond", mat = Enum.Material.Glass, col = Color3.fromRGB(190, 245, 255),
+		glow = 0.6, lcol = Color3.fromRGB(180, 240, 255), refl = 0.35, tex = "Crystal"},
+	{key = "Crystal", name = "Crystal", mat = Enum.Material.Glass, col = Color3.fromRGB(170, 215, 255),
+		glow = 0.9, lcol = Color3.fromRGB(170, 215, 255), tex = "Crystal"},
+	{key = "Ice", name = "Ice", mat = Enum.Material.Ice, col = Color3.fromRGB(185, 230, 255),
+		glow = 0.4, lcol = Color3.fromRGB(200, 235, 255), tex = "Frost"},
+	{key = "Lava", name = "Lava", mat = Enum.Material.CrackedLava, col = Color3.fromRGB(255, 96, 24),
+		glow = 1.8, lcol = Color3.fromRGB(255, 110, 40), pulse = true, tex = "Cracked",
+		col2 = Color3.fromRGB(255, 210, 60)},
+	{key = "Fire", name = "Fire", mat = Enum.Material.Neon, col = Color3.fromRGB(255, 140, 30),
+		glow = 2.4, lcol = Color3.fromRGB(255, 150, 40), pulse = true, spin = true, spinSpd = 0.25},
+	{key = "Plasma", name = "Plasma", mat = Enum.Material.Neon, col = Color3.fromRGB(200, 80, 255),
+		glow = 2.0, lcol = Color3.fromRGB(190, 90, 255), spin = true, spinSpd = 0.35,
+		tex = "Plasma", particles = "plasma"},
+	{key = "Electric", name = "Electric", mat = Enum.Material.Neon, col = Color3.fromRGB(120, 220, 255),
+		glow = 1.8, lcol = Color3.fromRGB(130, 220, 255), tex = "Electric", particles = "spark"},
+	{key = "Rainbow", name = "Rainbow", mat = Enum.Material.Neon, col = Color3.fromRGB(255, 120, 120),
+		glow = 1.4, lcol = Color3.fromRGB(255, 200, 255), spin = true, spinSpd = 0.4},
+	{key = "Iridescent", name = "Iridescent", mat = Enum.Material.Foil, col = Color3.fromRGB(225, 190, 255),
+		refl = 0.7, spin = true, spinSpd = 0.22, glow = 0.8, lcol = Color3.fromRGB(210, 170, 255)},
+	{key = "Pearlescent", name = "Pearlescent", mat = Enum.Material.SmoothPlastic, col = Color3.fromRGB(255, 235, 245),
+		refl = 0.35, spin = true, spinSpd = 0.08, glow = 0.3},
+	{key = "Reflective", name = "Reflective", mat = Enum.Material.Foil, col = Color3.fromRGB(225, 235, 245),
+		refl = 1, glow = 0.5, lcol = Color3.fromRGB(230, 240, 255)},
+	{key = "Obsidian", name = "Obsidian", mat = Enum.Material.Slate, col = Color3.fromRGB(25, 22, 34),
+		refl = 0.45, glow = 0.3, lcol = Color3.fromRGB(120, 90, 200)},
+	{key = "Ceramic", name = "Ceramic", mat = Enum.Material.Marble, col = Color3.fromRGB(245, 245, 250),
+		refl = 0.25, glow = 0},
+	{key = "Marble", name = "Marble", mat = Enum.Material.Marble, col = Color3.fromRGB(232, 232, 238),
+		refl = 0.15, tex = "Veins"},
+	{key = "Gold", name = "Gold", mat = Enum.Material.Foil, col = Color3.fromRGB(255, 205, 70),
+		refl = 0.8, glow = 0.5, lcol = Color3.fromRGB(255, 200, 70)},
+	{key = "Silver", name = "Silver", mat = Enum.Material.Foil, col = Color3.fromRGB(220, 226, 235),
+		refl = 0.85, glow = 0.3, lcol = Color3.fromRGB(225, 232, 245)},
+	{key = "Plastic", name = "Plastic", mat = Enum.Material.SmoothPlastic, col = Color3.fromRGB(230, 230, 235),
+		refl = 0.05},
+	{key = "Rubber", name = "Rubber", mat = Enum.Material.Plastic, col = Color3.fromRGB(35, 35, 40),
+		refl = 0},
+	{key = "CarbonFiber", name = "Carbon Fiber", mat = Enum.Material.Fabric, col = Color3.fromRGB(30, 30, 34),
+		refl = 0.2, tex = "Carbon"},
+	{key = "Wood", name = "Wood", mat = Enum.Material.WoodPlanks, col = Color3.fromRGB(140, 95, 55),
+		refl = 0.05, tex = "Wood"},
+	{key = "Concrete", name = "Concrete", mat = Enum.Material.Concrete, col = Color3.fromRGB(150, 150, 155),
+		refl = 0.03, tex = "Stone"},
+	{key = "Stone", name = "Stone", mat = Enum.Material.Slate, col = Color3.fromRGB(120, 122, 130),
+		refl = 0.05, tex = "Stone"},
+	{key = "Fabric", name = "Fabric", mat = Enum.Material.Fabric, col = Color3.fromRGB(110, 120, 150),
+		refl = 0, tex = "Weave"},
+}
+
+-- ЭФФЕКТЫ: у каждого своя реализация, а не смена цвета.
+--   glow/igl/rim/fresnel — свечение, внутреннее свечение, ободок, эффект Френеля
+--   bloom/pulse/scan/flow/shimmer/waves/cycle/rainbow — анимации на теле
+--   xray/distort/chroma/trail/aura/gradient/innerGlow/movingHi/reflect2
+CH_FX = {
+	{key = "Glow", name = "Outer Glow"},
+	{key = "InnerGlow", name = "Inner Glow"},
+	{key = "Rim", name = "Rim Lighting"},
+	{key = "Fresnel", name = "Fresnel"},
+	{key = "Bloom", name = "Bloom"},
+	{key = "Pulse", name = "Pulsating Glow"},
+	{key = "Rainbow", name = "Animated Rainbow"},
+	{key = "Scan", name = "Scanning"},
+	{key = "Flow", name = "Flowing Energy"},
+	{key = "Particles", name = "Particles"},
+	{key = "MovingHi", name = "Moving Highlights"},
+	{key = "Reflect", name = "Reflections"},
+	{key = "Distort", name = "Distortion"},
+	{key = "Chroma", name = "Chromatic Aberration"},
+	{key = "XRay", name = "X-Ray"},
+	{key = "Trails", name = "Light Trails"},
+	{key = "Aura", name = "Electric Aura"},
+	{key = "Shimmer", name = "Shimmer"},
+	{key = "Waves", name = "Surface Waves"},
+	{key = "Cycle", name = "Color Cycling"},
+	{key = "Gradient", name = "Animated Gradient"},
+}
+
+CH_MAT_KEY, CH_FX_BY_KEY = {}, {}
+for i, m in CH_MATS do m.idx, CH_MAT_KEY[m.key] = i, m end
+for i, f in CH_FX do f.idx, CH_FX_BY_KEY[f.key] = i, f end
+
+-- СОСТОЯНИЕ Chams: живёт в CFG.Chams2, чтобы сохраняться вместе с настройками.
+-- Всё, что не задано, берётся из DEFAULT ниже — старые сохранения не ломаются.
+CH_DEF = {
+	Mat = "Neon",                 -- материал тела
+	MatOn = true,                 -- материал вообще применяется
+	Tex = "None",                 -- текстура поверх материала
+	TexOn = true,            -- рисовать узор/текстуру
+	TexId = "",              -- свой ID текстуры (rbxassetid или число): настоящий ассет
+	OutlineOn = false,       -- своя обводка (у Highlight нет толщины)
+
+	TexScale = 8,                 -- масштаб текстуры (Study)
+	TexSpeed = 0.35,              -- скорость прокрутки текстуры
+	Color = nil,                  -- основной цвет (nil = цвет темы)
+	Color2 = nil,                 -- второй цвет (градиенты, переливы)
+	Transparency = 0,             -- дополнительная прозрачность тела
+	Glow = 0.6,                   -- сила свечения 0..1
+	GlowColor = nil,              -- цвет свечения (nil = цвет материала)
+	OutlineColor = nil,           -- цвет обводки (nil = акцент темы)
+	OutlineThickness = 1.4,
+	FillStrength = 0.35,          -- плотность внутренней заливки 0..1
+	Reflect = 0.4,                -- сила отражений 0..1
+	Brightness = 1,
+	Contrast = 1,
+	Rotate = 0,                   -- поворот узора
+	AnimSpeed = 1,                -- общая скорость анимации (перелив, узор, эффекты)
+	Effects = {},                 -- {Glow = true, Scan = true, ...}
+	Preset = nil,                 -- имя сохранённого пресета
+}
+CH = CH_DEF
+
+
+-- ТЕКСТУРЫ: настоящие TextureID на тело. Это картинки Roblox (ассеты), они реально
+-- рисуются на поверхности деталей. Если ID не загрузился/не существует, Roblox просто
+-- не покажет текстуру — материал при этом остаётся, поэтому стиль не разваливается.
+-- Плотность/масштаб задаётся через TextureSize (Study): больше значение = крупнее рисунок.
+-- Придуманных ID здесь нет: это официальные текстуры Roblox из библиотеки материалов.
+CH_TEX = {
+	None = {name = "None"},
+	Hexagon = {name = "Hexagon"},
+	Grid = {name = "Grid"},
+	Wireframe = {name = "Wireframe"},
+	Scanlines = {name = "Scanlines"},
+	Circuit = {name = "Circuit"},
+	Matrix = {name = "Digital Matrix"},
+	Noise = {name = "Noise"},
+	Static = {name = "Static"},
+	Dots = {name = "Dots"},
+	Stripes = {name = "Stripes"},
+	Checker = {name = "Checkerboard"},
+	Camo = {name = "Camouflage"},
+	Carbon = {name = "Carbon Fiber"},
+	Glitch = {name = "Glitch"},
+	Hologram = {name = "Hologram"},
+	Energy = {name = "Energy"},
+	Plasma = {name = "Plasma"},
+	Galaxy = {name = "Galaxy"},
+	Starfield = {name = "Starfield"},
+	Cracked = {name = "Cracked"},
+	Crystal = {name = "Crystalline"},
+	Liquid = {name = "Liquid"},
+	Pixel = {name = "Pixel Grid"},
+	Geometric = {name = "Geometric"},
+	DigitalRain = {name = "Digital Rain"},
+	Spectral = {name = "Spectral"},
+	Electric = {name = "Electric"},
+	MovingGrid = {name = "Moving Grid"},
+	Fractal = {name = "Fractal"},
+	Frost = {name = "Frost"},
+	Veins = {name = "Veins"},
+	Wood = {name = "Wood"},
+	Stone = {name = "Stone"},
+	Weave = {name = "Weave"},
+}
+
+-- Порядок списка текстур. У каждой есть настоящий узор из CH_PAT (см. движок ниже).
+CH_TEX_ORDER = {"None", "Hexagon", "Grid", "Wireframe", "Scanlines", "Circuit", "Matrix", "Noise", "Static",
+	"Dots", "Stripes", "Checker", "Camo", "Carbon", "Glitch", "Hologram", "Energy", "Plasma", "Galaxy",
+	"Starfield", "Cracked", "Crystal", "Liquid", "Pixel", "Geometric", "DigitalRain", "Spectral", "Electric",
+	"MovingGrid", "Fractal", "Frost", "Veins", "Wood", "Stone", "Weave"}
+
+
+-- Текущее состояние Chams: то, что выбрал пользователь, поверх умолчаний.
+local function chState()
+	local c = CFG.Chams2
+	if type(c) ~= "table" then c = {} CFG.Chams2 = c end
+	for k, v in CH_DEF do if c[k] == nil then c[k] = v end end
+	if type(c.Effects) ~= "table" then c.Effects = {} end
+	return c
+end
+
+-- Итоговый цвет: свой или из темы. Contrast/Brightness применяются здесь,
+-- чтобы настройки были настоящими, а не «на бумаге».
+local function chColor(tint)
+	local st = chState()
+	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
+	local base = st.Color or m.col or tint or Color3.new(1, 1, 1)
+	local h, s, v = base:ToHSV()
+	v = math.clamp(v * (st.Brightness or 1), 0, 1)
+	-- Contrast: отодвигаем насыщенность и яркость от серого
+	local k = st.Contrast or 1
+	if k ~= 1 then
+		s = math.clamp(s * k, 0, 1)
+		v = math.clamp((v - 0.5) * k + 0.5, 0, 1)
+	end
+	return Color3.fromHSV(h, s, v), h, s, v
+end
+
+-- Перелив: цвет со временем (Rainbow/Flowing Energy/галактика)
+local function chSpinColor(col, h, s, v, now)
+	local st = chState()
+	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
+	local e = st.Effects or {}
+	local spd = 0
+	if m.spin then spd = m.spinSpd or 0.1 end
+	if e.Rainbow or e.Cycle then spd = math.max(spd, 0.45) end
+	if e.Flow then spd = math.max(spd, 0.25) end
+	-- AnimSpeed — общий множитель скорости перелива (0.1..3), а не подпись на слайдере
+	spd = spd * (st.AnimSpeed or 1)
+	if spd == 0 then return col end
+	return Color3.fromHSV((h + now * spd) % 1, s, v)
+end
+
+
+-- ===== Применение Chams к модели =====
+-- Состояние на каждую модель: исходные материалы/цвета/текстуры, слои эффектов, свет, частицы.
+local chOrig = setmetatable({}, {__mode = "k"})   -- part  -> {mat, col, tex, refl, trans}
+local chLayer = setmetatable({}, {__mode = "k"})  -- char  -> {light, fx (BillboardGui), emit, parts}
+local chLast = setmetatable({}, {__mode = "k"})   -- part  -> последний применённый цвет (не трогаем без нужды)
+
+local function chParts(char)
+	local list = {}
+	for _, d in char:GetDescendants() do
+		if d:IsA("BasePart") and not d:FindFirstAncestorOfClass("Accessory")
+			and not d:FindFirstAncestorOfClass("Tool") and not d:IsA("Terrain") then
+			table.insert(list, d)
+		end
+	end
+	return list
+end
+
+-- Отдельная часть для VFX-слоя: BillboardGui поверх тела с градиентом/сканом.
+-- Так эффекты видны на модели, но не превращаются в Highlight (который умеет только цвет).
+-- УЗОР НА ТЕЛЕ (второй слой Chams): сетка, клетка, соты, полосы, точки, скан-линии.
+-- Раньше здесь стояли придуманные rbxassetid, которых в Roblox нет — текстура не рисовалась.
+-- Теперь узор собирается из настоящих элементов GUI (UIGridLayout, UIGradient, UIStroke):
+-- это реальная графика, её видно на теле и она не зависит от чужих ассетов.
+-- УЗОР (вторая половина Chams Look): у каждой текстуры из списка есть настоящий рисунок.
+-- Раньше здесь стояли придуманные rbxassetid, которых в Roblox нет, и текстура не рисовалась.
+-- Теперь узор собирается из реальных элементов GUI (UIGridLayout + Frame/UICorner/UIStroke,
+-- UIGradient для линий и волн): он виден на теле и не зависит от чужих ассетов.
+-- Если пользователь ввёл свой ID в поле Texture ID, рисуется настоящий ассет, а узор уступает.
+CH_PAT = {
+	Grid = {shape = "frame", alpha = 0.5}, Hexagon = {shape = "hex", alpha = 0.45},
+	Dots = {shape = "dot", alpha = 0.45}, Checker = {shape = "frame", alpha = 0.6, fill = true},
+	Carbon = {shape = "frame", alpha = 0.55}, Pixel = {shape = "frame", alpha = 0.5, fill = true},
+	Circuit = {shape = "frame", alpha = 0.4}, Geometric = {shape = "hex", alpha = 0.4},
+	Frost = {shape = "hex", alpha = 0.35}, Weave = {shape = "frame", alpha = 0.4},
+	Crystal = {shape = "hex", alpha = 0.35}, Cracked = {shape = "frame", alpha = 0.3},
+	Electric = {shape = "frame", alpha = 0.4}, Stone = {shape = "hex", alpha = 0.35},
+	Fractal = {shape = "hex", alpha = 0.4}, Camo = {shape = "dot", alpha = 0.4},
+	Noise = {shape = "dot", alpha = 0.3}, Static = {shape = "frame", alpha = 0.25},
+	Galaxy = {shape = "dot", alpha = 0.4}, Starfield = {shape = "dot", alpha = 0.35},
+	Stripes = {lines = 14, alpha = 0.5}, Scanlines = {lines = 22, alpha = 0.5},
+	Wireframe = {lines = 10, alpha = 0.6}, Hologram = {lines = 26, alpha = 0.4},
+	Spectral = {lines = 18, alpha = 0.45}, Wood = {lines = 9, alpha = 0.4},
+	MovingGrid = {lines = 16, rotate = 45, alpha = 0.5},
+	Waves = {wave = true, alpha = 0.5}, Liquid = {wave = true, alpha = 0.45},
+	Energy = {wave = true, alpha = 0.55}, Plasma = {wave = true, alpha = 0.55},
+	Veins = {wave = true, alpha = 0.4}, Matrix = {wave = true, alpha = 0.5},
+	Glitch = {lines = 30, alpha = 0.55, rotate = 90},
+	DigitalRain = {wave = true, alpha = 0.5},
+}
+
+local function chPattern(char, layer, col, now)
+	local st = chState()
+	local key = (st.TexOn ~= false) and st.Tex or nil
+	local p = key and CH_PAT[key]
+	local fx = chFxLayer(char, layer)
+	if not fx then return end
+	-- каркас узора создаётся один раз на модель
+	if not layer.pat then
+		local frame = Instance.new("Frame")
+		frame.Name = "Pattern"
+		frame.Size = UDim2.fromScale(1, 1)
+		frame.BackgroundTransparency = 1
+		frame.ClipsDescendants = true
+		frame.Parent = fx
+		local cells = Instance.new("Frame")
+		cells.Name = "Cells"
+		cells.Size = UDim2.fromScale(1, 1)
+		cells.BackgroundTransparency = 1
+		cells.Parent = frame
+		local lay = Instance.new("UIGridLayout")
+		lay.Name = "Grid"
+		lay.SortOrder = Enum.SortOrder.LayoutOrder
+		lay.CellPadding = UDim2.fromScale(0, 0)
+		lay.Parent = cells
+		local lines = Instance.new("Frame")
+		lines.Name = "Lines"
+		lines.Size = UDim2.fromScale(1, 1)
+		lines.BackgroundColor3 = Color3.new(1, 1, 1)
+		lines.BorderSizePixel = 0
+		lines.Parent = frame
+		local grad = Instance.new("UIGradient")
+		grad.Name = "Tint"
+		grad.Parent = lines
+		layer.pat, layer.patCells, layer.patGrid, layer.patLines, layer.patGrad = frame, cells, lay, lines, grad
+		layer.patKind = nil
+	end
+	-- выбран свой ID текстуры: настоящий ассет важнее рисованного узора
+	if not p or (st.TexId and st.TexId ~= "") then
+		layer.pat.Visible = false
+		return
+	end
+	layer.pat.Visible = true
+	local speed = math.max(0.05, (st.TexSpeed or 0.35) * (st.AnimSpeed or 1))
+	local cell = math.clamp(1 / math.clamp(st.TexScale or 8, 2, 16), 0.05, 0.5)
+	if p.lines or p.wave then
+		-- линии и волны: полосатый градиент, который «едет» по телу
+		layer.patCells.Visible = false
+		layer.patLines.Visible = true
+		layer.patLines.BackgroundColor3 = col
+		layer.patLines.BackgroundTransparency = 1 - p.alpha * 0.55
+		local n = p.lines or 12
+		local keys = {}
+		for i = 0, n do
+			keys[#keys + 1] = ColorSequenceKeypoint.new(i / n,
+				(i % 2 == 0) and Color3.new(1, 1, 1) or Color3.new(0.15, 0.15, 0.15))
+		end
+		layer.patGrad.Color = ColorSequence.new(keys)
+		layer.patGrad.Transparency = NumberSequence.new(0.25)
+		layer.patGrad.Rotation = p.rotate or (p.wave and (math.sin(now * speed * 2) * 25) or 0)
+		local off = (now * speed * 0.4) % 1
+		layer.patGrad.Offset = Vector2.new(p.wave and off or 0, p.wave and 0 or off)
+		return
+	end
+	-- сетка фигур: соты, клетка, точки. Форма — на плитку, размер — из Texture scale
+	layer.patLines.Visible = false
+	layer.patCells.Visible = true
+	layer.patGrid.CellSize = UDim2.fromScale(cell * 1.1, cell * 1.4)
+	if layer.patKind ~= key then
+		layer.patKind = key
+		for _, c in layer.patCells:GetChildren() do
+			if c:IsA("Frame") then c:Destroy() end
+		end
+		for i = 1, 90 do
+			local c = Instance.new("Frame")
+			c.Name = "c" .. i
+			c.BorderSizePixel = 0
+			c.LayoutOrder = i
+			c.Parent = layer.patCells
+			if p.shape == "dot" then
+				local cr = Instance.new("UICorner")
+				cr.CornerRadius = UDim.new(1, 0)
+				cr.Parent = c
+			elseif p.shape == "hex" then
+				local cr = Instance.new("UICorner")
+				cr.CornerRadius = UDim.new(0.45, 0)
+				cr.Parent = c
+			end
+			if p.shape ~= "dot" or not p.fill then
+				local sk = Instance.new("UIStroke")
+				sk.Thickness = 1
+				sk.Parent = c
+			end
+		end
+	end
+	-- цвет узора всегда в тон тела: смена цвета в панели видна сразу
+	for _, c in layer.patCells:GetChildren() do
+		if c:IsA("Frame") then
+			c.BackgroundColor3 = col
+			c.BackgroundTransparency = p.fill and (1 - p.alpha * 0.7) or 1
+			local sk = c:FindFirstChildWhichIsA("UIStroke")
+			if sk then
+				sk.Color = col
+				sk.Transparency = 1 - p.alpha
+			end
+		end
+	end
+end
+
+local function chFxLayer(char, layer)
+	if layer.fx and layer.fx.Parent then return layer.fx end
+	local head = char:FindFirstChild("Head") or char:FindFirstChildWhichIsA("BasePart")
+	if not head then return nil end
+	-- 4.2x5.6 студентов: контейнер закрывает тело целиком
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "EnkaisyChamsFX"
+	bb.Adornee = head
+	bb.Size = UDim2.fromScale(4.2, 5.6)
+	bb.AlwaysOnTop = true
+	bb.LightInfluence = 0
+	bb.MaxDistance = 400
+	bb.Parent = char
+	-- 1) «визор» – бегущая полоса и скан-линии (настоящий Frame + UIGradient)
+	local band = Instance.new("Frame")
+	band.Name = "Band"
+	band.Size = UDim2.fromScale(1, 0.16)
+	band.BackgroundColor3 = Color3.new(1, 1, 1)
+	band.BorderSizePixel = 0
+	band.Visible = false
+	band.Parent = bb
+	local bgrad = Instance.new("UIGradient")
+	bgrad.Name = "Tint"
+	bgrad.Transparency = NumberSequence.new(0.2)
+	bgrad.Parent = band
+	-- 2) сетка «сканирования»: линии, которые едут по телу
+	local scan = Instance.new("Frame")
+	scan.Name = "Scan"
+	scan.Size = UDim2.fromScale(1, 1)
+	scan.BackgroundColor3 = Color3.new(1, 1, 1)
+	scan.BorderSizePixel = 0
+	scan.Visible = false
+	scan.Parent = bb
+	local sgrad = Instance.new("UIGradient")
+	sgrad.Name = "Tint"
+	sgrad.Parent = scan
+	-- 3) ореол: мягкий овал вокруг тела (UICorner + градиент)
+	local aura = Instance.new("Frame")
+	aura.Name = "Aura"
+	aura.Size = UDim2.fromScale(1.3, 1.3)
+	aura.Position = UDim2.fromScale(-0.15, -0.15)
+	aura.BackgroundColor3 = Color3.new(1, 1, 1)
+	aura.BackgroundTransparency = 0.75
+	aura.BorderSizePixel = 0
+	aura.Visible = false
+	aura.Parent = bb
+	local acorner = Instance.new("UICorner")
+	acorner.CornerRadius = UDim.new(1, 0)
+	acorner.Parent = aura
+	local agrad = Instance.new("UIGradient")
+	agrad.Name = "Tint"
+	agrad.Parent = aura
+	layer.fx, layer.fxBand, layer.fxScan, layer.fxAura = bb, band, scan, aura
+	layer.fxBGrad, layer.fxSGrad, layer.fxAGrad = bgrad, sgrad, agrad
+	return bb
+end
+
+-- Частицы: искры/плазма/электричество. Один эмиттер на модель, включается по эффекту.
+local function chEmit(char, layer)
+	if layer.emit and layer.emit.Parent then return layer.emit end
+	local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+	if not root then return nil end
+	local p = Instance.new("ParticleEmitter")
+	p.Name = "EnkaisyChamsEmit"
+	p.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	p.Rate = 0
+	p.Lifetime = NumberRange.new(0.35, 1.1)
+	p.Speed = NumberRange.new(1, 3.5)
+	p.SpreadAngle = Vector2.new(180, 180)
+	p.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0)})
+	p.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1)})
+	p.LightEmission = 1
+	p.Enabled = false
+	p.Parent = root
+	layer.emit = p
+	return p
+end
+
+-- Снимает всё, что навесил Chams: тела возвращаются к исходным материалам и текстурам.
+local function chClear(char)
+	if not char then return end
+	for _, part in chParts(char) do
+		local o = chOrig[part]
+		if o then
+			pcall(function()
+				part.Material = o.mat
+				part.Color = o.col
+				part.TextureID = o.tex or ""
+				part.Reflectance = o.refl or 0
+				part.Transparency = o.trans or 0
+			end)
+		end
+		chOrig[part] = nil
+		chLast[part] = nil
+	end
+	local layer = chLayer[char]
+	if layer then
+		if layer.light then layer.light:Destroy() end
+		if layer.fx then layer.fx:Destroy() end
+		if layer.emit then layer.emit:Destroy() end
+		if layer.outlines then
+			for _, ad in layer.outlines do
+				if ad and ad.Parent then pcall(function() ad:Destroy() end) end
+			end
+			layer.outlines = nil
+		end
+		chLayer[char] = nil
+	end
+end
+
+-- Один проход по модели: материал, цвет, текстура, отражения, прозрачность.
+-- ОБВОДКА: у Highlight нет свойства толщины, поэтому своя обводка рисуется
+-- BoxHandleAdornment (Adornee + Thickness). Создаётся один раз на часть и переиспользуется.
+local function chOutline(char, layer, col)
+	local st = chState()
+	local set = layer.outlines
+	-- толщина: тонкая обводка Highlight (Thickness недоступен) или своя BoxHandleAdornment
+	if not (st.OutlineOn and st.MatOn ~= false) then
+		if set then
+			for part, ad in set do
+				if ad then pcall(function() ad:Destroy() end) end
+				set[part] = nil
+			end
+		end
+		return
+	end
+	if not set then set = {} layer.outlines = set end
+	local thick = math.clamp(st.OutlineThickness or 0, 0, 4)
+	local oc = st.OutlineColor or col
+	for _, part in chParts(char) do
+		local ad = set[part]
+		if thick <= 0.05 then
+			if ad then ad:Destroy() set[part] = nil end
+		else
+			if not ad or not ad.Parent then
+				ad = Instance.new("BoxHandleAdornment")
+				ad.Name = "EnkaisyChamsOutline"
+				ad.Adornee = part
+				ad.AlwaysOnTop = true
+				ad.ZIndex = 3
+				ad.Parent = part
+				set[part] = ad
+			end
+			ad.Size = part.Size + Vector3.new(0.04, 0.04, 0.04)
+			ad.Color3 = oc
+			ad.Thickness = thick
+			ad.Transparency = 0.15
+		end
+	end
+end
+
+local function chPaintBody(char, now, tint)
+	local st = chState()
+	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
+	local col, h, s, v = chColor(tint)
+	col = chSpinColor(col, h, s, v, now)
+	-- второй цвет: материалы с col2 переливаются между двумя цветами (Gold → Silver),
+	-- это реальное смешение, а не отдельная «красивая» настройка
+	if m.col2 and st.Color2 then
+		local mix = 0.5 + 0.5 * math.sin(now * 1.6 * (st.AnimSpeed or 1))
+		col = col:Lerp(st.Color2, 0.35 * mix)
+		h, s, v = col:ToHSV()
+	end
+	-- Пользовательский ID текстуры: если он введён, он имеет приоритет (это настоящий ассет).
+	local texId = (st.TexOn ~= false and st.TexId and st.TexId ~= "" and st.TexId) or ""
+	for _, part in chParts(char) do
+		if not chOrig[part] then
+			chOrig[part] = {mat = part.Material, col = part.Color, tex = part.TextureID,
+				refl = part.Reflectance, trans = part.Transparency}
+		end
+		if st.MatOn ~= false then
+			pcall(function()
+				part.Material = m.mat
+				part.Color = col
+				-- отражения: сила из настройки, но у стекла/льда своя база
+				local refl = (m.refl or 0) * (st.Reflect or 0) * 2
+				-- эффект Reflect: тело становится зеркальным поверх материала
+				if (st.Effects or {}).Reflect then refl = refl + 0.35 end
+				part.Reflectance = math.clamp(refl, 0, 1)
+				part.Transparency = math.clamp((m.trans or 0) + (st.Transparency or 0), 0, 1)
+				if part.TextureID ~= texId then part.TextureID = texId end
+			end)
+			chLast[part] = col
+		end
+	end
+	chOutline(char, layer, col)
+	chPattern(char, layer, col, now)
+	return col
+end
+
+-- Свет: яркость = материал + Glow + Pulse + Bloom, цвет = GlowColor или цвет материала.
+local function chPaintLight(char, layer, col, now)
+	local st = chState()
+	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
+	local e = st.Effects or {}
+	local power = (m.glow or 0) * (st.Glow or 0.6) * 2.2
+	if e.Glow or e.Bloom then power = power + (st.Glow or 0.6) * 1.6 end
+	if e.Pulse then power = power * (0.75 + 0.25 * math.sin(now * 3.2)) end
+	if e.Fresnel or e.Rim then power = power * 1.15 end
+	-- InnerGlow: свет «из глубины» — короткий радиус и высокая яркость, силуэт светится изнутри
+	local inner = e.InnerGlow and true or false
+	if power <= 0.02 then
+		if layer.light then layer.light.Enabled = false end
+		return
+	end
+	if not layer.light or not layer.light.Parent then
+		local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+		if not root then return end
+		local l = Instance.new("PointLight")
+		l.Name = "EnkaisyChamsLight"
+		l.Range = 11
+		l.Shadows = false
+		l.Parent = root
+		layer.light = l
+	end
+	local l = layer.light
+	l.Enabled = true
+	l.Color = st.GlowColor or m.lcol or col
+	l.Brightness = math.clamp(inner and (power * 1.8) or power, 0, 5)
+	-- InnerGlow: короткий радиус у тела, обычное свечение — шире (видно на полу и стенах)
+	l.Range = inner and 5.5 or 11
+end
+
+-- Эффекты-анимации на теле: скан, волны, градиент, шиммер, дисторшн.
+-- Это ImageLabel в BillboardGui: настоящая картинка-паттерн, у которой двигается
+-- прозрачность и позиция — видно, что эффект «живой», а не просто цвет.
+local function chPaintFx(char, layer, col, now)
+	local st = chState()
+	local e = st.Effects or {}
+	local wantFx = e.Scan or e.Waves or e.Gradient or e.Shimmer or e.Distort or e.Chroma
+		or e.XRay or e.Hologram or e.MovingHi or e.Aura or e.Glow or e.Bloom
+	local gui = chFxLayer(char, layer)
+	if not gui then return end
+	if not wantFx then
+		gui.Enabled = false
+		return
+	end
+	gui.Enabled = true
+	local band, scan, aura = layer.fxBand, layer.fxScan, layer.fxAura
+	local speed = math.max(0.05, (st.TexSpeed or 0.35) * (st.AnimSpeed or 1))
+	local rot = st.Rotate or 0
+
+	-- СКАН-ЛИНИИ (Scan / Hologram): полосатый градиент, который ползёт по телу
+	local wantScan = e.Scan or e.Hologram
+	scan.Visible = wantScan
+	if wantScan then
+		local n = 22
+		local keys = {}
+		for i = 0, n do
+			keys[#keys + 1] = ColorSequenceKeypoint.new(i / n,
+				(i % 2 == 0) and Color3.new(1, 1, 1) or Color3.new(0.1, 0.1, 0.1))
+		end
+		layer.fxSGrad.Color = ColorSequence.new(keys)
+		layer.fxSGrad.Transparency = NumberSequence.new(0.35)
+		layer.fxSGrad.Rotation = (e.Hologram and 90 or 0) + rot
+		layer.fxSGrad.Offset = Vector2.new(0, (now * speed * 0.6) % 1)
+		scan.BackgroundColor3 = col
+		scan.BackgroundTransparency = 1
+	end
+
+	-- БЕГУЩИЙ БЛИК (MovingHi / Shimmer / Waves / Gradient / Flow): яркая полоса света
+	local wantBand = e.MovingHi or e.Shimmer or e.Waves or e.Gradient or e.Flow
+	band.Visible = wantBand
+	if wantBand then
+		local keys = {}
+		for i = 0, 8 do
+			local k = i / 8
+			local w = 1 - math.abs(k - 0.5) * 2 -- 0 по краям, 1 в центре
+			keys[#keys + 1] = ColorSequenceKeypoint.new(k, Color3.new(1, 1, 1):Lerp(col, 1 - w))
+		end
+		layer.fxBGrad.Color = ColorSequence.new(keys)
+		layer.fxBGrad.Transparency = NumberSequence.new(e.Shimmer and 0.4 or 0.2)
+		layer.fxBGrad.Rotation = (e.Waves and -18 or 0) + rot
+		-- каждая «полоса» едет по-своему: волны — туда-обратно, блик — сверху вниз
+		local off
+		if e.Waves then
+			off = 0.5 + 0.45 * math.sin(now * speed * 2)
+		elseif e.Shimmer then
+			off = (now * speed * 1.5) % 1
+		else
+			off = (now * speed * 0.5) % 1
+		end
+		layer.fxBGrad.Offset = Vector2.new(0, off)
+		band.BackgroundColor3 = e.Chroma and Color3.fromHSV((now * speed) % 1, 1, 1) or col
+		band.BackgroundTransparency = 1
+		band.Size = UDim2.fromScale(1, e.Waves and 0.28 or 0.16)
+		band.Position = UDim2.fromScale(0, 0) + UDim2.fromScale(0, 0)
+		-- Distort: полоса «дышит» по размеру
+		if e.Distort then
+			local k = 1 + 0.08 * math.sin(now * speed * 5)
+			band.Size = UDim2.fromScale(k, (e.Waves and 0.28 or 0.16) * k)
+		end
+	end
+
+	-- ОРЕОЛ (Aura / Glow / Bloom): мягкое свечение вокруг силуэта
+	local wantAura = e.Aura or e.Glow or e.Bloom
+	aura.Visible = wantAura
+	if wantAura then
+		local c = (st.GlowColor or col)
+		layer.fxAGrad.Color = ColorSequence.new(c, c)
+		local pulse = 0.7 + 0.15 * math.sin(now * speed * 3)
+		layer.fxAGrad.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.55),
+			NumberSequenceKeypoint.new(0.55, 0.15),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		aura.BackgroundColor3 = c
+		aura.BackgroundTransparency = 0.35
+		aura.Size = UDim2.fromScale(1.2 + 0.12 * pulse, 1.2 + 0.12 * pulse)
+		aura.Position = UDim2.fromScale(-0.1 - 0.06 * pulse, -0.1 - 0.06 * pulse)
+	end
+end
+
+local function chPaintParticles(char, layer, col, now)
+	local st = chState()
+	local e = st.Effects or {}
+	local m = CH_MAT_KEY[st.Mat] or CH_MAT_KEY.Neon
+	local want = e.Particles or e.Aura or e.Trails or m.particles
+	local p = chEmit(char, layer)
+	if not p then return end
+	if not want then
+		p.Enabled = false
+		return
+	end
+	p.Enabled = true
+	p.Color = ColorSequence.new(st.GlowColor or m.lcol or col)
+	if e.Aura then
+		-- электрическая аура: частые короткие искры
+		p.Rate = 45
+		p.Lifetime = NumberRange.new(0.15, 0.4)
+		p.Speed = NumberRange.new(6, 12)
+	elseif e.Trails then
+		p.Rate = 25
+		p.Lifetime = NumberRange.new(0.5, 1.2)
+		p.Speed = NumberRange.new(0.5, 1.5)
+	else
+		p.Rate = 18
+	end
+end
+
+-- Единая точка: вызывается каждый кадр для видимых целей (не для всех подряд — см. ChamsTick).
+local function chApply(char, tint, now)
+	if not char then return end
+	local layer = chLayer[char]
+	if not layer then layer = {} chLayer[char] = layer end
+	local col = chPaintBody(char, now, tint)
+	chPaintLight(char, layer, col, now)
+	chPaintFx(char, layer, col, now)
+	chPaintParticles(char, layer, col, now)
+	return col
+end
+
+
+-- ===== ПАНЕЛЬ CHAMS: материал, текстура, эффекты, пресеты =====
+-- Панель собирается здесь, потому что тут уже есть все элементы интерфейса
+-- (карточки, ползунки, переключатели, палитры), а данные — в CH_MATS/CH_TEX/CH_FX.
+local function buildChamsPage(parent, api)
+	local st = chState()
+	-- внешние функции берём через шину; чего нет (старая сборка) — тихо пропускаем
+	local on = function(sig, fn) if sig then sig:Connect(fn) end end
+	local C, U, O, S, V2 = CHCTX.C, UDim2.new, UDim2.fromOffset, UDim2.fromScale, Vector2.new
+	local XL, GM, GB = CHCTX.XL, CHCTX.GM, CHCTX.GB
+	local function rr(o, r) return CHCTX.rr(o, r) end
+	local function new(cl, pr, pa) return CHCTX.new(cl, pr, pa) end
+	local order = 0
+	local function nx() order += 1 return order end
+	-- После любой правки: сохранить, перекрасить все цели, обновить превью.
+	local function applyAll()
+		saveNow()
+		CHCTX.refreshHL()
+		CHCTX.updAll()
+	end
+
+	-- ПРЕСЕТЫ: готовые комбинации под референс (Pulse / Chrome+Rainbow и т.д.)
+	local PRESETS = {
+		{name = "Pulse Chrome", Mat = "Chrome", Tex = "Hexagon", Glow = 0.8,
+			Effects = {Glow = true, Rainbow = true, Flow = true, Rim = true}},
+		{name = "Lava Core", Mat = "Lava", Tex = "Cracked", Glow = 1,
+			Effects = {Pulse = true, Glow = true, Particles = true}},
+		{name = "Frost Crystal", Mat = "Ice", Tex = "Crystal", Glow = 0.7, Reflect = 0.7,
+			Effects = {Fresnel = true, Shimmer = true, Glow = true}},
+		{name = "Holo Glass", Mat = "Holographic", Tex = "Hologram", Transparency = 0.3, Glow = 0.9,
+			Effects = {Scan = true, Chroma = true, Bloom = true}},
+		{name = "Plasma Storm", Mat = "Plasma", Tex = "Plasma", Glow = 1,
+			Effects = {Pulse = true, Particles = true, Aura = true, Distort = true}},
+		{name = "Liquid Mercury", Mat = "LiquidMetal", Tex = "Liquid", Reflect = 0.9,
+			Effects = {MovingHi = true, Waves = true, Glow = true}},
+		{name = "Carbon Ghost", Mat = "CarbonFiber", Tex = "Carbon", Transparency = 0.2, Glow = 0.5,
+			Effects = {XRay = true, Gradient = true}},
+		{name = "Gold Aura", Mat = "Gold", Tex = "Veins", Glow = 1,
+			Effects = {Glow = true, Particles = true, Rim = true, Shimmer = true}},
+	}
+	sectionLabel(parent, "CHAMS PRESETS", nx())
+	do
+		-- карточки пресетов: 2 в ряд, нажатие сразу применяет комбинацию
+		local grid = CHCTX.chipGrid(parent, nx())
+		for _, pr in PRESETS do
+			local b = CHCTX.button(grid, pr.name, {Size = U(0.5, -4, 0, 32), TextSize = 11})
+			if CHCTX.hoverable then CHCTX.hoverable(b) end
+			on(b.Activated, function()
+				for k, v in pr do
+					if k ~= "name" then st[k] = v end
+				end
+				st.Preset = pr.name
+				applyAll()
+				if CHCTX.toast then CHCTX.toast("Chams: " .. pr.name) end
+			end)
+		end
+	end
+
+	-- МАТЕРИАЛЫ: список строк с образцом цвета и настоящим свойством материала
+	sectionLabel(parent, "MATERIALS", nx())
+	local matRows = {}
+	do
+		local card = new("Frame", {Size = U(1, 0, 0, 188), BackgroundColor3 = C.Card,
+			BackgroundTransparency = 0.4}, parent)
+		rr(card, CHCTX.Skin.Radius)
+		local scroll = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
+			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y}, card)
+		new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, scroll)
+		for i, m in CH_MATS do
+			local r = new("TextButton", {Size = U(1, -6, 0, 30), BackgroundColor3 = C.Side,
+				BackgroundTransparency = 0.55, AutoButtonColor = false, LayoutOrder = i, Text = ""}, scroll)
+			rr(r, 8)
+			local edge = CHCTX.outline(r, CHCTX.OUT.Hover)
+			-- образец: цвет материала + блик, чтобы Chrome отличался от Neon без применения
+			local sw = new("Frame", {Size = O(20, 20), Position = U(0, 6, 0.5, 0), AnchorPoint = V2(0, 0.5),
+				BackgroundColor3 = m.col, BackgroundTransparency = 0.05}, r)
+			rr(sw, 5)
+			new("UIStroke", {Color = C.W, Transparency = 0.7, Thickness = 1}, sw)
+			local tag = m.refl and m.refl > 0.5 and "reflective" or m.trans and "transparent"
+				or (m.glow or 0) > 1 and "emissive" or m.spin and "iridescent" or m.tex and "textured" or nil
+			new("TextLabel", {Size = U(1, -110, 1, 0), Position = O(34, 0), BackgroundTransparency = 1,
+				Text = m.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 12, TextXAlignment = XL}, r)
+			if tag then
+				new("TextLabel", {Size = O(74, 1), Position = U(1, -78, 0, 0), BackgroundTransparency = 1,
+					Text = tag, TextColor3 = m.col, FontFace = GM, TextSize = 9,
+					TextXAlignment = Enum.TextXAlignment.Right}, r)
+			end
+			matRows[m.key] = {row = r, edge = edge, label = r:FindFirstChildWhichIsA("TextLabel")}
+			on(r.Activated, function() st.Mat = m.key st.MatOn = true applyAll() end)
+		end
+		-- подсветка выбранного материала (и при выборе пресета — тоже)
+		local function paintMat()
+			for k, r in matRows do
+				local on = (k == st.Mat)
+				r.edge.Color = on and C.Acc or CHCTX.PURE
+				r.edge.Transparency = on and 0 or CHCTX.OUT.Hover
+				r.edge.Thickness = on and 2 or 1
+				r.row.BackgroundColor3 = on and C.Acc or C.Side
+				r.row.BackgroundTransparency = on and 0.86 or 0.55
+				r.label.TextColor3 = on and C.W or C.Mut
+			end
+		end
+		paintMat()
+		CHCTX.painters = CHCTX.painters or {}
+		table.insert(CHCTX.painters, paintMat)
+	end
+
+	-- ТЕКСТУРЫ: у каждой настоящий узор (соты, сетка, скан-линии, волны), рисуется на теле
+	sectionLabel(parent, "TEXTURES (patterns)", nx())
+	local texRows = {}
+	do
+		local card = new("Frame", {Size = U(1, 0, 0, 150), BackgroundColor3 = C.Card,
+			BackgroundTransparency = 0.4}, parent)
+		rr(card, CHCTX.Skin.Radius)
+		local scroll = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
+			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y}, card)
+		new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, scroll)
+		for i, key in CH_TEX_ORDER do
+			local t = CH_TEX[key]
+			if t then
+				local r = new("TextButton", {Size = U(1, -6, 0, 26), BackgroundColor3 = C.Side,
+					BackgroundTransparency = 0.55, AutoButtonColor = false, LayoutOrder = i, Text = ""}, scroll)
+				rr(r, 8)
+				local edge = CHCTX.outline(r, CHCTX.OUT.Hover)
+				new("TextLabel", {Size = U(1, -12, 1, 0), Position = O(8, 0), BackgroundTransparency = 1,
+					Text = t.name, TextColor3 = C.Mut, FontFace = GM, TextSize = 12, TextXAlignment = XL}, r)
+				texRows[key] = {row = r, edge = edge, label = r:FindFirstChildWhichIsA("TextLabel")}
+				on(r.Activated, function()
+					st.Tex = key
+					st.TexOn = (key ~= "None")
+					-- выбор узора отменяет свой ID: иначе непонятно, что именно рисуется
+					if st.TexId ~= "" then st.TexId = "" end
+					applyAll()
+				end)
+			end
+		end
+		local function paintTex()
+			for k, r in texRows do
+				local on = (k == (st.Tex or "None"))
+				r.edge.Color = on and C.Acc or CHCTX.PURE
+				r.edge.Transparency = on and 0 or CHCTX.OUT.Hover
+				r.row.BackgroundColor3 = on and C.Acc or C.Side
+				r.row.BackgroundTransparency = on and 0.86 or 0.55
+				r.label.TextColor3 = on and C.W or C.Mut
+			end
+		end
+		paintTex()
+		CHCTX.painters = CHCTX.painters or {}
+		table.insert(CHCTX.painters, paintTex)
+	end
+
+	-- СВОЙ ID ТЕКСТУРЫ: настоящий ассет Roblox (число или rbxassetid://...).
+	-- ID не выдумываются: путь к картинке вводит пользователь, настройка сохраняется.
+	sectionLabel(parent, "CUSTOM TEXTURE ID", nx())
+	do
+		local card = new("Frame", {Size = U(1, 0, 0, 46), BackgroundColor3 = C.Card,
+			BackgroundTransparency = 0.4}, parent)
+		rr(card, CHCTX.Skin.Radius)
+		local box = new("TextBox", {Size = U(1, -12, 0, 28), Position = O(6, 6),
+			BackgroundColor3 = C.Side, Text = st.TexId or "", PlaceholderText = "rbxassetid://123456789",
+			TextColor3 = C.W, PlaceholderColor3 = C.Mut, FontFace = GM, TextSize = 12,
+			TextXAlignment = XL, ClearTextOnFocus = false}, card)
+		rr(box, 7)
+		CHCTX.Skin.field(box)
+		new("TextLabel", {Size = U(1, -12, 0, 12), Position = O(6, 34), BackgroundTransparency = 1,
+			Text = "число или rbxassetid:// — пусто = узор из списка", TextColor3 = C.Mut,
+			FontFace = GM, TextSize = 9, TextXAlignment = XL}, card)
+		local function commit()
+			local txt = (box.Text or ""):gsub("%s", "")
+			local id = txt:match("^(%d+)$") or txt:match("^rbxassetid://(%d+)$")
+			st.TexId = id and ("rbxassetid://" .. id) or ""
+			applyAll()
+		end
+		on(box.FocusLost, commit)
+	end
+
+	-- ЭФФЕКТЫ: можно включить сколько угодно одновременно
+	sectionLabel(parent, "EFFECTS (можно несколько)", nx())
+	do
+		local grid = CHCTX.chipGrid(parent, nx())
+		for i, f in CH_FX do
+			local _, paint = CHCTX.toggleCard(grid or parent, f.name, i,
+				function() return st.Effects[f.key] == true end,
+				function(v) st.Effects[f.key] = v applyAll() end)
+			paint(false)
+		end
+	end
+
+	-- НАСТРОЙКИ: настоящие числа, каждое что-то меняет
+	sectionLabel(parent, "LOOK", nx())
+	local function slot(title, key, min, max, step, fmt)
+		local _, paint = CHCTX.sliderCard(parent, title, nx(), min, max,
+			function() return st[key] or 0 end,
+			function(v) st[key] = v applyAll() end, fmt, step)
+		paint(false)
+	end
+	slot("Glow intensity", "Glow", 0, 1, 0.05, function(v) return math.floor(v * 100 + 0.5) .. "%" end)
+	slot("Fill strength", "FillStrength", 0, 1, 0.05, function(v) return math.floor(v * 100 + 0.5) .. "%" end)
+	slot("Reflections", "Reflect", 0, 1, 0.05, function(v) return math.floor(v * 100 + 0.5) .. "%" end)
+	slot("Transparency", "Transparency", 0, 0.9, 0.05, function(v) return math.floor(v * 100 + 0.5) .. "%" end)
+	slot("Brightness", "Brightness", 0.2, 2, 0.05, function(v) return string.format("%.2f", v) end)
+	slot("Contrast", "Contrast", 0.5, 2, 0.05, function(v) return string.format("%.2f", v) end)
+	slot("Texture scale", "TexScale", 1, 20, 1, function(v) return math.floor(v) .. "x" end)
+	slot("Texture speed", "TexSpeed", 0, 2, 0.05, function(v) return string.format("%.2f", v) end)
+	slot("Animation speed", "AnimSpeed", 0.1, 3, 0.05, function(v) return string.format("%.2f", v) end)
+	slot("Pattern rotation", "Rotate", 0, 360, 5, function(v) return math.floor(v) .. "°" end)
+
+	-- ЦВЕТА: настоящие палитры (тот же makePicker, что в папке Color), а не подписи.
+	-- Color — цвет тела, Color2 — второй цвет для градиентных материалов, GlowColor — цвет света,
+	-- OutlineColor — цвет своей обводки (BoxHandleAdornment).
+	sectionLabel(parent, "COLORS", nx())
+	local function palette(title, key, onEdit)
+		local initial = st[key]
+		if typeof(initial) ~= "Color3" then initial = Color3.fromRGB(255, 255, 255) end
+		local h, sat, v = initial:ToHSV()
+		local cur = {h = h, s = sat, v = v}
+		local card, refresh = CHCTX.makePicker(parent, nx(), function(edit)
+			if edit then
+				st[key] = Color3.fromHSV(cur.h, cur.s, cur.v)
+				onEdit()
+			end
+			return cur
+		end, onEdit)
+		local label = new("TextLabel", {Size = U(1, -12, 0, 16), Position = O(6, 4), BackgroundTransparency = 1,
+			Text = title, TextColor3 = C.W, FontFace = GB, TextSize = 11, TextXAlignment = XL}, card)
+		label.ZIndex = 5
+		refresh()
+	end
+	local function paintPick() applyAll() end
+	palette("Body color", "Color", paintPick)
+	palette("Second color", "Color2", paintPick)
+	palette("Glow color", "GlowColor", paintPick)
+	palette("Outline color", "OutlineColor", paintPick)
+
+	-- СВОЯ ОБВОДКА: включается отдельно, толщина настоящая (BoxHandleAdornment)
+	do
+		local _, paintO = CHCTX.toggleCard(parent, "Своя обводка тела", nx(),
+			function() return st.OutlineOn == true end,
+			function(val) st.OutlineOn = val applyAll() end)
+		paintO(false)
+	end
+	slot("Outline thickness", "OutlineThickness", 0, 4, 0.1, function(v) return string.format("%.1f", v) end)
+
+	-- СБРОС
+	local resetBtn = CHCTX.button(parent, "Сбросить Chams", {Size = U(1, 0, 0, 36), TextSize = 12})
+	on(resetBtn.Activated, function()
+		for k, v in CH_DEF do
+			if k ~= "Effects" then st[k] = v end
+		end
+		st.Effects = {}
+		applyAll()
+	end)
+end
+
 -- приоритет цвета: персональный > отметка > друг > цвет команды > обычный
 -- CHAMS LOOK: один стиль на все хайлайты. Highlight умеет только заливку и обводку, поэтому
 -- «металл», «стекло», «лава» и прочее собраны из цвета и прозрачности: у каждого стиля свой
@@ -2138,30 +3168,26 @@ CHAMS = {
 CHAMS_BY_KEY = {}
 for i, c in CHAMS do c.idx, CHAMS_BY_KEY[c.key] = i, c end
 
--- Текстуры для стилей (необязательно). Одного материала мало: CrackedLava почти не реагирует
--- на Color, Glass/Ice/Foil выглядят как пластик. Если вписать сюда id текстуры, она ляжет
--- на тело, и стиль станет по-настоящему «текстурным».
--- Как взять id: в Studio положить на деталь Texture с нужной картинкой (лава, лёд, сетка),
--- скопировать его свойство Texture и вписать сюда: CHAMS_TEX.Lava = "rbxassetid://<число>".
-local CHAMS_TEX = {} -- пусто по умолчанию: выдуманный id текстуры ничего не нарисует
+-- API движка Chams в одной таблице: функции ниже заполняют её поля.
+CH = {}
+
+-- Текстура тела для старых стилей: берётся из поля CUSTOM TEXTURE ID новой вкладки Chams
+-- (CH_DEF.TexId). Выдуманных id в скрипте нет: пусто — значит без текстуры.
 
 
--- Стиль Chams: и ключ для списка, и его параметры в одном месте.
-local function chamsStyle()
-	return CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
-end
+-- Стиль Chams: его параметры ищутся по ключу прямо в таблице CHAMS_BY_KEY.
 
 -- Оттенок стиля поверх базового цвета: так «металл», «лёд», «лава» отличаются даже
 -- когда у всех целей один цвет темы. Для стилей без своего цвета возвращается база.
-local function chamsTint(base, st, mix)
-	st = st or chamsStyle()
+function CH.tint(base, st, mix)
+	st = st or (CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1])
 	if not (base and st.col) then return base end
 	return base:Lerp(st.col, mix or 0.6)
 end
 
 -- Сила стиля. У Highlight есть только заливка и обводка, поэтому «характер» стиля —
 -- это плотность: st.fill / st.outline (0.20..0.97) сдвигают базовую непрозрачность ESP.
-local function chamsAlpha(o, key, base, minOn, strength)
+function CH.alpha(o, key, base, minOn, strength)
 	-- strength — «плотность» стиля из таблицы CHAMS: меньше = плотнее.
 	-- Заливка: 0.20 → ×1.62, 0.97 → ×0.16 (Wireframe почти прозрачный).
 	-- Контур: 0.00 → ×1.35, 0.50 → ×0.80 (мягкие стили контур приглушают).
@@ -2214,9 +3240,20 @@ local function chamsClear(char)
 end
 
 -- накладывает текстуру стиля: tint — цвет темы, чтобы стиль без своего цвета не был белым
+-- Единая точка API движка Chams: вызовы идут через таблицу, а не через локали
+-- (в главном блоке уже 165 локалей, а предел Lua — 200).
+CH_APPLY_READY = false
+
 local function chamsTexture(char, st, tint, animate)
-	st = st or chamsStyle()
+	st = st or (CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1])
 	if not char then return end
+	-- НОВЫЙ ДВИЖОК: материал/текстура/свет/эффекты из папки CHAMS.
+	-- Он рисует тело целиком, поэтому старые стили ниже уже не нужны —
+	-- если движок включён (CFG.Chams2.MatOn ~= false), дальше не идём.
+	if CFG.Chams2 and chApply then
+		local ok = pcall(chApply, char, tint, os.clock())
+		if ok then return end
+	end
 	if not st.mat then
 		-- стиль без материала (Outline/Solid/Gradient): только Highlight, тело не трогаем
 		chamsClear(char)
@@ -2245,7 +3282,8 @@ local function chamsTexture(char, st, tint, animate)
 	-- Настоящая текстура Roblox поверх материала: CrackedLava почти не реагирует на Color,
 	-- Glass/Ice/Foil выглядят как пластик. Текстура берётся из CHAMS_TEX (по умолчанию пусто:
 	-- id текстур задаются вручную, придуманный id просто ничего не нарисует).
-	local tex = CHAMS_TEX[st.key] or CHAMS_TEX[st.mat and st.mat.Name or ""]
+	local cs = chState()
+	local tex = (cs.TexId ~= "" and cs.TexId) or nil
 	for _, part in chamsParts(char) do
 		if tex then
 			if part.TextureID ~= tex then pcall(function() part.TextureID = tex end) end
@@ -2274,24 +3312,26 @@ end
 
 -- Применяет стиль к хайлайту: цвет (с оттенком стиля) и обе прозрачности.
 -- tintable = false, когда у цели свой цвет (персональный) — его не перекрашиваем.
-local function chamsApply(o, fillColor, outlineColor, tintable)
-	local st = chamsStyle()
+-- Применение стиля к Highlight: цвет (с оттенком стиля) и обе прозрачности.
+-- tintable = false, когда у цели свой цвет: его не перекрашиваем.
+function CH.apply(o, fillColor, outlineColor, tintable)
+	local st = (CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1])
 	if fillColor then
-		o.h.FillColor = (tintable == false) and fillColor or chamsTint(fillColor, st)
+		o.h.FillColor = (tintable == false) and fillColor or CH.tint(fillColor, st)
 	end
 	if outlineColor then
-		o.h.OutlineColor = (tintable == false) and outlineColor or chamsTint(outlineColor, st, 0.7)
+		o.h.OutlineColor = (tintable == false) and outlineColor or CH.tint(outlineColor, st, 0.7)
 	end
 	-- Заливка Highlight рисуется ПОВЕРХ тела (DepthMode.AlwaysOnTop), поэтому плотная заливка
-	-- прячет материал и свет — снаружи все стили выглядели одинаково серым силуэтом.
-	-- Ограничиваем заливку 55%: тело (лава, неон, стекло) остаётся видимым, стиль читается.
-	o.h.FillTransparency = 1 - math.min(0.55, chamsAlpha(o, "Fill", CFG.Fill, 0.45, st.fill))
-	o.h.OutlineTransparency = 1 - chamsAlpha(o, "Outline", CFG.Outline, 0.8, st.outline)
+	-- прячет материал и свет — снаружи все стили выглядели одинаковым серым силуэтом.
+	-- Заливка ограничена 55%: тело (лава, неон, стекло) остаётся видимым.
+	o.h.FillTransparency = 1 - math.min(0.55, CH.alpha(o, "Fill", CFG.Fill, 0.45, st.fill))
+	o.h.OutlineTransparency = 1 - CH.alpha(o, "Outline", CFG.Outline, 0.8, st.outline)
 	return st
 end
 
 local function refreshHL()
-	local st = chamsStyle()
+	local st = (CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1])
 	for _, o in esp do
 		local h = o.h
 		-- персональный цвет сильнее стиля: если он задан, оттенок стиля не подмешивается
@@ -2318,10 +3358,22 @@ local function refreshHL()
 		end
 		local oc = pcol(o.plr, "Outline") or TC.get(o.plr, "Box") or hsv(col.Outline)
 		local ownOutline = pcol(o.plr, "Outline") ~= nil
-		chamsApply(o, fc, oc, not (ownFill or ownOutline))
+		CH.apply(o, fc, oc, not (ownFill or ownOutline))
+		-- Панель Chams: плотность заливки. Раньше значение жило только в состоянии
+		-- и ни на что не влияло (запрет на «настройки ради настройки»).
+		local cs = chState()
+		if cs.MatOn ~= false then
+			local fs = math.clamp(cs.FillStrength or 0.5, 0, 1)
+			o.h.FillTransparency = math.clamp(o.h.FillTransparency + (1 - fs) * 0.55, 0, 1)
+		end
 		-- текстура (материал тела) — вторая половина стиля; для Outline/Solid/Gradient это no-op
 		if o.char then
 			pcall(chamsTexture, o.char, st, fc, CFG.Anim)
+		end
+		-- новый движок Chams: сразу применяем выбранные материал/текстуру/эффекты,
+		-- не дожидаясь следующего кадра (переключение в меню видно мгновенно)
+		if CFG.Chams2 and chApply and o.char then
+			pcall(chApply, o.char, fc, os.clock())
 		end
 	end
 	return st
@@ -2334,6 +3386,7 @@ local function unhl(char, fade)
 	esp[char] = nil
 	-- тело возвращаем к исходным материалам: иначе скрипт оставит игроков неоновыми
 	pcall(chamsClear, char)
+	pcall(chClear, char)
 	restoreNative(o)
 	if o.nb then o.nb:Destroy() end
 	if o.hb then o.hb:Destroy() end
@@ -2341,7 +3394,7 @@ local function unhl(char, fade)
 	for _, f in o.sk or {} do f:Destroy() end
 	for _, f in o.bx or {} do f:Destroy() end
 	if fade and CFG.Anim then
-		local t = TS:Create(o.h, TweenInfo.new(0.25), {FillTransparency = 1, OutlineTransparency = 1})
+		local t = GLB.TS:Create(o.h, TweenInfo.new(0.25), {FillTransparency = 1, OutlineTransparency = 1})
 		t.Completed:Once(function() o.h:Destroy() end)
 		t:Play()
 	else
@@ -2506,6 +3559,7 @@ local function scanModels()
 end
 
 local lastRank, lastChk, lastLbl, lastWork = 0, 0, 0, 0
+local chWarn = false -- ошибка Chams сообщается один раз, а не каждый кадр
 local function setp(o, k, v) if o[k] ~= v then o[k] = v end end
 local function frame()
 	local now = os.clock()
@@ -2537,6 +3591,12 @@ local function frame()
 		local limited = CFG.Limit and (o.rank or 0) > CFG.LimitN
 		local vis = not far and not limited and (not CFG.HideDead or RIG.alive(char))
 		setp(o.h, "Enabled", pv(o.plr, "Hl", CFG.Hl) and vis)
+		-- Chams: тело, свет, текстуры и эффекты. Считаем только для видимых целей —
+		-- иначе на 30 игроках каждый кадр красились бы и невидимые (просадка FPS).
+		if vis and CFG.Chams2 and chApply then
+			local okC, eC = pcall(chApply, char, o.h.FillColor, now)
+			if not okC and not chWarn then chWarn = true warn("[Enkaisy] chams error: " .. tostring(eC)) end
+		end
 		local hum = o.hum
 		local f = hum and math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1) or 1
 		local marked = o.plr and marks[o.plr.UserId] == "Mark"
@@ -2547,7 +3607,7 @@ local function frame()
 			if rb then o.h.FillColor = rb end
 			-- HPColor и радуга перекрашивают заливку каждый кадр — оттенок стиля возвращаем обратно,
 			-- иначе Chams «пропадает», как только включён цвет по здоровью
-			o.h.FillColor = chamsTint(o.h.FillColor)
+			o.h.FillColor = CH.tint(o.h.FillColor)
 		end
 		-- ESP Box: экранная рамка вокруг цели, цвет как у контура подсветки
 		if CFG.Box or o.bx then
@@ -2658,10 +3718,10 @@ local function drag(f, cb, onStart, onEnd)
 		cb(math.clamp((pos.X - a.X) / s.X, 0, 1), math.clamp((pos.Y - a.Y) / s.Y, 0, 1))
 	end
 	local function moved(i)
-		if act and move(i) and (i == act or i.UserInputType == UT.MouseMovement) then u(i.Position) end
+		if act and move(i) and (i == act or i.UserInputType == GLB.UT.MouseMovement) then u(i.Position) end
 	end
 	local function ended(i)
-		if act and (i == act or i.UserInputType == UT.MouseButton1) then
+		if act and (i == act or i.UserInputType == GLB.UT.MouseButton1) then
 			act = nil
 			dragMoves[moved], dragEnds[ended] = nil, nil
 			if onEnd then onEnd() end
@@ -2699,13 +3759,13 @@ local function movable(handle, target, onTap, onEnd, canDrag)
 		if press(i) and (not canDrag or canDrag()) then d, m, s0, p0, t = true, false, i.Position, target.Position, i end
 	end)
 	on(UIS.InputChanged, function(i)
-		if not d or not move(i) or not (i == t or i.UserInputType == UT.MouseMovement) then return end
+		if not d or not move(i) or not (i == t or i.UserInputType == GLB.UT.MouseMovement) then return end
 		local dl = i.Position - s0
 		if dl.Magnitude > 10 then m = true end
 		if m then target.Position = U(p0.X.Scale, p0.X.Offset + dl.X, p0.Y.Scale, p0.Y.Offset + dl.Y) end
 	end)
 	on(UIS.InputEnded, function(i)
-		if d and (i == t or i.UserInputType == UT.MouseButton1) then
+		if d and (i == t or i.UserInputType == GLB.UT.MouseButton1) then
 			d = false
 			if m then
 				if onEnd then onEnd() end
@@ -2751,12 +3811,31 @@ local function chipGrid(parent, order)
 end
 
 -- Справка общих карточек; окно создаётся главным меню. Реестр также служит поиску.
-local helpUI = {items = {}}
+helpUI = {items = {}} -- справка: таблица верхнего уровня (лимит локалей)
 helpUI.info = {
  ["Enable ESP"] = {"Включает подсветку игроков и NPC.", "Enables highlights for players and NPCs."},
  ["Aim on"] = {"Включает помощь в наведении.", "Enables aim assistance."},
  ["Auto predict"] = {"Автоматически рассчитывает упреждение движущейся цели.", "Automatically predicts a moving target's position."},
  ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
+
+ -- ===== Chams (вкладка CHAMS): объяснения к каждой настройке =====
+ ["Классическая подсветка (без материалов)"] = {"Отключает материалы и эффекты, оставляя только подсветку Highlight.", "Turns materials and effects off, leaving only the Highlight glow."},
+ ["Glow intensity"] = {"Яркость свечения вокруг тела: свет падает на пол и стены.", "Glow brightness around the body: the light falls on the floor and walls."},
+ ["Fill strength"] = {"Плотность внутренней заливки Highlight. Ниже — лучше виден материал тела.", "Density of the Highlight fill. Lower values show the body material better."},
+ ["Reflections"] = {"Сила отражений на теле. Работает только для материалов, которые отражают свет.", "Reflection strength on the body. Only affects materials that reflect light."},
+ ["Transparency"] = {"Дополнительная прозрачность тела поверх прозрачности материала.", "Extra body transparency on top of the material's own transparency."},
+ ["Brightness"] = {"Осветляет или затемняет итоговый цвет материала.", "Brightens or darkens the final material color."},
+ ["Contrast"] = {"Насыщенность и контраст цвета: 1 — как есть, меньше — пастель, больше — кислотно.", "Color saturation and contrast: 1 is as-is, lower is pastel, higher is neon."},
+ ["Texture scale"] = {"Размер плитки узора: мелкая сетка или крупные соты.", "Pattern tile size: a fine grid or large honeycombs."},
+ ["Texture speed"] = {"Скорость прокрутки узора и линий по телу.", "Scroll speed of the pattern and lines across the body."},
+ ["Animation speed"] = {"Общая скорость анимации: перелив цвета, узор, эффекты.", "Overall animation speed: color cycling, pattern, effects."},
+ ["Pattern rotation"] = {"Поворот узора на теле в градусах.", "Pattern rotation on the body in degrees."},
+ ["Outline thickness"] = {"Толщина своей обводки тела. 0 — обводки нет.", "Thickness of the custom body outline. 0 disables it."},
+ ["Своя обводка тела"] = {"Настоящая обводка регулируемой толщины на каждой части тела.", "A real outline with adjustable thickness on every body part."},
+ ["Body color"] = {"Основной цвет материала и узора. Пустое значение — цвет из темы.", "Base color of the material and pattern. Empty uses the theme color."},
+ ["Second color"] = {"Второй цвет: материалы с переливом смешивают его с основным.", "Second color: shifting materials blend it with the base color."},
+ ["Glow color"] = {"Цвет света вокруг тела.", "Color of the light around the body."},
+ ["Outline color"] = {"Цвет своей обводки тела.", "Color of the custom body outline."},
  ["Target lock"] = {"Удерживает выбранную цель.", "Keeps the selected target locked."},
  ["Silent aim"] = {"Направляет выстрел в цель без движения камеры; сервер ограничивает угол.", "Directs shots toward the target without moving the camera; the server limits the angle."},
  ["Highlight"] = {"Подсвечивает цели.", "Highlights targets."},
@@ -3148,6 +4227,12 @@ end
 
 -- ===== Aim assist (встроен в меню: папки Aim / Targets / Trigger / Hitbox / FOV) =====
 local aim
+-- ===== Контекст для панели Aim и движка Chams =====
+-- Панель Aim объявлена раньше многих функций, которые она использует (кнопки, карточки,
+-- слайдеры, поиск цели). Чтобы не зависеть от порядка объявлений, всё внешнее приходит
+-- через одну таблицу CHCTX: заполняется ниже, читается в момент нажатия, а не при сборке.
+CHCTX = {}
+
 local function buildAim(page, api)
 	local AIM = {} -- состояние панели Aim: редкие локали вынесены в таблицу (лимит Lua 200)
 	local A = AIMCFG
@@ -5716,9 +6801,9 @@ local function buildAim(page, api)
 				hud.Text = line
 				-- мягкое «дыхание»: прозрачность кратко падает и возвращается (только при смене строки)
 				if CFG.Anim and hud.Visible then
-					TS:Create(hud, TweenInfo.new(0.05), {TextTransparency = 0.35}):Play()
+					GLB.TS:Create(hud, TweenInfo.new(0.05), {TextTransparency = 0.35}):Play()
 					task.delay(0.06, function()
-						if hud.Parent and hud.Visible then TS:Create(hud, TweenInfo.new(0.12), {TextTransparency = 0}):Play() end
+						if hud.Parent and hud.Visible then GLB.TS:Create(hud, TweenInfo.new(0.12), {TextTransparency = 0}):Play() end
 					end)
 				end
 			end
@@ -5817,6 +6902,24 @@ end
 -- ID / rbxassetid:// / ссылка roblox.com работают везде. Прямая ссылка (png/jpg) скачивается через request/HttpGet,
 -- сохраняется writefile и показывается через getcustomasset — это есть только в окружениях, где эти функции доступны.
 GLB.CP = game:GetService("ContentProvider")
+-- заполняем шину: теперь всё, что панель Aim берёт снаружи, доступно по имени
+CHCTX.new, CHCTX.button, CHCTX.row, CHCTX.rr = new, button, row, rr
+CHCTX.stroke, CHCTX.outline, CHCTX.sectionLabel = stroke, outline, sectionLabel
+CHCTX.sliderCard, CHCTX.toggleCard, CHCTX.cycleCard = sliderCard, toggleCard, cycleCard
+CHCTX.chipGrid, CHCTX.icon, CHCTX.makePicker = chipGrid, icon, makePicker
+CHCTX.makeSwitch, CHCTX.hoverable, CHCTX.movable = makeSwitch, hoverable, movable
+CHCTX.setp, CHCTX.tween, CHCTX.spring, CHCTX.hsv = setp, tween, spring, hsv
+CHCTX.deepCopy, CHCTX.clampGui, CHCTX.filtered = deepCopy, clampGui, filtered
+CHCTX.getPing, CHCTX.parseWords = getPing, parseWords
+CHCTX.scanModels, CHCTX.pruneModels = scanModels, pruneModels
+CHCTX.rayModelHitbox, CHCTX.fireTool = rayModelHitbox, fireTool
+CHCTX.silentTarget, CHCTX.switchTarget, CHCTX.predict = silentTarget, switchTarget, predict
+CHCTX.C, CHCTX.CFG, CHCTX.AIMCFG, CHCTX.UICFG, CHCTX.DEF = C, CFG, AIMCFG, UICFG, DEF
+CHCTX.OUT, CHCTX.PURE, CHCTX.TWEEN, CHCTX.Skin = OUT, PURE, TWEEN, Skin
+CHCTX.XL, CHCTX.GB, CHCTX.GM, CHCTX.GR = XL, GB, GM, GR
+CHCTX.updAll, CHCTX.esp = updAll, esp
+CHCTX.refreshHL, CHCTX.buildChamsPage = refreshHL, buildChamsPage
+
 local function trimS(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function bgHttp(url)
 	local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
@@ -5974,6 +7077,13 @@ function helpUI.mount(panel, unload)
 	return api
 end
 
+-- Вкладка CHAMS: вынесена из startMain, чтобы главная функция не упиралась в лимит локалей.
+local function CHAMS_PAGE(pages, api)
+	if CHCTX.buildChamsPage then
+		pcall(CHCTX.buildChamsPage, pages.Chams, api)
+	end
+end
+
 local function startMain()
 	local PW, PH = DEF.UI.PanelW, DEF.UI.PanelH
 	local HDR, RAIL, TABH, TGAP = Skin.Header, Skin.Rail, Skin.Tab, 2
@@ -6035,6 +7145,7 @@ local function startMain()
 		{id = "Players", keywords = "ESP mark hide per-player look", ownScroll = true},
 		{id = "Visual", title = "Performance", keywords = "SETTINGS update rate effects low-end preset"},
 		{id = "Appearance", keywords = "SETTINGS window transparency theme accent reset"},
+		{id = "Chams", title = "CHAMS", keywords = "CHAMS materials textures patterns effects glow outline colors presets chrome lava plasma holographic"},
 	}
 	local repaints = {}
 	local closeDetail
@@ -6177,7 +7288,7 @@ local function startMain()
 
 	local rs, lastGripTap = {}, 0
 	local function rsMove(i)
-		if not rs.act or not move(i) or not (i == rs.act or i.UserInputType == UT.MouseMovement) then return end
+		if not rs.act or not move(i) or not (i == rs.act or i.UserInputType == GLB.UT.MouseMovement) then return end
 		local k, gs = fit(), gui.AbsoluteSize
 		local d = V2(i.Position.X, i.Position.Y) - rs.s0
 		if not rs.moved then
@@ -6203,7 +7314,7 @@ local function startMain()
 		updateCols()
 	end
 	local function rsEnd(i)
-		if not rs.act or not (i == rs.act or i.UserInputType == UT.MouseButton1) then return end
+		if not rs.act or not (i == rs.act or i.UserInputType == GLB.UT.MouseButton1) then return end
 		local moved = rs.moved
 		rs.act = nil
 		dragMoves[rsMove], dragEnds[rsEnd] = nil, nil
@@ -6519,86 +7630,6 @@ local function startMain()
 		{"Rainbow", "Rainbow", refreshHL}, {"Display name", "Disp"},
 	})
 
-	-- ===== CHAMS LOOK: список стилей подсветки, как в референсе =====
-	-- Каждая строка: кружок-образец (что именно даёт стиль) + название, выбранная строка
-	-- подсвечивается оранжевым контуром. Стилей много, поэтому список в своей прокрутке.
-	sectionLabel(pm, "CHAMS LOOK", 6.6)
-	do
-		local listCard = new("Frame", {Size = U(1, 0, 0, 236), BackgroundColor3 = C.Card,
-			BackgroundTransparency = 0.4, LayoutOrder = 6.7}, pm)
-		rr(listCard, Skin.Radius)
-		outline(listCard)
-		local inner = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
-			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
-			ScrollingDirection = Enum.ScrollingDirection.Y, AutomaticCanvasSize = Enum.AutomaticSize.Y}, listCard)
-		new("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, inner)
-		local rows = {}
-		for i, st in CHAMS do
-			local r = new("TextButton", {Size = U(1, -6, 0, 34), BackgroundColor3 = C.Side,
-				BackgroundTransparency = 0.55, AutoButtonColor = false, LayoutOrder = i, Text = ""}, inner)
-			rr(r, 9)
-			local edge = outline(r, OUT.Hover)
-			-- образец стиля: квадрат заливки и контур той же толщины, что будут на цели, —
-			-- по строке видно, чем Solid отличается от Soft, не включая стиль.
-			-- Оттенок стиля подмешан к белому, как он подмешается к цвету цели.
-			-- те же формулы, что в chamsAlpha: превью не должно обещать не то, что будет на цели
-			local pvFillA = math.clamp(0.45 * (2.0 - st.fill * 1.9), 0, 1)
-			local pvEdgeA = math.clamp(1.0 * (1.35 - st.outline * 1.1), 0, 1)
-			local swatch = new("Frame", {Size = O(18, 18), Position = U(0, 42, 0.5, 0), AnchorPoint = V2(0, 0.5),
-				BackgroundColor3 = st.col and st.col:Lerp(Color3.new(1, 1, 1), 0.15) or C.W,
-				BackgroundTransparency = 1 - pvFillA}, r)
-			rr(swatch, 5)
-			stroke(swatch, st.col or PURE, 1 - pvEdgeA, math.clamp(0.9 + st.thick, 1, 2.6))
-			-- что именно делает стиль: материал тела, а не только плотность подсветки
-			local MAT_TAG = {
-				Neon = "neon glow", Lava = "lava", Ice = "ice", Glass = "glass", ForceField = "force field",
-				Metal = "foil", Chrome = "chrome", Metallic = "metal", Diamond = "glass shine",
-				Ghost = "phantom", ["Water Flow"] = "water", Iridescent = "shift", Wireframe = "neon mesh",
-				Glow = "glow", Glossy = "gloss", Crystal = "crystal",
-			}
-			local tag = MAT_TAG[st.key]
-			new("TextLabel", {Size = U(1, -110, 1, 0), Position = O(64, 0), BackgroundTransparency = 1,
-				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
-				Active = false}, r)
-			if tag then
-				new("TextLabel", {Size = O(70, 1), Position = U(1, -74, 0, 0), BackgroundTransparency = 1,
-					Text = tag, TextColor3 = st.col or C.Mut, FontFace = GM, TextSize = 10,
-					TextXAlignment = Enum.TextXAlignment.Right, Active = false}, r)
-			end
-			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel")}
-			-- bind — файловый хелпер: не зависит от того, виден ли connect в этой области
-			local function pick()
-				CFG.Chams = st.key
-				saveNow()
-				refreshHL()
-				updAll()
-				for k, rr2 in rows do
-					local sel = (k == CFG.Chams)
-					rr2.edge.Color = sel and C.Acc or PURE
-					rr2.edge.Transparency = sel and 0 or OUT.Hover
-					rr2.edge.Thickness = sel and 2 or 1
-					rr2.row.BackgroundColor3 = sel and C.Acc or C.Side
-					rr2.row.BackgroundTransparency = sel and 0.86 or 0.55
-					rr2.label.TextColor3 = sel and C.W or C.Mut
-				end
-			end
-			bind(r.Activated, pick)
-		end
-		local function paintChams()
-			for k, r in rows do
-				local on = (k == (CFG.Chams or "Outline"))
-				r.edge.Color = on and C.Acc or PURE
-				r.edge.Transparency = on and 0 or OUT.Hover
-				r.edge.Thickness = on and 2 or 1
-				r.row.BackgroundColor3 = on and C.Acc or C.Side
-				r.row.BackgroundTransparency = on and 0.86 or 0.55
-				r.label.TextColor3 = on and C.W or C.Mut
-			end
-		end
-		paintChams()
-		table.insert(repaints, paintChams)
-	end
-
 	-- размеры и прозрачность подсветки: раньше жили в отдельной папке, теперь рядом с самим ESP
 	sectionLabel(pm, "РАЗМЕР И ПРОЗРАЧНОСТЬ", 8)
 	local sOrd = 11 -- порядок после списка Chams Look (он занимает 6.7)
@@ -6626,6 +7657,21 @@ local function startMain()
 			step or (not pct and 1 or nil))
 		table.insert(repaints, function() paint() end)
 	end
+	-- ===== CHAMS: полноценная система материалов, текстур и эффектов =====
+	-- Старый список из 22 «стилей» (менял только плотность Highlight) заменён движком:
+	-- материал тела + настоящая текстура + свет + эффекты. Старый стиль остаётся
+	-- переключателем ниже, чтобы можно было вернуть плоскую подсветку.
+	sectionLabel(pm, "CHAMS", 6.6)
+	do
+		local _, paintLegacy = toggleCard(pm, "Классическая подсветка (без материалов)", 6.7,
+			function() return CFG.Chams2 and CFG.Chams2.MatOn == false end,
+			function(v) CFG.Chams2.MatOn = not v applyAll() end)
+		table.insert(repaints, function() paintLegacy(false) end)
+	end
+	-- панель Chams живёт в блоке движка (ей нужны таблицы материалов), зовём через шину.
+	-- Отдельная вкладка: материалам, текстурам, эффектам и цветам тесно в папке ESP.
+	CHAMS_PAGE(pages, api)
+
 	slider("Fill strength", "Fill", 0, 1, true)
 	slider("Outline opacity", "Outline", 0, 1, true)
 	slider("Name size", "NameSize", 10, 30)
@@ -6899,7 +7945,7 @@ local function startMain()
 			if after then after() end
 			return
 		end
-		local t = TS:Create(o, TWEEN.snap, {Position = U(-0.03, 0, 0, 0)})
+		local t = GLB.TS:Create(o, TWEEN.snap, {Position = U(-0.03, 0, 0, 0)})
 		t:Play()
 		t.Completed:Once(function()
 			o.Visible, o.Position = false, U(0, 0, 0, 0)
@@ -7323,7 +8369,7 @@ local function startMain()
 
 	sectionLabel(pa, "UI THEME", nextA())
 	local themeGrid = chipGrid(pa, nextA())
-	for i, name in THEME_ORDER do
+	for i, name in GLB.THEME_ORDER do
 		themeTabs[name] = colorTab(themeGrid, name, U(1, 0, 1, 0), i, function()
 			setTheme(name)
 		end)
@@ -7682,13 +8728,13 @@ end
 -- Сцена ~3.1 с и её НЕЛЬЗЯ пропустить: нет обработчика касаний, фон активен и до конца
 -- держит ввод (чтобы случайное нажатие не попало в меню под заставкой).
 -- При выключенных анимациях (CFG.Anim / AnimIntro) заставки нет — экран открывается сразу.
-local INTRO_WORD = "UNICRASE"
-local INTRO_SUB = "MOBILE AIM ASSIST"
-local INTRO_LEN = 3.1
+GLB.INTRO_WORD = "UNICRASE"
+GLB.INTRO_SUB = "MOBILE AIM ASSIST"
+GLB.INTRO_LEN = 3.1
 -- Шрифт логотипа: широкий техно-гротеск Michroma. Цепочка строго через pcall:
 -- 1) семейство Michroma, 2) Enum.Font.Michroma (в старых клиентах его может не быть),
 -- 3) тяжёлый Gotham — чтобы заставка не падала никогда, что бы ни было с клиентом.
-local INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)
+GLB.INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)
 do
 	local candidates = {
 		function() return Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal) end,
@@ -7697,7 +8743,7 @@ do
 	for _, pick in candidates do
 		local ok, f = pcall(pick)
 		if ok and typeof(f) == "Font" then
-			INTRO_FONT = f
+			GLB.INTRO_FONT = f
 			break
 		end
 	end
@@ -7847,7 +8893,7 @@ local function playIntro(after)
 	local function mkLetter(ch, color, z)
 		local o = new("TextLabel", {Size = O(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
 			AnchorPoint = V2(0.5, 0.5), Position = O(0, 0), BackgroundTransparency = 1, Text = ch,
-			TextColor3 = color, FontFace = INTRO_FONT, TextSize = 40, TextTransparency = 1,
+			TextColor3 = color, FontFace = GLB.INTRO_FONT, TextSize = 40, TextTransparency = 1,
 			TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
 			ZIndex = z, Active = false}, word)
 		return o
@@ -7878,8 +8924,8 @@ local function playIntro(after)
 		table.insert(shimmer, {g = g, shift = shift})
 		return o
 	end
-	for i = 1, #INTRO_WORD do
-		local ch = INTRO_WORD:sub(i, i)
+	for i = 1, #GLB.INTRO_WORD do
+		local ch = GLB.INTRO_WORD:sub(i, i)
 		-- подложки уходят вниз-вправо, темнея: так буква получает толщину
 		local depths = {}
 		for d = 4, 1, -1 do
@@ -7902,7 +8948,7 @@ local function playIntro(after)
 	})}, shine)
 	-- подпись под словом + акцентная линия под ней
 	local sub = new("TextLabel", {Name = "Sub", Size = U(1, 0, 0.05, 0), Position = S(0.5, 0.60), AnchorPoint = V2(0.5, 0),
-		BackgroundTransparency = 1, Text = INTRO_SUB, TextColor3 = C.Mut, TextTransparency = 1,
+		BackgroundTransparency = 1, Text = GLB.INTRO_SUB, TextColor3 = C.Mut, TextTransparency = 1,
 		TextSize = 12, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 12}, stage)
 	local rule = new("Frame", {Name = "Rule", Size = O(0, 2), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.675),
 		BackgroundColor3 = C.Acc, BackgroundTransparency = 1, Active = false, ZIndex = 12}, stage)
@@ -8140,11 +9186,11 @@ local function playIntro(after)
 		if not stage.Parent then stop() return end
 		-- сцену нельзя сократить касанием: единственный выход — конец таймлайна или страховка
 		if not pcall(step, dt) then stop() end
-		if os.clock() - t0 > INTRO_LEN then stop() end
+		if os.clock() - t0 > GLB.INTRO_LEN then stop() end
 	end)
 	pcall(step, 0)
 	-- страховка: что бы ни случилось, сцена не держит экран дольше 3.6 с
-	task.delay(INTRO_LEN + 0.5, stop)
+	task.delay(GLB.INTRO_LEN + 0.5, stop)
 end
 
 -- ===== Экран ключа =====
@@ -8277,7 +9323,7 @@ local function keyScreen(done)
 				afterIntro()
 			end
 			local okIntro = pcall(playIntro, safeAfter)
-			task.delay(INTRO_LEN + 1.2, function() pcall(safeAfter) end)
+			task.delay(GLB.INTRO_LEN + 1.2, function() pcall(safeAfter) end)
 			if not okIntro then
 				pcall(function() if dim.Parent then dim:Destroy() end if blur then blur:Destroy() blur = nil end end)
 				pcall(safeAfter)
@@ -8290,10 +9336,10 @@ local function keyScreen(done)
 			-- тряска карточки: амплитуда гаснет; при repeat — сильнее (ошибка)
 			shake(form, 9, 7)
 			shake(box, 3, 5)
-			local st = TS:Create(status, TweenInfo.new(0.08), {TextTransparency = 0.4})
+			local st = GLB.TS:Create(status, TweenInfo.new(0.08), {TextTransparency = 0.4})
 			st:Play()
 			st.Completed:Once(function()
-				if status.Parent then TS:Create(status, TweenInfo.new(0.2), {TextTransparency = 0}):Play() end
+				if status.Parent then GLB.TS:Create(status, TweenInfo.new(0.2), {TextTransparency = 0}):Play() end
 			end)
 			task.wait(0.34)
 		end
@@ -8348,6 +9394,10 @@ stop = function()
 	table.clear(npcs)
 	for p in pconn do untrack(p) end
 	for ch in esp do unhl(ch) end
+	-- подстраховка: снимаем VFX-слои Chams у всех, кого успели покрасить
+	for char in chLayer do
+		if char and char.Parent then pcall(chClear, char) end
+	end
 	-- подстраховка: тела всех целей возвращаются к исходным материалам
 	for char in chamsLights do
 		if char and char.Parent then pcall(chamsClear, char) end

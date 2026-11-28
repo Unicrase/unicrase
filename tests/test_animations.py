@@ -97,9 +97,10 @@ class ForwardLocals(unittest.TestCase):
 
     def test_shake_never_stacks(self):
         body = SOURCE.split("local function shake(o, amp, times)", 1)[1].split("local function pulse(", 1)[0]
-        self.assertIn('setmetatable({}, {__mode = "k"})', SOURCE.split("local function shake(", 1)[0].rsplit("\n", 2)[-2])
-        self.assertIn("shaking[o] then return end", body)
-        self.assertIn("shaking[o] = nil", body)
+        # состояние тряски живёт в таблице ANIM (лимит локалей верхнего уровня)
+        self.assertIn('shaking = setmetatable({}, {__mode = "k"})', SOURCE.split("local function shake(", 1)[0])
+        self.assertIn("ANIM.shaking[o] then return end", body)
+        self.assertIn("ANIM.shaking[o] = nil", body)
 
     def test_esp_fade_does_not_flash_when_already_visible(self):
         body = SOURCE.split("function TC.fade(f, on)", 1)[1].split("\nend", 1)[0]
@@ -201,7 +202,7 @@ class AnimWiring(unittest.TestCase):
         self.assertIn('Name = "EnkaisyIntro"', intro)
         self.assertIn("stage:Destroy()", intro)
         # слово собирается по буквам из строки UNICRASE
-        self.assertIn('local INTRO_WORD = "UNICRASE"', SOURCE)
+        self.assertIn('GLB.INTRO_WORD = "UNICRASE"', SOURCE)
         self.assertIn("INTRO_WORD:sub(i, i)", intro)
         # два выключателя: общий и отдельный
         self.assertIn("CFG.Anim and UICFG.AnimIntro", intro)
@@ -211,11 +212,11 @@ class AnimWiring(unittest.TestCase):
         self.assertIn('Name = "IntroBg", Size = S(1, 1)', intro)
         self.assertIn("Active = true, ZIndex = 1", intro)
         # страховка по времени — единственный ранний выход
-        self.assertIn("task.delay(INTRO_LEN + 0.5, stop)", intro)
+        self.assertIn("task.delay(GLB.INTRO_LEN + 0.5, stop)", intro)
         # шрифт логотипа и сцена: Michroma с фолбэком, осколки с градиентом, кольца, блик, подпись
         self.assertIn('Font.new("rbxasset://fonts/families/Michroma.json"', SOURCE)
         # шрифт выбирается безопасно: Michroma через семейство, потом Enum, в конце Gotham
-        self.assertIn('local INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)', SOURCE)
+        self.assertIn("GLB.INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)", SOURCE)
         self.assertIn("typeof(f) == \"Font\"", SOURCE)
         self.assertIn("NumberSequenceKeypoint", intro)
         self.assertIn('Name = "Ring"', intro)
@@ -255,7 +256,7 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("local okIntro = pcall(playIntro, safeAfter)", valid)
         self.assertIn("if not okIntro then", valid)
         # двойная страховка: таймер откроет меню, даже если сцена не позвала callback
-        self.assertIn("task.delay(INTRO_LEN + 1.2, function() pcall(safeAfter) end)", valid)
+        self.assertIn("task.delay(GLB.INTRO_LEN + 1.2, function() pcall(safeAfter) end)", valid)
         self.assertIn("if opened then return end", valid)
         self.assertEqual(SOURCE.count("playIntro"), 2)  # объявление + единственный вызов (через pcall)
 
@@ -357,16 +358,29 @@ if __name__ == "__main__":
 
 class ChamsAndFov(unittest.TestCase):
     def test_chams_look_list(self):
-        # полный набор стилей, как в референсе
-        for name in ["Outline", "Soft", "Solid", "Glow", "Shaded", "Metallic", "Metal", "Chrome",
-                     "Glossy", "Glass", "Crystal", "Ice", "Lava", "Neon", "Neon Rim",
-                     "Iridescent", "Water Flow", "ForceField", "Gradient", "Ghost", "Wireframe"]:
-            self.assertIn('name = "%s"' % name, SOURCE)
-        self.assertIn("Chams = \"Outline\"", SOURCE)
-        # выбор стиля перекрашивает хайлайты
-        self.assertIn("CFG.Chams = st.key", SOURCE)
-        self.assertIn("refreshHL()", SOURCE)
-        # список в своей прокрутке, иначе 21 строка не влезет в папку
+        # 4.5.0: плоский список из 22 «стилей» заменён полноценной системой Chams —
+        # материал тела + настоящий узор + свет + эффекты, всё комбинируется.
+        for key in ["Outline", "Soft", "Solid", "Glow", "Shaded", "Metallic", "Metal", "Chrome",
+                    "Glossy", "Glass", "Crystal", "Ice", "Lava", "Water Flow", "Neon Rim"]:
+            self.assertIn('key = "%s"' % key, SOURCE, "старые стили должны остаться в таблице CHAMS")
+        self.assertIn('Chams = "Outline"', SOURCE)
+        # панель собрана из данных и подключена к отдельной вкладке
+        self.assertIn("local function buildChamsPage(parent, api)", SOURCE)
+        self.assertIn("CHAMS_PAGE(pages, api)", SOURCE)
+        self.assertIn("CHCTX.buildChamsPage, pages.Chams, api", SOURCE)
+        for table in ("CH_MATS", "CH_TEX", "CH_TEX_ORDER", "CH_FX", "CH_PAT", "CH_DEF"):
+            self.assertIn(table, SOURCE)
+        # каждый слой движка настоящий: материал, узор, свет, обводка, частицы
+        for fn in ("chPaintBody", "chPattern", "chPaintLight", "chOutline", "chPaintFx", "chPaintParticles"):
+            self.assertIn("local function " + fn, SOURCE)
+        self.assertIn("local function chApply(char, tint, now)", SOURCE)
+        # старые сейвы не ломаются
+        self.assertIn("for k, v in CH_DEF do if c[k] == nil then c[k] = v end end", SOURCE)
+        # выдуманных ID текстур быть не должно: только настоящий ассет, который вводит пользователь
+        tex = SOURCE.split("CH_TEX = {", 1)[1].split("CH_TEX_ORDER", 1)[0]
+        self.assertNotIn("rbxassetid", tex, "ID текстур нельзя выдумывать")
+        self.assertIn("CUSTOM TEXTURE ID", SOURCE)
+        # длинные списки — в своих прокрутках
         self.assertIn("ScrollingFrame", SOURCE)
         self.assertIn("AutomaticCanvasSize = Enum.AutomaticSize.Y", SOURCE)
 
@@ -400,15 +414,15 @@ class ChamsActuallyApplies(unittest.TestCase):
     """
 
     def test_chams_apply_is_called(self):
-        calls = SOURCE.count("chamsApply(")
-        # объявление + минимум один реальный вызов
-        self.assertGreaterEqual(calls, 2, "chamsApply объявлена, но не вызывается")
-        self.assertIn("chamsApply(o, fc, oc", SOURCE)
+        # применение стиля к Highlight — через таблицу CH (одна точка входа)
+        self.assertGreaterEqual(SOURCE.count("CH.apply(o, fc, oc"), 1, "применение стиля не вызывается")
+        self.assertIn("function CH.apply(o, fillColor, outlineColor, tintable)", SOURCE)
 
     def test_refresh_uses_style(self):
         body = between("local function refreshHL()", "local function unhl(")
-        self.assertIn("chamsStyle()", body)
-        self.assertIn("chamsApply(o, fc, oc", body)
+        # стиль берётся по ключу прямо из CHAMS_BY_KEY (функция chamsStyle убрана ради лимита локалей)
+        self.assertIn("CHAMS_BY_KEY[CFG.Chams or", body)
+        self.assertIn("CH.apply(o, fc, oc", body)
         # базовые прозрачности больше не выставляются напрямую мимо стиля
         self.assertNotIn("h.FillTransparency = 1 - alphaFor", body)
 
@@ -455,14 +469,16 @@ class ChamsActuallyApplies(unittest.TestCase):
         # цвет по здоровью и радуга перекрашивают заливку каждый кадр — оттенок стиля
         # должен возвращаться, иначе Chams «исчезает» при включённом HPColor
         body = between("if CFG.HPColor and hum then", "local far =")
-        self.assertIn("chamsTint", SOURCE)
+        self.assertIn("CH.tint(", SOURCE)
         self.assertIn("-- HPColor и радуга перекрашивают заливку каждый кадр", SOURCE)
 
     def test_style_choice_is_saved(self):
-        start = SOURCE.index("local function pick()")
-        body = SOURCE[start:start + 300]
-        self.assertIn("saveNow()", body, "выбор стиля должен сохраняться между запусками")
-
+        # выбор материала, текстуры и эффекта обязан сохраняться между запусками
+        start = SOURCE.index("local function buildChamsPage(parent, api)")
+        body = SOURCE[start:start + 9000]
+        self.assertIn("saveNow()", body, "настройки Chams должны сохраняться")
+        # ...и сразу применяться к целям, а не только писаться в состояние
+        self.assertIn("refreshHL()", body)
 
 
 class ChamsTextures(unittest.TestCase):

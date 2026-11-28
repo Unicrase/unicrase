@@ -21,7 +21,7 @@ class MenuLayout(unittest.TestCase):
         folders = re.findall(r'\{id = "(\w+)"', between("local folders = {", "local repaints = {}"))
         self.assertEqual(
             folders,
-            ["Main", "Targets", "Aim", "Trigger", "FOV", "Hitbox", "Color", "Players", "Visual", "Appearance"],
+            ["Main", "Targets", "Aim", "Trigger", "FOV", "Hitbox", "Color", "Players", "Visual", "Appearance", "Chams"],
         )
 
     def test_retired_folders_are_gone(self):
