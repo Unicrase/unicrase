@@ -46,7 +46,8 @@ class Search(unittest.TestCase):
         self.assertIn('navBtn("Up", "SearchPrev", 0)', self.search)
         self.assertIn('navBtn("Down", "SearchNext", 1)', self.search)
         self.assertIn('Name = "SearchCount"', self.search)
-        self.assertIn('navCount.Text = hitStep .. "/" .. #hits', self.search)
+        self.assertIn('local newText = hitStep .. "/" .. #hits', self.search)
+        self.assertIn("navCount.Text = newText", self.search)
         self.assertIn("Position = U(1, -5, 0, CY + 4 + order * 28)", self.search, "стрелки у правого края страницы")
 
     def test_page_narrows_to_make_room(self):

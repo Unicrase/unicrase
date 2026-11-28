@@ -40,6 +40,10 @@
 --       RCS (Recoil Control System) в папке Aim: возврат камеры к прицелу после отдачи, сила 0–100%,
 --       плавность и режим «без отдачи» (отдача не отрисовывается). Пуля летит по прицелу ДО отдачи.
 --       Настройки видны всегда, но гаснут, пока RCS выключен.
+--       Анимации интерфейса: пружины на переключателях/кнопках/иконках, «доезжающие» цифры ползунков,
+--       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
+--       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
+--       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: запрос ищется по словам (порядок не важен), папки без совпадений скрываются;
 --       клик по папке прокручивает страницу к ближайшей настройке, дальше — стрелки ▲▼ справа от страницы.
 -- v4.2: Aim: исправлен Sticky (раньше не работал — цель обнулялась перед выбором), сглаживание упреждения (меньше дрожи), мёртвая зона и лимит скорости поворота камеры.
@@ -579,6 +583,8 @@ local UICFG = {
 	-- окно: размер (логические px до UIScale), центр в долях экрана (-1 = по умолчанию: справа по центру), вкладка
 	PanelW = 672, PanelH = 448, PanelCX = -1, PanelCY = -1, Tab = "Main",
 	BgImage = "", BgImgAlpha = 0.25, BgImgFit = "Crop", CardAlpha = 0.5, -- фон окна: ссылка / ID картинки, прозрачность, режим
+	-- Анимации: общий выключатель (CFG.Anim) + эффекты, которые можно гасить по отдельности
+	AnimCounters = true, AnimToasts = true, AnimPages = true, AnimPulse = true,
 }
 local WIN_MIN_W, WIN_MIN_H, WIN_MAX_W, WIN_MAX_H = 440, 320, 900, 700
 
@@ -634,9 +640,18 @@ local function applyFps()
 end
 local fast = TweenInfo.new(0.16, Enum.EasingStyle.Quad)
 local slow = TweenInfo.new(0.3, Enum.EasingStyle.Quint)
+-- Анимационные кривые: все «живые» переходы меню берут их отсюда, чтобы движение было единым
+local TWEEN = {
+	snap = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	ui = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	pop = TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	spring = TweenInfo.new(0.45, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
+	smooth = TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+}
 local esp, pconn, conns, blur = {}, {}, {}, nil
 local npcs, npcConn = {}, {}
 local counterLbl, statsFps, statsPing, statsCard, plrHook, statusFn
+local statFpsVal, statPingVal -- последние показанные значения FPS/пинга: от них считается анимация цифр
 local marks = {} -- [UserId] = "Mark" | "Hide" (только на время сессии)
 local pset = {}  -- [tostring(UserId)] = {Name/Hl/Fill/Outline/HP/Dist = "On"|"Off", cols = {Fill/Outline/Name = {h,s,v}}}
 local PKEYS = {"Name", "Hl", "Fill", "Outline", "HP", "Dist"}
@@ -820,6 +835,135 @@ local function tween(o, i, g)
 	end
 	TS:Create(o, i, g):Play()
 end
+-- Опережающие локали: анимационные хелперы (pulse/popIn/notify) создают элементы и обводки,
+-- а фабрики new/rr/outline объявлены ниже — без этих строк обращения ушли бы в глобалы (nil).
+local new, rr, outline
+-- Пружина: короткий «доезд» с перелётом — так оживают переключатели и кнопки
+local function spring(o, goal, info)
+	if not CFG.Anim then
+		for k, v in goal do o[k] = v end
+		return
+	end
+	TS:Create(o, info or TWEEN.pop, goal):Play()
+end
+-- Тряска элемента (ошибка ввода, неверный ключ): амплитуда гаснет к концу
+local function shake(o, amp, times)
+	if not CFG.Anim then return end
+	task.spawn(function()
+		local base = o.Position
+		for i = 1, times or 5 do
+			local k = (times or 5) - i + 1
+			local t = TS:Create(o, TweenInfo.new(0.05, Enum.EasingStyle.Sine), {
+				Position = U(base.X.Scale, base.X.Offset + (i % 2 == 0 and 1 or -1) * amp * k / (times or 5), base.Y.Scale, base.Y.Offset),
+			})
+			t:Play()
+			t.Completed:Wait()
+		end
+		o.Position = base
+	end)
+end
+-- Мягкая пульсация: элемент «дышит» масштабом, пока pulse(o, nil) не остановит.
+-- Так подсвечивается то, на что игроку стоит нажать (кнопка активации, активная вкладка).
+local function pulse(o, amp)
+	if o.pulseOn == amp then return end
+	o.pulseOn = amp
+	local sc = o:FindFirstChild("PulseScale")
+	if not amp or not (UICFG.AnimPulse and CFG.Anim) then
+		if sc then
+			tween(sc, TWEEN.ui, {Scale = 1})
+			task.delay(0.3, function() if sc.Parent and not o.pulseOn then sc:Destroy() end end)
+		end
+		return
+	end
+	sc = sc or new("UIScale", {Name = "PulseScale", Scale = 1}, o)
+	local info = TweenInfo.new(0.75, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+	task.spawn(function()
+		while o.pulseOn == amp and o.Parent and sc.Parent do
+			local up = TS:Create(sc, info, {Scale = 1 + amp})
+			up:Play()
+			up.Completed:Wait()
+			if o.pulseOn ~= amp or not sc.Parent then break end
+			local down = TS:Create(sc, info, {Scale = 1})
+			down:Play()
+			down.Completed:Wait()
+		end
+		if sc.Parent and not o.pulseOn then tween(sc, TWEEN.ui, {Scale = 1}) end
+	end)
+end
+-- Появление «точки включённой функции»: вырастает из нуля, при выключении схлопывается
+local function popIn(o, on)
+	local sc = o:FindFirstChild("PopScale")
+	if not (UICFG.AnimPulse and CFG.Anim) then
+		if sc then sc.Scale = 1 end
+		return
+	end
+	sc = sc or new("UIScale", {Name = "PopScale", Scale = 1}, o)
+	if on then
+		sc.Scale = 0
+		spring(sc, {Scale = 1}, TWEEN.pop)
+	else
+		tween(sc, TWEEN.snap, {Scale = 0})
+	end
+end
+-- Анимация цифры: значение «доезжает» до нового числа, а не прыгает
+local counters = setmetatable({}, {__mode = "k"})
+local function animateNumber(label, from, to, fmt, dur)
+	if not (UICFG.AnimCounters and CFG.Anim) or math.abs(to - from) < 1e-6 then
+		label.Text = fmt(to)
+		return
+	end
+	local gen = (counters[label] or 0) + 1
+	counters[label] = gen
+	local t0 = os.clock()
+	task.spawn(function()
+		while true do
+			local k = math.clamp((os.clock() - t0) / (dur or 0.28), 0, 1)
+			if counters[label] ~= gen then return end -- значение поменяли снова: старая анимация уступает
+			local e = 1 - (1 - k) ^ 3
+			label.Text = fmt(from + (to - from) * e)
+			if k >= 1 then return end
+			task.wait()
+		end
+	end)
+end
+-- Всплывающее уведомление в углу экрана (вместо системных Roblox-плашек): появление с пружиной
+local toastLayer
+function notify(title, text, danger)
+	if not (UICFG.AnimToasts and CFG.Anim) then return end
+	local host = gui
+	if not host then return end
+	if not (toastLayer and toastLayer.Parent) then
+		toastLayer = new("Frame", {Name = "Toasts", Size = O(320, 1), AnchorPoint = V2(1, 0), Position = U(1, -14, 0, 86),
+			BackgroundTransparency = 1, ZIndex = 60}, host)
+		new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Right}, toastLayer)
+	end
+	local card = new("Frame", {Size = U(1, 0, 0, 46), BackgroundColor3 = danger and C.DangerBg or C.Card, BackgroundTransparency = 1, ZIndex = 60}, toastLayer)
+	-- новая карточка «подъезжает» снизу и мягко толкает старые вверх
+	card.Position = O(0, 10)
+	tween(card, TWEEN.ui, {Position = O(0, 0)})
+	rr(card, 9)
+	outline(card, OUT.Soft)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 6)}, card)
+	new("TextLabel", {Size = U(1, 0, 0, 14), BackgroundTransparency = 1, Text = title, TextColor3 = danger and C.Danger or C.W,
+		FontFace = GB, TextSize = 12, TextXAlignment = XL, TextTransparency = 1, ZIndex = 61}, card)
+	local body = new("TextLabel", {Size = U(1, 0, 0, 16), Position = O(0, 20), BackgroundTransparency = 1, Text = text or "",
+		TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd,
+		TextTransparency = 1, ZIndex = 61}, card)
+	local sc = new("UIScale", {Scale = 0.9}, card)
+	-- появление: прозрачность + лёгкий масштаб, затем уход
+	tween(card, TWEEN.pop, {BackgroundTransparency = 0.05})
+	tween(sc, TWEEN.pop, {Scale = 1})
+	local kids = card:GetDescendants()
+	for _, d in kids do if d:IsA("TextLabel") then tween(d, TWEEN.ui, {TextTransparency = 0}) end end
+	task.delay(2.6, function()
+		if not card.Parent then return end
+		tween(card, TWEEN.ui, {BackgroundTransparency = 1, Position = O(0, -6)})
+		for _, d in card:GetDescendants() do if d:IsA("TextLabel") then tween(d, TWEEN.ui, {TextTransparency = 1}) end end
+		tween(sc, TWEEN.ui, {Scale = 0.92})
+		task.delay(0.3, function() if card.Parent then card:Destroy() end end)
+	end)
+	return card, body
+end
 -- свойства сразу (anim = false) или плавно (anim = true)
 local function put(o, g, anim)
 	if anim then
@@ -830,7 +974,7 @@ local function put(o, g, anim)
 end
 -- карточки / поля / кнопки меню регистрируются, чтобы фон-картинка просвечивала сквозь них (Appearance > Card Transparency)
 local glass, glassNow = setmetatable({}, {__mode = "k"}), 0
-local function new(class, props, parent)
+function new(class, props, parent)
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
 	for k, v in props do o[k] = v end
@@ -850,7 +994,7 @@ local corners = setmetatable({}, {__mode = "k"})
 local function cornerPx(r, cap)
 	return math.clamp(r + UICFG.Corner - DEF.UI.Corner, 0, cap or math.huge)
 end
-local function rr(o, r, cap)
+function rr(o, r, cap)
 	local c = round(o, cornerPx(r, cap))
 	corners[c] = {r, cap}
 	return c
@@ -894,7 +1038,7 @@ local function stroke(o, c, t, w)
 	}, o)
 end
 -- тонкая белая обводка: единый стиль кнопок, меню и карточек
-local function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end
+function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end
 local function on(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); return c end
 local UT = Enum.UserInputType
 local function press(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 end
@@ -942,6 +1086,18 @@ local function button(parent, text, props, opt)
 		b.FontFace = GB
 	end
 	hoverable(b, outline(b), opt.primary and {bg = "Acc", bgHover = "AccHover", bgDown = "AccDown"} or nil)
+	-- нажатие: кнопка чуть «вдавливается» и возвращается пружиной — отклик чувствуется без звука.
+	-- UIScale назван PulseScale, чтобы пульсация (pulse) переиспользовала его, а не создавала второй:
+	-- при двух UIScale на одном объекте Roblox учитывает только первый.
+	local bs = new("UIScale", {Name = "PulseScale", Scale = 1}, b)
+	local function pressScale(k, info, hard)
+		if b.pulseOn and not hard then return end -- во время пульсации масштабом владеет она
+		tween(bs, info, {Scale = k})
+	end
+	on(b.InputBegan, function(i) if press(i) then pressScale(0.96, TWEEN.snap, true) end end)
+	on(b.InputEnded, function(i) if press(i) then spring(bs, {Scale = 1}, TWEEN.pop) end end)
+	on(b.MouseEnter, function() pressScale(1.02, TWEEN.ui) end)
+	on(b.MouseLeave, function() if not b.pulseOn then spring(bs, {Scale = 1}, TWEEN.pop) end end)
 	return b
 end
 
@@ -973,8 +1129,14 @@ local function makeSwitch(parent)
 	round(knob, 8)
 	local function paint(enabled, anim)
 		put(track, {BackgroundColor3 = enabled and C.Acc or C.Hi}, anim)
-		put(knob, {BackgroundColor3 = enabled and C.AccTx or C.Mut,
-			Position = enabled and U(1, -19, 0.5, 0) or U(0, 3, 0.5, 0)}, anim)
+		if anim then
+			-- бегунок доезжает с перелётом и чуть «сплющивается»: переключатель отзывается на палец
+			spring(knob, {Position = enabled and U(1, -19, 0.5, 0) or U(0, 3, 0.5, 0)}, TWEEN.pop)
+			tween(knob, TWEEN.snap, {BackgroundColor3 = enabled and C.AccTx or C.Mut})
+		else
+			knob.Position = enabled and U(1, -19, 0.5, 0) or U(0, 3, 0.5, 0)
+			knob.BackgroundColor3 = enabled and C.AccTx or C.Mut
+		end
 	end
 	return track, paint
 end
@@ -1418,6 +1580,12 @@ function Skin.iconButton(parent, name, right)
 	rr(b, 6)
 	hoverable(b, outline(b, 1), {base = 1})
 	local glyph = icon(name, b, 14)
+	-- иконка отзывается на палец: растёт под курсором и коротко сжимается при нажатии
+	local gs = new("UIScale", {Scale = 1}, glyph)
+	on(b.MouseEnter, function() tween(gs, TWEEN.ui, {Scale = 1.12}) end)
+	on(b.MouseLeave, function() spring(gs, {Scale = 1}, TWEEN.pop) end)
+	on(b.InputBegan, function(i) if press(i) then tween(gs, TWEEN.snap, {Scale = 0.9}) end end)
+	on(b.InputEnded, function(i) if press(i) then spring(gs, {Scale = 1}, TWEEN.pop) end end)
 	return b, glyph
 end
 
@@ -2015,17 +2183,34 @@ local function frame()
 	end
 	if counterLbl then
 		local txt = "Players: " .. pc .. " • NPC: " .. nc
-		if counterLbl.Text ~= txt then counterLbl.Text = txt end
+		if counterLbl.Text ~= txt then
+			counterLbl.Text = txt
+			-- счётчик целей меняется редко, поэтому подсветка вспыхивает: изменение заметно
+			if CFG.Anim and UICFG.AnimCounters then
+				counterLbl.TextColor3 = C.W
+				tween(counterLbl, TWEEN.ui, {TextTransparency = 0})
+				task.delay(0.35, function()
+					if counterLbl.Parent and CFG.Anim then counterLbl.TextColor3 = C.Mut end
+				end)
+			end
+		end
 	end
 	if doLbl and statusFn then statusFn() end
-	-- FPS и пинг
+	-- FPS и пинг: цифры «доезжают» до новых значений, цвет меняется мягко, а не рывком
 	if statsCard and CFG.ShowStats and now - lastStat > 0.5 then
 		lastStat = now
 		local fr, pg = math.floor(fps + 0.5), math.floor(getPing() + 0.5)
-		statsFps.Text = fr .. " FPS"
-		statsPing.Text = pg .. " ms"
-		statsFps.TextColor3 = fr >= 50 and GOOD or fr >= 30 and MID or BAD
-		statsPing.TextColor3 = pg <= 100 and GOOD or pg <= 200 and MID or BAD
+		local fFrom = statFpsVal or fr
+		local pFrom = statPingVal or pg
+		statFpsVal, statPingVal = fr, pg
+		if CFG.Anim and UICFG.AnimCounters then
+			animateNumber(statsFps, fFrom, fr, function(v) return math.floor(v + 0.5) .. " FPS" end, 0.4)
+			animateNumber(statsPing, pFrom, pg, function(v) return math.floor(v + 0.5) .. " ms" end, 0.4)
+		else
+			statsFps.Text, statsPing.Text = fr .. " FPS", pg .. " ms"
+		end
+		tween(statsFps, fast, {TextColor3 = fr >= 50 and GOOD or fr >= 30 and MID or BAD})
+		tween(statsPing, fast, {TextColor3 = pg <= 100 and GOOD or pg <= 200 and MID or BAD})
 	end
 	if now - lastChk > 0.5 then
 		lastChk = now
@@ -2263,6 +2448,10 @@ helpUI.info = {
  ["Team colors"] = {"Использует цвет команды в обычной подсветке игроков.", "Uses player team colors in the standard highlight."},
  ["Size by dist"] = {"Меняет размер меток в зависимости от расстояния.", "Changes label size with distance."},
  ["Animations"] = {"Включает анимации интерфейса.", "Enables interface animations."},
+ ["Animated numbers"] = {"Плавно меняет цифры ползунков и счётчиков: значение доезжает, а не прыгает.", "Eases slider values and counters to the new number instead of jumping."},
+ ["Toasts"] = {"Показывает результаты и ошибки всплывающей карточкой в углу вместо системных плашек.", "Shows results and errors in a corner card instead of system notifications."},
+ ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
+ ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
@@ -2386,17 +2575,34 @@ local function sliderCard(parent, title, order, min, max, getv, setv, fmt, step)
 	local knob = new("Frame", {Name = "Thumb", Size = O(13, 13), AnchorPoint = V2(0.5, 0.5), ZIndex = 3, Active = false}, track)
 	accent(knob, "BackgroundColor3")
 	round(knob, 7)
-	local function paint()
+	local shownValue -- последнее показанное число: нужно для анимации цифры
+	local function paint(anim)
+		if anim == nil then anim = CFG.Anim end -- внешние вызовы (сброс, пресет) анимируются, перетаскивание — нет
 		local v = getv()
 		local x = math.clamp((v - min) / (max - min), 0, 1)
-		val.Text = fmt(v)
-		bar.Size, knob.Position = U(x, 0, 1, 0), U(x, 0, 0.5, 0)
+		if anim and shownValue and math.abs(v - shownValue) > 1e-6 then
+			-- при сбросе/смене пресета число «доезжает», а не прыгает
+			local a, b = shownValue, v
+			animateNumber(val, a, b, fmt)
+		else
+			val.Text = fmt(v)
+		end
+		shownValue = v
+		if anim then
+			-- бегунок и заполнение двигаются мягко, дорожка подскакивает под палец
+			spring(knob, {Position = U(x, 0, 0.5, 0)}, TWEEN.ui)
+			tween(bar, TWEEN.ui, {Size = U(x, 0, 1, 0)})
+			tween(knob, TWEEN.snap, {Size = O(15, 15)})
+			task.delay(0.12, function() if knob.Parent then tween(knob, TWEEN.ui, {Size = O(13, 13)}) end end)
+		else
+			bar.Size, knob.Position = U(x, 0, 1, 0), U(x, 0, 0.5, 0)
+		end
 	end
 	drag(hit, function(x)
 		local v = min + (max - min) * x
 		if step then v = math.floor(v / step + 0.5) * step end
 		setv(math.clamp(v, min, max))
-		paint()
+		paint(false)
 	end, function()
 		h.pressed = true
 		h.apply()
@@ -2562,16 +2768,18 @@ local function buildAim(page, api)
 	}, og)
 	new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, fov)
 	local fovStroke = stroke(fov, C.W, 0.35, 1.5)
+	local fovSc -- масштаб круга при появлении (0.6 -> 1), совпадение с областью не страдает
+	local markHot = false
 	-- маркер ТОЧКИ НАВЕДЕНИЯ (зелёный крест): виден в редакторе и когда круг отвязан от области
 	local aimMark = new("Frame", {
 		Name = "AimPoint", AnchorPoint = V2(0.5, 0.5), Size = O(16, 16), BackgroundTransparency = 1,
 		Visible = false, Active = false, ZIndex = 7,
 	}, og)
-	new("Frame", {
+	local markBar1 = new("Frame", {
 		AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0), Size = U(1, 0, 0, 2),
 		BackgroundColor3 = C.On, BorderSizePixel = 0, Active = false, ZIndex = 7,
 	}, aimMark)
-	new("Frame", {
+	local markBar2 = new("Frame", {
 		AnchorPoint = V2(0.5, 0.5), Position = U(0.5, 0, 0.5, 0), Size = U(0, 2, 1, 0),
 		BackgroundColor3 = C.On, BorderSizePixel = 0, Active = false, ZIndex = 7,
 	}, aimMark)
@@ -2580,6 +2788,7 @@ local function buildAim(page, api)
 		Name = "EnkaisyProbe", ResetOnSpawn = false, DisplayOrder = -1, IgnoreGuiInset = false,
 	}, LP:WaitForChild("PlayerGui"))
 	local probe = new("Frame", {Size = O(1, 1), BackgroundTransparency = 1, Active = false}, probeGui)
+	local hudSc -- UIScale HUD: пружина при появлении
 	local hud = new("TextLabel", {
 		AnchorPoint = V2(0.5, 0), Position = U(0.5, 0, 0, 44), Size = O(320, 24), AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true,
 		BackgroundColor3 = C.Side, BackgroundTransparency = 0.08,
@@ -2589,6 +2798,8 @@ local function buildAim(page, api)
 	rr(hud, 7) outline(hud, OUT.Soft)
 	do
 		local sc = new("UIScale", {Scale = UICFG.UIScale}, hud)
+		hudSc = sc -- тот же UIScale использует анимация появления: второй UIScale на одном объекте не работает
+		sc:SetAttribute("AnimOwned", true) -- масштабом владеет анимация: applyLook его не трогает
 		floatScales[sc] = true
 		local function fitHud() hud.Size = O(math.clamp((og.AbsoluteSize.X - 24) / sc.Scale, 1, 660), 24) end
 		connect(og:GetPropertyChangedSignal("AbsoluteSize"), fitHud)
@@ -3720,21 +3931,51 @@ local function buildAim(page, api)
 	local function drawOverlay(now)
 		local v = SP.vp
 		local showCircle = editing or (A.Enabled and A.ShowFOV) or now < testUntil or (previewFov and A.ShowFOV)
+		-- Появление круга: он «расходится» из точки наведения масштабом и только затем живёт обычной жизнью.
+		-- Размер по-прежнему задаётся в px (через UIScale), поэтому совпадение с областью не теряется.
+		local circleOn = showCircle and (previewFov or editing or A.Enabled or now < testUntil)
+		if showCircle and not fov.Visible then
+			if CFG.Anim and UICFG.AnimPulse and circleOn then
+				if not fovSc then fovSc = new("UIScale", {Scale = 0.6}, fov) end
+				fovSc.Scale = 0.6
+				fovStroke.Transparency = 1
+				tween(fovSc, TWEEN.pop, {Scale = 1})
+				tween(fovStroke, TWEEN.ui, {Transparency = 0.35})
+			elseif fovSc then
+				fovSc.Scale = 1
+			end
+		end
 		setp(fov, "Visible", showCircle)
 		if showCircle then
 			-- квадрат в пикселях: ширина всегда равна высоте, при любом разрешении и соотношении сторон
 			local d = math.max(4, 2 * SP.fov)
 			setp(fov, "Size", O(d, d))
 			setp(fov, "Position", S(SP.circle.X / v.X, SP.circle.Y / v.Y))
+			if fovSc and fovSc.Scale > 1.001 then fovSc.Scale = 1 end
 		end
 		local showMark = editing or (A.Enabled and A.ShowFOV and not A.CircleFollow) or now < testUntil
 		aimMark.Visible = showMark
 		if showMark then aimMark.Position = S(SP.aim.X / v.X, SP.aim.Y / v.Y) end
+		-- Маркер «дышит», когда наводка держит цель: видно, что aimbot реально за кем-то следит.
+		-- Пока цели нет — маркер спокойный, без лишних кадров.
+		local hasT = currentTarget ~= nil
+		if hasT ~= markHot then
+			markHot = hasT
+			if CFG.Anim and UICFG.AnimPulse then
+				tween(aimMark, TWEEN.ui, {Size = O(hasT and 22 or 16, hasT and 22 or 16)})
+				tween(markBar1, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
+				tween(markBar2, TWEEN.ui, {BackgroundColor3 = hasT and C.Acc or C.On})
+			else
+				aimMark.Size = O(hasT and 22 or 16, hasT and 22 or 16)
+				markBar1.BackgroundColor3, markBar2.BackgroundColor3 = hasT and C.Acc or C.On, hasT and C.Acc or C.On
+			end
+		end
 	end
 
 	-- Проверка на устройстве: кнопка Check coordinates (вкладка Aim)
 	runSelfTest = function()
 		testUntil = os.clock() + 3
+		if fovSc then fovSc.Scale = 1 end -- проверка измеряет реальный радиус: анимация появления не должна её сбивать
 		task.spawn(function()
 			task.wait(0.3) -- пусть цикл отрисует круг и движок пересчитает AbsolutePosition
 			if not updateSpace() then selfLabel.Text = "Экран ещё не готов, повтори" return end
@@ -4802,7 +5043,19 @@ local function buildAim(page, api)
 		setp(fov, "BackgroundColor3", circleCol)
 		setp(fov, "BackgroundTransparency", A.FovFill and A.FovFillAlpha or 1)
 
-		hud.Visible = A.DebugHUD and (A.Enabled or A.Trigger) and not editing
+		-- HUD: при появлении — пружина, при смене цифр — мягкое «дыхание», а не дёргание каждый кадр
+		local hudOn = A.DebugHUD and (A.Enabled or A.Trigger) and not editing
+		if hudOn ~= hud.Visible then
+			hud.Visible = hudOn
+			if hudOn and CFG.Anim and UICFG.AnimPulse then
+				local base = UICFG.UIScale
+				hud.TextTransparency = 1
+				if hudSc then hudSc.Scale = base * 0.94 end
+				tween(hud, TWEEN.ui, {TextTransparency = 0})
+				tween(hud, TWEEN.ui, {BackgroundTransparency = 0.08})
+				if hudSc then spring(hudSc, {Scale = base}, TWEEN.pop) end
+			end
+		end
 		if hud.Visible then
 			local name, dist = "none", 0
 			if currentTarget then
@@ -4811,12 +5064,22 @@ local function buildAim(page, api)
 				dist = (currentTarget.Position - camera.CFrame.Position).Magnitude
 			end
 			local off = aimPt and (aimPt - currentTarget.Position).Magnitude or 0
-			hud.Text = string.format("target: %s | %dm | lead %dms%s%s%s | off %.1fst | pick %.2fms | shots %d", name, math.floor(dist + 0.5),
+			local line = string.format("target: %s | %dm | lead %dms%s%s%s | off %.1fst | pick %.2fms | shots %d", name, math.floor(dist + 0.5),
 				math.floor(getLead() * 1000 + 0.5), A.AutoPredict and " auto" or "", A.AdvPredict and " adv" or "",
 				(A.Rcs and (" | RCS " .. math.floor(A.RcsStrength * 100 + 0.5) .. "%" .. (A.RcsSuppress and " no-kick" or "")) or "")
 				.. (lockedModel and " | LOCK" or "") .. (A.Trigger and (" | trig: " .. trigStatus) or "")
 				.. (os.clock() - srvT < 4 and (" | srv: " .. srvCode) or ""), off, pickMs, shotsSent)
-			if A.DynFov then hud.Text ..= string.format(" | fov %.1f%%", NX.dynR) end
+			if A.DynFov then line ..= string.format(" | fov %.1f%%", NX.dynR) end
+			if hud.Text ~= line then
+				hud.Text = line
+				-- мягкое «дыхание»: прозрачность кратко падает и возвращается (только при смене строки)
+				if CFG.Anim and hud.Visible then
+					TS:Create(hud, TweenInfo.new(0.05), {TextTransparency = 0.35}):Play()
+					task.delay(0.06, function()
+						if hud.Parent and hud.Visible then TS:Create(hud, TweenInfo.new(0.12), {TextTransparency = 0}):Play() end
+					end)
+				end
+			end
 		end
 
 		if A.SilentAim and not A.Trigger and not editing and now - lastWarm > 0.05 then
@@ -4994,14 +5257,42 @@ function helpUI.mount(panel, unload)
 	local danger = button(actions, "Сбросить всё", {Size = U(0.5, -4, 1, 0), LayoutOrder = 2,
 		BackgroundColor3 = C.DangerBg, TextColor3 = C.W, Visible = false}, {danger = true})
 	local pending -- что выполнить после подтверждения; nil у справочных окон
+	-- Появление диалога: подложка проявляется, карточка «выпрыгивает» масштабом.
+	-- Закрытие — короткое сжатие, чтобы окно не исчезало рывком.
+	local dscale = new("UIScale", {Scale = 1}, box)
+	local hiding = false
+	local function dialogIn()
+		hiding = false
+		shade.Visible = true
+		if not CFG.Anim then
+			shade.BackgroundTransparency, box.BackgroundTransparency, dscale.Scale = 0.38, 0, 1
+			return
+		end
+		shade.BackgroundTransparency, dscale.Scale = 1, 0.92
+		tween(shade, TWEEN.ui, {BackgroundTransparency = 0.38})
+		spring(dscale, {Scale = 1}, TWEEN.pop)
+	end
 	local function hide()
-		shade.Visible = false
+		if not shade.Visible then return end
 		pending = nil
+		if not CFG.Anim then
+			shade.Visible = false
+			return
+		end
+		hiding = true
+		tween(shade, TWEEN.snap, {BackgroundTransparency = 1})
+		tween(dscale, TWEEN.snap, {Scale = 0.94})
+		task.delay(0.14, function()
+			if hiding then
+				shade.Visible = false
+				shade.BackgroundTransparency, dscale.Scale = 0.38, 1
+			end
+		end)
 	end
 	local function complete()
 		local fn = pending
 		pending = nil
-		shade.Visible = false
+		hide()
 		if fn then fn() end
 	end
 	on(close.Activated, hide)
@@ -5022,7 +5313,7 @@ function helpUI.mount(panel, unload)
 		end
 		body.Size = U(1, -28, 1, ask and -110 or -64)
 		body.CanvasPosition = V2(0, 0)
-		shade.Visible = true
+		dialogIn()
 	end
 	local api = {}
 	api.help = function(name, desc)
@@ -5047,6 +5338,23 @@ local function startMain()
 	local CY = HDR + 40
 	local PAGE_SIZE = U(1 - RAIL, -Skin.RailBase - 26, 1, -(CY + 9))
 	local function pagePos(dx) return U(RAIL, Skin.RailBase + Skin.Inset + (dx or 0), 0, CY) end
+	-- Каскад карточек: строки страницы проявляются сверху вниз по очереди, а не появляются разом.
+	-- GroupTransparency гасит и фон, и текст, поэтому каскад не «просвечивает» раскладкой.
+	local function cascade(f)
+		if not (CFG.Anim and UICFG.AnimPages) then return end
+		local i = 0
+		for _, c in f:GetChildren() do
+			if c:IsA("GuiObject") and not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
+				i += 1
+				if i <= 24 then
+					c.GroupTransparency = 1
+					task.delay(math.min(0.2, (i - 1) * 0.016), function()
+						if c.Parent then tween(c, TWEEN.ui, {GroupTransparency = 0}) end
+					end)
+				end
+			end
+		end
+	end
 	-- Один каталог определяет порядок, подписи, старые поисковые термины и имена пиктограмм.
 	-- Порядок папок повторяет путь игрока: что подсвечивать → по кому → как целиться → чем стрелять → круг → хитбоксы → цвета.
 	-- Похожие настройки всегда стоят рядом внутри своей папки (Smoothness + Sticky, Triggerbot + его ползунки и т.д.).
@@ -5266,6 +5574,7 @@ local function startMain()
 	on(grip.MouseLeave, function() if not rs.act then paintGrip(false) end end)
 
 	local isOpen = false
+	local pages, ptabs -- заполняются ниже; setOpen трогает вкладки для пульсации акцента
 	local function setOpen(s)
 		isOpen = s
 		local k = fit()
@@ -5273,6 +5582,7 @@ local function startMain()
 		if aim then aim.preview(s and curTab == "FOV") end
 		if s then
 			openBtn.Visible, panel.Visible = false, true
+			for n, t in ptabs do pulse(t.tile, n == curTab and 0.05 or nil) end
 			if CFG.Anim then
 				scale.Scale, panel.GroupTransparency = k * 0.92, 1
 				tween(scale, slow, {Scale = k})
@@ -5290,6 +5600,7 @@ local function startMain()
 			else
 				panel.Visible, openBtn.Visible = false, true
 			end
+			for _, t in ptabs do pulse(t.tile, nil) end
 		end
 	end
 	on(gui:GetPropertyChangedSignal("AbsoluteSize"), function()
@@ -5315,7 +5626,16 @@ local function startMain()
 		FontFace = GM, TextSize = 12, TextXAlignment = XL, ClearTextOnFocus = false,
 	}, side)
 	Skin.field(search)
-	new("UIPadding", {PaddingLeft = UDim.new(0, 29), PaddingRight = UDim.new(0, 5)}, search)
+	new("UIPadding", {PaddingLeft = UDim.new(0, 29), PaddingRight = UDim.new(0, 24)}, search)
+	-- Кнопка очистки: появляется, только когда в поле есть текст. Раньше приходилось стирать по символу.
+	local clearBtn = new("TextButton", {Name = "SearchClear", Size = O(20, 20), AnchorPoint = V2(1, 0.5),
+		Position = U(1, -14, 1, -63), BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+		Visible = false, ZIndex = 24}, side)
+	icon("Close", clearBtn, 10, C.Mut)
+	on(clearBtn.Activated, function()
+		search.Text = ""
+		if CFG.Anim then spring(clearBtn, {Size = O(20, 20)}, TWEEN.pop) end
+	end)
 	local searchIcon = icon("Search", side, 13)
 	searchIcon.Position = U(0, 25, 1, -63)
 	local empty = new("TextLabel", {Size = U(1, -8, 0, 38), Position = O(4, 0), BackgroundTransparency = 1, TextWrapped = true,
@@ -5325,7 +5645,7 @@ local function startMain()
 		Size = U(1 - RAIL, -Skin.RailBase - 54, 0, 24), Position = U(RAIL, Skin.RailBase + 42, 0, HDR + 9), BackgroundTransparency = 1, Text = "",
 		TextColor3 = C.W, FontFace = GB, TextSize = 18, TextXAlignment = XL,
 	}, panel)
-	local pages, ptabs = {}, {}
+	pages, ptabs = {}, {}
 	local function paintTab(t, sel, anim)
 		t.selected = sel
 		t.headIcon.Visible = sel
@@ -5335,11 +5655,28 @@ local function startMain()
 		put(t.label, {TextColor3 = sel and C.W or C.Mut}, anim)
 		put(t.tile, {BackgroundColor3 = sel and C.Acc or C.Card}, anim)
 		t.paintIcon(sel and C.AccTx or C.Mut, anim)
+		-- активная вкладка мягко пульсирует (только когда меню открыто и анимации включены)
+		pulse(t.tile, sel and isOpen and 0.05 or nil)
 	end
 	local function show(n)
 		if not ptabs[n] then n = "Main" end
 		curTab, UICFG.Tab = n, n
-		pTitle.Text = ptabs[n].label.Text
+		local newTitle = ptabs[n].label.Text
+		if pTitle.Text ~= newTitle then
+			if CFG.Anim then
+				-- старый заголовок уезжает влево и тает, новый приходит справа
+				local gi = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+				local go = TweenInfo.new(0.22, Enum.EasingStyle.Quint)
+				local ti = TS:Create(pTitle, gi, {TextTransparency = 1, Position = U(RAIL - 6, Skin.RailBase + 42, 0, HDR + 9)})
+				ti:Play()
+				ti.Completed:Once(function()
+					pTitle.Text, pTitle.Position = newTitle, U(RAIL + 8, Skin.RailBase + 42, 0, HDR + 9)
+					TS:Create(pTitle, go, {TextTransparency = 0, Position = U(RAIL, Skin.RailBase + 42, 0, HDR + 9)}):Play()
+				end)
+			else
+				pTitle.Text = newTitle
+			end
+		end
 		if aim then aim.preview(isOpen and n == "FOV") end
 		local tab = ptabs[n].button
 		local y = tab.AbsolutePosition.Y - tabsHolder.AbsolutePosition.Y
@@ -5352,6 +5689,7 @@ local function startMain()
 			if sel and not f.Visible and CFG.Anim then
 				f.Position, f.Visible = pagePos(8), true
 				tween(f, slow, {Position = pagePos()})
+				cascade(f)
 			else
 				f.Visible = sel
 				if sel then f.Position = pagePos() end
@@ -5422,9 +5760,10 @@ local function startMain()
 	statusFn = function()
 		flag("hESP", CFG.On, function(o) espDot.BackgroundColor3 = o and C.W or C.Mut end)
 		flag("hAIM", AIMCFG.Enabled, function(o) aimDot.BackgroundColor3 = o and C.W or C.Mut end)
-		flag("tMain", CFG.On, function(o) ptabs.Main.dot.BackgroundTransparency = o and 0 or 1 end)
-		flag("tAim", AIMCFG.Enabled, function(o) ptabs.Aim.dot.BackgroundTransparency = o and 0 or 1 end)
-		flag("tFOV", AIMCFG.Enabled and AIMCFG.ShowFOV, function(o) ptabs.FOV.dot.BackgroundTransparency = o and 0 or 1 end)
+		-- точки не мигают прозрачностью, а «вырастают»: включённая функция заметна боковым зрением
+		flag("tMain", CFG.On, function(o) local d = ptabs.Main.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
+		flag("tAim", AIMCFG.Enabled, function(o) local d = ptabs.Aim.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
+		flag("tFOV", AIMCFG.Enabled and AIMCFG.ShowFOV, function(o) local d = ptabs.FOV.dot; d.BackgroundTransparency = 0; popIn(d, o) end)
 	end
 
 	new("Frame", {Size = U(1, -20, 0, 1), Position = U(0, 10, 1, -41), BackgroundColor3 = C.Line}, side)
@@ -5861,12 +6200,16 @@ local function startMain()
 	local pv2 = pages.Visual
 	sectionLabel(pv2, "PERFORMANCE", 0)
 	local paintCap
+	-- Эффекты анимации гасятся по отдельности, но только пока общий выключатель Animations включён:
+	-- так на слабом устройстве можно оставить переходы страниц и убрать пульсации и всплывающие карточки.
+	local effectChips = {}
 	local perfChips = {
 		{"Team colors", "TeamColors", function() refreshHL(); refreshRows() end},
 		{"Size by dist", "DistScale"},
-		{"Animations", "Anim"},
+		{"Animations", "Anim", function() for _, fn in effectChips do fn() end end},
 		{"FPS / ping", "ShowStats", function() statsCard.Visible = CFG.ShowStats end},
 	}
+
 	if canFps then
 		table.insert(perfChips, {"FPS unlock", "FpsUnlock", function() paintCap(); applyFps() end})
 	end
@@ -5885,10 +6228,32 @@ local function startMain()
 		CFG.EspHz = HZ_STEPS[(table.find(HZ_STEPS, CFG.EspHz) or 0) % #HZ_STEPS + 1]
 	end)
 	table.insert(repaints, paintHz)
+	-- Эффекты анимации: общий Animations выше включает всё, здесь каждый эффект гасится отдельно.
+	-- Пока общий выключатель выключен, переключатели эффектов всё равно не дают картинки — это написано в подписи.
+	sectionLabel(pv2, "ANIMATION EFFECTS", 3)
+	local effectCards = {}
+	for i, d in {
+		{"Animated numbers", "AnimCounters", "Счётчики доезжают до нового значения."},
+		{"Toasts", "AnimToasts", "Результаты и ошибки — карточкой в углу."},
+		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
+		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
+	} do
+		local key = d[2]
+		local card, paint = toggleCard(pv2, d[1], 3 + i * 0.1, function() return UICFG[key] end,
+			function(v) UICFG[key] = v end, d[3])
+		table.insert(repaints, function()
+			paint(false)
+			-- эффекты работают только вместе с общими анимациями: карточка гаснет, значение сохраняется
+			tween(card, TWEEN.ui, {BackgroundTransparency = CFG.Anim and 0.55 or 0.85})
+		end)
+		table.insert(effectCards, card)
+	end
 	local lowBtn = button(pv2, "Low-end preset", {Size = U(1, 0, 0, 40), LayoutOrder = 4})
 	on(lowBtn.Activated, function()
 		CFG.Anim, CFG.DistScale, CFG.Limit, CFG.LimitN, CFG.EspHz = false, false, true, 12, 20
+		UICFG.AnimCounters, UICFG.AnimToasts, UICFG.AnimPages, UICFG.AnimPulse = false, false, false, false
 		for _, fn in repaints do fn() end
+		notify("Low-end preset", "Анимации выключены, 12 целей, ESP 20 Гц", false)
 	end)
 	new("TextLabel", {
 		Size = U(1, 0, 0, 40), BackgroundTransparency = 1, TextWrapped = true, LayoutOrder = 5,
@@ -5927,7 +6292,11 @@ local function startMain()
 		applyGlass()
 		applyRadius()
 		for s in floatScales do
-			if s.Parent then s.Scale = UICFG.UIScale else floatScales[s] = nil end
+			if not s.Parent then
+				floatScales[s] = nil
+			elseif not (s:GetAttribute("AnimOwned") and CFG.Anim and UICFG.AnimPulse) then
+				s.Scale = UICFG.UIScale -- у HUD масштабом владеет анимация появления, иначе пружина сбивается
+			end
 		end
 	end
 	local function paintAccents()
@@ -6034,10 +6403,7 @@ local function startMain()
 		updAll()
 		applyFps()
 		saveNow()
-		pcall(function()
-			game:GetService("StarterGui"):SetCore("SendNotification",
-				{Title = "Enkaisy", Text = "Все настройки сброшены: все функции выключены.", Duration = 3})
-		end)
+		notify("Настройки сброшены", "Все функции выключены", false)
 	end
 
 	local function aSlider(title, key, min, max, step, fmt)
@@ -6310,7 +6676,19 @@ local function startMain()
 		setNavOpen(any) -- страница уступает полосу справа под стрелки
 		navUp.Visible, navDn.Visible = any, any
 		if navCount then navCount.Visible = any end
-		if any then navCount.Text = hitStep .. "/" .. #hits end
+		if any then
+			-- счётчик совпадений меняется плавно: видно, что стрелка сработала
+			local newText = hitStep .. "/" .. #hits
+			if navCount.Text ~= newText then
+				navCount.Text = newText
+				if CFG.Anim and UICFG.AnimCounters then
+					tween(navCount, TWEEN.snap, {TextTransparency = 0.45})
+					task.delay(0.08, function()
+						if navCount.Parent then tween(navCount, TWEEN.ui, {TextTransparency = 0}) end
+					end)
+				end
+			end
+		end
 	end
 	function showHit(i)
 		if #hits == 0 then return end
@@ -6415,8 +6793,18 @@ local function startMain()
 					if not string.find(searchIndex[n], w, 1, true) then visible = false break end
 				end
 			end
+			local wasHidden = not tab.Visible
 			tab.Visible = visible
 			if visible then
+				if CFG.Anim and UICFG.AnimPages then
+					-- найденная папка проявляется, а не возникает рывком
+					if wasHidden then
+						tab.GroupTransparency = 1
+						tween(tab, TWEEN.ui, {GroupTransparency = 0})
+					end
+				elseif tab.GroupTransparency ~= 0 then
+					tab.GroupTransparency = 0 -- анимации выключили посреди проявления
+				end
 				tab.Position = O(2, y)
 				y += TABH + TGAP
 			end
@@ -6429,6 +6817,15 @@ local function startMain()
 	local function onQueryChanged()
 		filterTabs()
 		refreshSearch()
+		-- крестик очистки виден только при непустом запросе и появляется с лёгким «прыжком»
+		local has = #searchTerms() > 0
+		if has ~= clearBtn.Visible then
+			clearBtn.Visible = has
+			if has then
+				clearBtn.Size = O(0, 20)
+				tween(clearBtn, TWEEN.pop, {Size = O(20, 20)})
+			end
+		end
 	end
 	on(search:GetPropertyChangedSignal("Text"), onQueryChanged)
 	-- Enter на клавиатуре телефона = следующее совпадение
@@ -6597,12 +6994,15 @@ local function keyScreen(done)
 		tries += 1
 		status.TextColor3, status.Text = C.Danger, "Неверный ключ"
 		if CFG.Anim then
-			for _, dx in {-12, 12, -8, 8, -4, 4, 0} do
-				if closed then return end
-				local t = TS:Create(card, TweenInfo.new(0.045), {Position = U(0.5, dx, 0.5, -shiftY)})
-				t:Play()
-				t.Completed:Wait()
-			end
+			-- тряска карточки: амплитуда гаснет; при repeat — сильнее (ошибка)
+			shake(form, 9, 7)
+			shake(box, 3, 5)
+			local st = TS:Create(status, TweenInfo.new(0.08), {TextTransparency = 0.4})
+			st:Play()
+			st.Completed:Once(function()
+				if status.Parent then TS:Create(status, TweenInfo.new(0.2), {TextTransparency = 0}):Play() end
+			end)
+			task.wait(0.34)
 		end
 		if tries >= 5 then
 			for i = 10, 1, -1 do
@@ -6620,6 +7020,16 @@ local function keyScreen(done)
 		stop()
 	end)
 	on(btn.Activated, submit)
+	-- пульс кнопки: пока в поле есть текст, «Активировать» мягко подсвечивается — видно, куда нажимать
+	local pulsing = false
+	local function updatePulse()
+		local want = not closed and box.Text:gsub("%s", "") ~= ""
+		if want == pulsing then return end
+		pulsing = want
+		pulse(btn, want and 0.04 or nil)
+	end
+	on(box:GetPropertyChangedSignal("Text"), updatePulse)
+	updatePulse()
 	on(box.Focused, function()
 		task.delay(0.3, function()
 			if not closed and dim.Parent then place(true) end
