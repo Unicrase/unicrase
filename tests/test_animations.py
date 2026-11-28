@@ -275,6 +275,10 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("for first, last in utf8.graphemes(text) do", body)
         self.assertIn("string.sub(text, first, last)", body)
         self.assertNotIn("for _, ch in utf8.graphemes", SOURCE)
+        # искры рождаются в контуре буквы, а не разлетаются по всей строке
+        self.assertIn("local rx = math.max(2, g.w * 0.46)", body)
+        self.assertIn("local ry = math.max(2, math.min(h * 0.46, size * 0.55))", body)
+        self.assertIn("rnd:NextNumber(0.25, 1)", body)
         # слой ровно по строке: искры не залезают на соседние настройки и текст не сдвигается
         self.assertIn('Size = S(1, 1), BackgroundTransparency = 1, Active = false,', body)
         self.assertIn("Position = O(math.floor(g.x), 0)", body)

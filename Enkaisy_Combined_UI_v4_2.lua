@@ -980,15 +980,18 @@ local function revealText(label, text, opt)
 		end
 		if not dense or i % 3 == 1 then
 			for k = 1, (dense and 2 or per) do
-				local s = rnd:NextNumber(2, 3.6)
-				-- разлёт внутри строки: смещение ограничено половиной высоты и шириной буквы
+				local s = rnd:NextNumber(2, 3.4)
+				-- искра рождается прямо в контуре буквы: разлёт — доли её ширины и высоты,
+				-- поэтому частицы вспыхивают на самом тексте, а не влетают сбоку
 				local a = rnd:NextNumber(0, math.pi * 2)
-				local dist = rnd:NextNumber(math.max(4, size * 0.3), math.max(6, math.min(h * 0.52, size * 1.1)))
+				local rx = math.max(2, g.w * 0.46)
+				local ry = math.max(2, math.min(h * 0.46, size * 0.55))
+				local dist = rnd:NextNumber(0.25, 1)
 				-- искра-«звезда»: светлый блик по диагонали, вращается, слегка пульсирует
 				local spark = new("Frame", {Name = "Spark", Size = O(s, s), AnchorPoint = V2(0.5, 0.5),
 					BackgroundColor3 = C.W, BackgroundTransparency = 0.05,
 					ZIndex = label.ZIndex + 3, Active = false,
-					Position = O(cx + math.cos(a) * dist, cy + math.sin(a) * dist)}, layer)
+					Position = O(cx + math.cos(a) * rx * dist, cy + math.sin(a) * ry * dist)}, layer)
 				rr(spark, math.ceil(s))
 				new("UIGradient", {Color = ColorSequence.new({
 					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
