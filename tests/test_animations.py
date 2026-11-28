@@ -252,9 +252,11 @@ class AnimWiring(unittest.TestCase):
         screen = between("local function keyScreen(done)", "stop = function()")
         valid = screen.split('== KEY_HASH then', 1)[1].split("tries += 1", 1)[0]
         # запуск защищён: ошибка заставки не мешает открыть меню
-        self.assertIn("local okIntro = pcall(playIntro, afterIntro)", valid)
+        self.assertIn("local okIntro = pcall(playIntro, safeAfter)", valid)
         self.assertIn("if not okIntro then", valid)
-        self.assertIn("afterIntro()", valid)
+        # двойная страховка: таймер откроет меню, даже если сцена не позвала callback
+        self.assertIn("task.delay(INTRO_LEN + 1.2, function() pcall(safeAfter) end)", valid)
+        self.assertIn("if opened then return end", valid)
         self.assertEqual(SOURCE.count("playIntro"), 2)  # объявление + единственный вызов (через pcall)
 
     def test_particle_text_opens_folder(self):

@@ -26,6 +26,10 @@
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
 
+-- ВЕРСИЯ СБОРКИ: v4.3.1 (константа BUILD). Она видна в шапке меню и на экране ключа —
+-- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.3.1: круг FOV: размер в пикселях и стили Glow / Gradient / Dashed / Classic; список CHAMS LOOK
+--         (21 стиль подсветки) в папке ESP; заставка после ключа с защитой от падения.
 -- v4.3: Ключ доступа снова проверяется в клиенте по хешу (KEY_HASH), серверной авторизации нет.
 --       Кулдаун выстрела и триггера — на каждое оружие отдельно (смена пушки больше не съедает выстрел).
 --       Triggerbot стреляет на всю дальность оружия (Range), а не до "Aim max distance".
@@ -68,6 +72,7 @@
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local BUILD = "4.3.1" -- версия сборки: показывается в меню и на экране ключа
 local REMOTE_NAME = "EnkaisyAimFire"
 local CLIENT_NAME = "EnkaisyAimClient"
 
@@ -1191,6 +1196,18 @@ end
 -- тонкая белая обводка: единый стиль кнопок, меню и карточек
 function outline(o, t) return stroke(o, PURE, t or OUT.Idle, 1) end
 local function on(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); return c end
+-- Надёжное подключение для кода, которому не видно локальные хелперы других модулей:
+-- берём файловый on, при его отсутствии — прямой Connect. Вызов никогда не падает.
+local function bind(sig, fn)
+	if not (sig and fn) then return nil end
+	local ok, c = pcall(function() return on(sig, fn) end)
+	if not ok or not c then
+		local ok2, c2 = pcall(function() return sig:Connect(fn) end)
+		if ok2 then return c2 end
+		return nil
+	end
+	return c
+end
 local UT = Enum.UserInputType
 local function press(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 end
 local function move(i) return i.UserInputType == UT.Touch or i.UserInputType == UT.MouseMovement end
@@ -5832,7 +5849,7 @@ local function startMain()
 	table.insert(bgFrames, titleBar)
 	local espDot = Skin.badge(titleBar, "ESP", 138, 46, true)
 	local aimDot = Skin.badge(titleBar, "AIM", 190, 46, true)
-	Skin.badge(titleBar, "v4.2 · Mobile", 242, 78)
+	Skin.badge(titleBar, "v" .. BUILD .. " · Mobile", 242, 78)
 	local chrome = {}
 	chrome.min = Skin.iconButton(titleBar, "Min", 66)
 	chrome.max, chrome.maxIcon = Skin.iconButton(titleBar, "Max", 36)
@@ -6311,21 +6328,22 @@ local function startMain()
 				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
 				Active = false}, r)
 			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel"), orb = orb}
-			-- on (файловый уровень), а не connect: connect объявлен внутри модуля наведения и здесь не виден
-			on(r.Activated, function()
+			-- bind — файловый хелпер: не зависит от того, виден ли connect в этой области
+			local function pick()
 				CFG.Chams = st.key
 				refreshHL()
 				updAll()
 				for k, rr2 in rows do
-					local on = (k == CFG.Chams)
-					rr2.edge.Color = on and C.Acc or OUT.Hover.Color
-					rr2.edge.Transparency = on and 0 or OUT.Hover.Transparency
-					rr2.edge.Thickness = on and 2 or 1
-					rr2.row.BackgroundColor3 = on and C.Acc or C.Side
-					rr2.row.BackgroundTransparency = on and 0.86 or 0.55
-					rr2.label.TextColor3 = on and C.W or C.Mut
+					local sel = (k == CFG.Chams)
+					rr2.edge.Color = sel and C.Acc or OUT.Hover.Color
+					rr2.edge.Transparency = sel and 0 or OUT.Hover.Transparency
+					rr2.edge.Thickness = sel and 2 or 1
+					rr2.row.BackgroundColor3 = sel and C.Acc or C.Side
+					rr2.row.BackgroundTransparency = sel and 0.86 or 0.55
+					rr2.label.TextColor3 = sel and C.W or C.Mut
 				end
-			end)
+			end
+			bind(r.Activated, pick)
 		end
 		local function paintChams()
 			for k, r in rows do
@@ -7915,7 +7933,7 @@ local function keyScreen(done)
 	tween(card, slow, {GroupTransparency = 0}) tween(sc, slow, {Scale = keyScale()})
 	local closed = false
 	local header = Skin.header(card)
-	Skin.badge(header, "v4.2 · Mobile", 138, 78)
+	Skin.badge(header, "v" .. BUILD .. " · Mobile", 138, 78)
 	local xBtn = Skin.iconButton(header, "Close", 6)
 	local keyIcon = icon("Key", card, 18, C.W)
 	keyIcon.Position = O(24, Skin.Header + 23)
@@ -8012,10 +8030,18 @@ local function keyScreen(done)
 				pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 				done()
 			end
-			local okIntro = pcall(playIntro, afterIntro)
+			-- страховка двойная: pcall вокруг запуска и таймер, который откроет меню, если сцена не позвала callback
+			local opened = false
+			local function safeAfter()
+				if opened then return end
+				opened = true
+				afterIntro()
+			end
+			local okIntro = pcall(playIntro, safeAfter)
+			task.delay(INTRO_LEN + 1.2, function() pcall(safeAfter) end)
 			if not okIntro then
 				pcall(function() if dim.Parent then dim:Destroy() end if blur then blur:Destroy() blur = nil end end)
-				afterIntro()
+				pcall(safeAfter)
 			end
 			return
 		end
