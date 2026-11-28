@@ -7190,46 +7190,74 @@ local function playIntro(after)
 	end
 	vignette(0, 0)
 	vignette(1, 1)
-	-- СВЕТ ИЗ ГЛУБИНЫ (god rays): из точки за словом бьёт объёмный взрыв света.
-	-- Источник блеска на металле и искрах — этот пучок: десятки тонких лучей, разной длины
-	-- и яркости, warm-white ядро и мягкая дымка вокруг.
-	-- Похоже на контровой свет в кадре: тёмный силуэт на фоне прожектора.
-	local LIGHT_WARM, LIGHT_GOLD = Color3.fromRGB(255, 246, 232), Color3.fromRGB(255, 198, 120)
+	-- СВЕТ ИЗ ГЛУБИНЫ: холодный белый взрыв за словом (как в хромовом референсе).
+	-- Десятки тонких лучей бьют из-за текста к камере, вокруг — дымка и яркое ядро.
+	local LIGHT_W, LIGHT_COLD = Color3.fromRGB(255, 255, 255), Color3.fromRGB(214, 224, 240)
 	local corePos = S(0.5, 0.47)
 
-	-- Дымка: несколько концентрических кругов с падающей прозрачностью — дешёвый «bloom»
+	-- Дымка: концентрические круги с падающей прозрачностью — дешёвый «bloom»
 	local haze = {}
 	for i = 1, 7 do
 		local f = new("Frame", {Name = "Haze" .. i, Size = O(10, 10), AnchorPoint = V2(0.5, 0.5),
-			Position = corePos, BackgroundColor3 = i <= 3 and LIGHT_WARM or LIGHT_GOLD,
+			Position = corePos, BackgroundColor3 = i <= 4 and LIGHT_W or LIGHT_COLD,
 			BackgroundTransparency = 1, ZIndex = 2, Active = false}, stage)
 		rr(f, 400)
 		table.insert(haze, {f = f, k = i / 7})
 	end
-	-- Лучи: тонкие полосы, закреплённые в точке схода. Прозрачность по градиенту —
-	-- у центра луч яркий, к краю экрана полностью растворяется.
+	-- Лучи: закреплены в точке схода за словом, растворяются к краю экрана
 	local rays = {}
-	for i = 1, 44 do
+	for i = 1, 48 do
 		local long = (i % 4 == 0)
-		local ray = new("Frame", {Name = "Ray" .. i, Size = U(0, math.random(3, 9), 1, 0), AnchorPoint = V2(0.5, 0),
-			Position = corePos, BackgroundColor3 = (i % 3 == 0) and LIGHT_WARM or LIGHT_GOLD,
-			BackgroundTransparency = 1, Rotation = (i - 1) * (360 / 44) + math.random(-2, 2),
+		local ray = new("Frame", {Name = "Ray" .. i, Size = U(0, math.random(3, 10), 1, 0), AnchorPoint = V2(0.5, 0),
+			Position = corePos, BackgroundColor3 = (i % 3 == 0) and LIGHT_COLD or LIGHT_W,
+			BackgroundTransparency = 1, Rotation = (i - 1) * (360 / 48) + math.random(-2, 2),
 			ZIndex = 3, Active = false}, stage)
 		new("UIGradient", {Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, math.random(2, 12) / 100), -- у источника почти не видно границы
-			NumberSequenceKeypoint.new(0.35, math.random(35, 55) / 100),
+			NumberSequenceKeypoint.new(0, math.random(1, 8) / 100),
+			NumberSequenceKeypoint.new(0.35, math.random(30, 50) / 100),
 			NumberSequenceKeypoint.new(1, 1),
 		}), Rotation = 90}, ray)
 		table.insert(rays, {f = ray, w0 = ray.Size.X.Offset, phase = math.random() * math.pi * 2,
-			boost = long and 1.35 or 1, twinkle = 0.6 + math.random() * 0.8})
+			boost = long and 1.4 or 1, twinkle = 0.6 + math.random() * 0.8})
 	end
 	-- яркое ядро в точке схода
 	local core = new("Frame", {Name = "Core", Size = O(10, 10), AnchorPoint = V2(0.5, 0.5), Position = corePos,
-		BackgroundColor3 = LIGHT_WARM, BackgroundTransparency = 1, ZIndex = 4, Active = false}, stage)
+		BackgroundColor3 = LIGHT_W, BackgroundTransparency = 1, ZIndex = 4, Active = false}, stage)
 	rr(core, 200)
-	-- свечение позади слова: акцентный круг, разгорается к сборке букв и гаснет на уходе
-	local halo = new("Frame", {Name = "Halo", Size = S(1, 1), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
-		BackgroundColor3 = C.Acc, BackgroundTransparency = 1, Active = false, ZIndex = 3}, stage)
+	-- ПЫЛЬ: мелкие точки, летящие от центра к камере — глубина кадра и «искры в луче»
+	local dust = {}
+	for i = 1, 34 do
+		local a = math.random() * math.pi * 2
+		local dot = new("Frame", {Name = "Dust" .. i, Size = O(math.random(1, 3), math.random(1, 3)),
+			AnchorPoint = V2(0.5, 0.5), Position = corePos, BackgroundColor3 = LIGHT_W,
+			BackgroundTransparency = 1, ZIndex = 7, Active = false}, stage)
+		rr(dot, 2)
+		table.insert(dust, {f = dot, a = a, k = math.random(), speed = 0.35 + math.random() * 0.8})
+	end
+	-- КРИСТАЛЛЫ: осколки-ромбы, летящие на камеру из глубины. Цвет — серебро с белой кромкой,
+	-- поэтому они блестят на свету и дают ощущение объёма, как в референсе.
+	local crystals = {}
+	for i = 1, 18 do
+		local a = math.random() * math.pi * 2
+		local s0 = math.random(10, 26)
+		local shard = new("Frame", {Name = "Crystal" .. i, Size = O(s0, s0 * 2), AnchorPoint = V2(0.5, 0.5),
+			Position = S(0.5 + math.cos(a) * 0.42, 0.5 + math.sin(a) * 0.42), BackgroundColor3 = Color3.fromRGB(206, 214, 228),
+			BackgroundTransparency = 1, Rotation = math.random(0, 359), ZIndex = 8, Active = false}, stage)
+		-- грань ромба: скругление малым радиусом + светлый контур = гранёный кристалл
+		rr(shard, 2)
+		local stroke = new("UIStroke", {Color = Color3.fromRGB(255, 255, 255), Thickness = 1.5,
+			Transparency = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, shard)
+		new("UIGradient", {Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(0.45, Color3.fromRGB(198, 206, 220)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(96, 104, 120)),
+		}), Rotation = 35}, shard)
+		table.insert(crystals, {f = shard, st = stroke, a = a, k = math.random() * 0.5,
+			spin = (math.random() - 0.5) * 260, size = s0, speed = 0.5 + math.random() * 0.7})
+	end
+	-- свечение позади слова: мягкий ореол вокруг источника
+	local halo = new("Frame", {Name = "Halo", Size = S(1, 1), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
+		BackgroundColor3 = LIGHT_W, BackgroundTransparency = 1, Active = false, ZIndex = 3}, stage)
 	rr(halo, 400)
 	local haloGrad = new("UIGradient", {Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.15), NumberSequenceKeypoint.new(1, 1),
@@ -7269,11 +7297,14 @@ local function playIntro(after)
 	local word = new("Frame", {Name = "Word", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
 		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
 	local letters = {}
-	-- Серебро с тёплым контровым светом: верх white-silver, низ уходит в пепел,
-	-- а средняя полоса подкрашена тёплым — отражение света из глубины.
-	local SILVER_TOP, SILVER_MID, SILVER_LOW = Color3.fromRGB(255, 255, 255),
-		Color3.fromRGB(208, 214, 224), Color3.fromRGB(104, 110, 124)
-	local SILVER_WARM = Color3.fromRGB(255, 238, 210)
+	-- ХРОМ: у каждой буквы металлическая «голова» (белая кромка + серое тело + тёмный низ),
+	-- глянцевая передняя грань с узким бликом и несколько копий-подложек, уходящих в глубину.
+	-- Так буквы читаются как объёмный металл, как в референсе.
+	local CHROME_HI, CHROME_MID, CHROME_LOW = Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(186, 194, 208), Color3.fromRGB(74, 80, 92)
+	local FACE_TOP, FACE_FLASH, FACE_LOW = Color3.fromRGB(236, 240, 248),
+		Color3.fromRGB(255, 255, 255), Color3.fromRGB(96, 104, 118)
+	local shimmer = {} -- градиенты лицевых граней: по ним бежит перелив
 	local function mkLetter(ch, color, z)
 		local o = new("TextLabel", {Size = O(0, 0), AutomaticSize = Enum.AutomaticSize.XY,
 			AnchorPoint = V2(0.5, 0.5), Position = O(0, 0), BackgroundTransparency = 1, Text = ch,
@@ -7282,35 +7313,45 @@ local function playIntro(after)
 			ZIndex = z, Active = false}, word)
 		return o
 	end
-	-- Серебряная заливка: белое сверху → светло-серое → середина → холодная тень снизу.
-	-- UIGradient на TextLabel красит сам текст, поэтому слово читается как металл.
-	local shimmer = {} -- все градиенты букв: у каждого бежит блик
-	local function silver(o, shift)
+	-- голова буквы: тело из хрома + светлая кромка сверху/по контуру
+	local function chrome(ch, z)
+		local o = mkLetter(ch, CHROME_MID, z)
+		new("UIGradient", {Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0.00, CHROME_HI),
+			ColorSequenceKeypoint.new(0.30, CHROME_MID),
+			ColorSequenceKeypoint.new(0.62, CHROME_HI),
+			ColorSequenceKeypoint.new(1.00, CHROME_LOW),
+		}), Rotation = 90}, o)
+		o.TextStrokeColor3 = CHROME_HI
+		o.TextStrokeTransparency = 1
+		return o
+	end
+	-- передняя грань: светлее и с ярким бликом посередине
+	local function face(ch, z, shift)
+		local o = mkLetter(ch, FACE_TOP, z)
 		local g = new("UIGradient", {Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0.00, SILVER_TOP),
-			ColorSequenceKeypoint.new(0.32, SILVER_MID),
-			ColorSequenceKeypoint.new(0.52, SILVER_WARM), -- блик металла, подкрашенный светом
-			ColorSequenceKeypoint.new(0.78, SILVER_MID),
-			ColorSequenceKeypoint.new(1.00, SILVER_LOW),
+			ColorSequenceKeypoint.new(0.00, FACE_TOP),
+			ColorSequenceKeypoint.new(0.34, FACE_FLASH),
+			ColorSequenceKeypoint.new(0.52, FACE_LOW),
+			ColorSequenceKeypoint.new(0.70, FACE_FLASH),
+			ColorSequenceKeypoint.new(1.00, FACE_TOP),
 		}), Rotation = 90}, o)
 		table.insert(shimmer, {g = g, shift = shift})
-		return g
-	end
-	-- Толщина: контур текста чуть светлее заливки, отсюда «жирный» металлический край
-	local function edge(o)
-		o.TextStrokeColor3 = Color3.fromRGB(246, 248, 252)
-		o.TextStrokeTransparency = 1
 		return o
 	end
 	for i = 1, #INTRO_WORD do
 		local ch = INTRO_WORD:sub(i, i)
-		-- тень (объём), свечение (акцент) и серебряная заливка
-		local shadow = mkLetter(ch, C.B, 10)
-		local glow = mkLetter(ch, C.Acc, 10)
-		local lbl = edge(mkLetter(ch, SILVER_MID, 11))
-		silver(lbl, i * 0.6)
+		-- подложки уходят вниз-вправо, темнея: так буква получает толщину
+		local depths = {}
+		for d = 4, 1, -1 do
+			local shade = mkLetter(ch, CHROME_LOW, 9)
+			shade.TextTransparency = 1
+			table.insert(depths, {o = shade, k = d})
+		end
+		local body = chrome(ch, 10)
+		local lbl = face(ch, 11, i * 0.6)
 		local sc = new("UIScale", {Scale = 1}, lbl)
-		table.insert(letters, {i = i, lbl = lbl, shadow = shadow, glow = glow, sc = sc, cx = 0, w = 0})
+		table.insert(letters, {i = i, lbl = lbl, body = body, depths = depths, sc = sc, cx = 0, w = 0})
 	end
 	-- блик: белая полоса проезжает по слову на «выдержке», обрезается своим контейнером
 	local shineClip = new("Frame", {Name = "ShineClip", Size = O(0, 0), AnchorPoint = V2(0.5, 0.5),
@@ -7343,10 +7384,11 @@ local function playIntro(after)
 		local gap = 0
 		local total = 0
 		for _ = 1, 5 do
+			-- кегль задаём и грани, и телу, и подложкам: иначе толщина не совпадёт с буквой
 			for _, l in letters do
-				for _, o in {l.lbl, l.shadow, l.glow} do
-					o.TextSize = h
-				end
+				l.lbl.TextSize = h
+				l.body.TextSize = h
+				for _, d in l.depths do d.o.TextSize = h end
 			end
 			-- трекинг 16% от кегля: у Michroma буквы широкие, при меньшем зазоре они слипаются
 			gap = math.max(1, math.floor(h * 0.16))
@@ -7365,12 +7407,17 @@ local function playIntro(after)
 			h = math.max(18, math.floor(h * math.clamp(maxW / total, 0.5, 0.95)))
 		end
 		-- расстановка: центр каждой буквы относительно центра слова
+		local depth = math.max(1, math.floor(h * 0.055)) -- толщина хрома в пикселях
 		local x = -total / 2
 		for _, l in letters do
 			l.cx = x + l.w / 2
 			l.lbl.Position = O(l.cx, 0)
-			l.shadow.Position = O(l.cx, math.max(2, math.floor(h * 0.03)))
-			l.glow.Position = O(l.cx, 0)
+			l.body.Position = O(l.cx, 0)
+			l.body.TextSize = h
+			for _, d in l.depths do
+				d.o.TextSize = h
+				d.o.Position = O(l.cx + depth * d.k, depth * d.k)
+			end
 			x += l.w + gap
 		end
 		local lineH = math.ceil(h * 1.25)
@@ -7391,8 +7438,8 @@ local function playIntro(after)
 	for _, l in letters do
 		l.sc.Scale = 0.68
 		l.lbl.Rotation = -7
-		l.shadow.Rotation = -7
-		l.glow.Rotation = -7
+		l.body.Rotation = -7
+		for _, d in l.depths do d.o.Rotation = -7 end
 	end
 	-- появление букв: пружина с перелётом + проявление; вызывается из таймлайна, не из кадра
 	local function revealLetter(l, delay)
@@ -7401,9 +7448,14 @@ local function playIntro(after)
 			spring(l.sc, {Scale = 1}, TWEEN.pop)
 			tween(l.lbl, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 				{TextTransparency = 0, Rotation = 0})
-			tween(l.shadow, TweenInfo.new(0.55), {TextTransparency = 0.55, Rotation = 0})
-			tween(l.glow, TweenInfo.new(0.55), {TextTransparency = 0.72, Rotation = 0})
-			tween(l.lbl, TweenInfo.new(0.55), {TextStrokeTransparency = 0.55}) -- контур: металлическая кромка
+			tween(l.body, TweenInfo.new(0.65, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+				{TextTransparency = 0, Rotation = 0})
+			for _, d in l.depths do
+				-- подложки выезжают из-под буквы: сначала прозрачные, потом проявляются в тени
+				tween(d.o, TweenInfo.new(0.7, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+					{TextTransparency = math.clamp(0.35 + d.k * 0.1, 0, 1), Rotation = 0})
+			end
+			tween(l.lbl, TweenInfo.new(0.55), {TextStrokeTransparency = 0.55})
 		end)
 	end
 	for _, l in letters do
@@ -7459,6 +7511,26 @@ local function playIntro(after)
 			hz.f.Size = O(math.floor(size), math.floor(size))
 			hz.f.BackgroundTransparency = math.clamp(1 - lightK * (1.05 - hz.k * 0.75), 0, 1)
 		end
+		-- ПЫЛЬ: точки летят от центра наружу, ускоряясь, и гаснут у края — ощущение глубины
+		for _, d in dust do
+			local k = (t * d.speed + d.k) % 1
+			local r = 0.04 + k * 0.62
+			d.f.Position = S(0.5 + math.cos(d.a) * r, 0.47 + math.sin(d.a) * r * 0.9)
+			d.f.BackgroundTransparency = math.clamp(1 - math.sin(k * math.pi) * 0.85, 0, 1) * decay
+		end
+		-- КРИСТАЛЛЫ: ромбы летят на камеру (растут), вращаются и вспыхивают на свету
+		for _, c in crystals do
+			local k = (t * c.speed * 0.55 + c.k) % 1
+			local r = 0.45 * (1 - k * 0.85) -- сходятся к центру, пока растут
+			c.f.Position = S(0.5 + math.cos(c.a) * r, 0.47 + math.sin(c.a) * r * 0.9)
+			c.f.Rotation = c.f.Rotation + dt * c.spin * (0.4 + k)
+			local s2 = c.size * (0.5 + k * 2.1)
+			c.f.Size = O(math.floor(s2), math.floor(s2 * 1.7))
+			-- блик: кристалл проявляется в середине полёта и гаснет у камеры
+			local glowK = math.sin(k * math.pi)
+			c.f.BackgroundTransparency = math.clamp(1 - glowK * 0.85, 0, 1)
+			c.st.Transparency = math.clamp(1 - glowK * 1.1, 0, 1)
+		end
 		-- ядро: маленькое и плотное, на вспышке раскрывается
 		local coreK = math.clamp((t - 0.25) / 0.85, 0, 1) * decay
 		local cs = math.floor(18 + coreK * 120 + math.sin(t * 6.5) * 4)
@@ -7496,20 +7568,27 @@ local function playIntro(after)
 			local out = math.clamp((t - 2.62) / 0.45, 0, 1)
 			for _, l in letters do
 				l.lbl.TextTransparency = out
-				l.shadow.TextTransparency = math.max(0.55, out)
-				l.glow.TextTransparency = math.max(0.72, out)
+				l.body.TextTransparency = out
+				for _, d in l.depths do d.o.TextTransparency = math.max(0.35, out + d.k * 0.08) end
 			end
 			sub.TextTransparency = out
 			rule.BackgroundTransparency = math.max(0.1, out)
 			bg.BackgroundTransparency = out
 			for _, r in rays do r.f.BackgroundTransparency = math.max(r.f.BackgroundTransparency, out) end
 			for _, hz in haze do hz.f.BackgroundTransparency = math.max(hz.f.BackgroundTransparency, out) end
+			for _, d in dust do d.f.BackgroundTransparency = math.max(d.f.BackgroundTransparency, out) end
+			for _, c in crystals do
+				c.f.BackgroundTransparency = math.max(c.f.BackgroundTransparency, out)
+				c.st.Transparency = math.max(c.st.Transparency, out)
+			end
 			core.BackgroundTransparency = math.max(core.BackgroundTransparency, out)
 			-- уход: буквы чуть разлетаются от центра и гаснут вместе с фоном
 			for _, l in letters do
-				l.lbl.Position = O(l.cx * (1 + out * 0.06), 0)
-				l.shadow.Position = O(l.cx * (1 + out * 0.06), math.max(2, math.floor((l.lbl.TextSize or 40) * 0.03)))
-				l.glow.Position = O(l.cx * (1 + out * 0.06), 0)
+				local nx = l.cx * (1 + out * 0.06)
+				local depth = math.max(1, math.floor((l.lbl.TextSize or 40) * 0.055))
+				l.lbl.Position = O(nx, 0)
+				l.body.Position = O(nx, 0)
+				for _, d in l.depths do d.o.Position = O(nx + depth * d.k, depth * d.k) end
 			end
 		end
 	end

@@ -19,13 +19,19 @@
   #beams{position:absolute;inset:0;overflow:hidden}
   /* луч: жёсткий у источника, растворяется к краю — как в контровом свете */
   .ray{position:absolute;left:50%;top:47%;transform-origin:50% 0;pointer-events:none;
-    background:linear-gradient(180deg,rgba(255,246,232,.95) 0%,rgba(255,214,150,.42) 32%,
-      rgba(255,190,110,.12) 62%,rgba(255,180,100,0) 100%);
+    background:linear-gradient(180deg,rgba(255,255,255,.95) 0%,rgba(228,238,252,.42) 32%,
+      rgba(200,214,236,.12) 62%,rgba(190,204,228,0) 100%);
     opacity:0;will-change:transform,opacity,width,height;filter:blur(.4px)}
   #haze0,#haze1,#haze2{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
     opacity:0;pointer-events:none}
+  #crystals{position:absolute;inset:0;pointer-events:none}
+  .crystal{position:absolute;left:50%;top:47%;transform-origin:50% 50%;opacity:0;
+    background:linear-gradient(160deg,#ffffff 0%,#c6cede 40%,#5f6674 100%);
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 0 10px rgba(220,235,255,.45);
+    clip-path:polygon(50% 0%,100% 38%,50% 100%,0% 38%);}
   #core{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
-    background:radial-gradient(circle,#ffffff 0%,rgba(255,242,220,.95) 28%,rgba(255,205,130,.45) 52%,rgba(255,180,90,0) 72%);
+    background:radial-gradient(circle,#ffffff 0%,rgba(248,252,255,.95) 28%,rgba(206,222,246,.42) 52%,rgba(190,205,230,0) 72%);
     opacity:0;pointer-events:none;filter:blur(.3px)}
   #halo{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;opacity:0;
     background:radial-gradient(circle,rgba(91,140,255,.5) 0%,rgba(91,140,255,.16) 45%,rgba(91,140,255,0) 70%)}
@@ -44,10 +50,14 @@
     will-change:transform,opacity;
     /* серебро: белое сверху, серое в середине, холодная тень снизу + светлая кромка */
     color:transparent;
-    background:linear-gradient(180deg,#ffffff 0%,#d0d6e0 28%,#a7aebc 46%,#ffeece 56%,#9aa2b0 74%,#616876 100%);
+    /* хром: белая кромка сверху, серое тело, яркий блик, тёмный низ */
+    background:linear-gradient(180deg,#ffffff 0%,#c9d0dd 22%,#eef2f8 34%,#8d95a4 50%,
+      #f6f9ff 62%,#9aa2b1 78%,#4e5563 100%);
     -webkit-background-clip:text;background-clip:text;
-    -webkit-text-stroke:0.035em rgba(248,250,255,.92);
-    filter:drop-shadow(0 3px 0 rgba(0,0,0,.85));}
+    -webkit-text-stroke:0.03em rgba(250,252,255,.95);
+    /* 3D: несколько тёмных смещений подряд = толщина металла */
+    filter:drop-shadow(2px 2px 0 #3c4250) drop-shadow(3px 3px 0 #2b2f3a)
+           drop-shadow(5px 5px 0 #1c1f26) drop-shadow(0 6px 14px rgba(0,0,0,.8));}
   #shineClip{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);overflow:hidden;z-index:4;pointer-events:none}
   #shine{position:absolute;top:50%;left:-40%;transform:translate(-50%,-50%) rotate(16deg);opacity:0;
     background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0))}
@@ -78,6 +88,7 @@
 <div id="stage">
   <div id="beams"></div>
   <div id="haze0"></div><div id="haze1"></div><div id="haze2"></div>
+  <div id="crystals"></div>
   <div id="core"></div>
   <div id="vignette"></div>
   <div id="halo"></div>
@@ -228,6 +239,26 @@
     }
   }
 
+  let crystals = [];
+  function buildCrystals() {
+    const layer = document.getElementById('crystals');
+    layer.innerHTML = '';
+    crystals = [];
+    for (let i = 0; i < 18; i++) {
+      const el = document.createElement('div');
+      el.className = 'crystal';
+      layer.appendChild(el);
+      crystals.push({
+        el: el,
+        a: Math.random() * Math.PI * 2,
+        k: Math.random() * 0.5,
+        spin: (Math.random() - 0.5) * 260,
+        size: 10 + Math.random() * 16,
+        speed: 0.5 + Math.random() * 0.7
+      });
+    }
+  }
+
   function buildShards() {
     shardsLayer.innerHTML = '';
     shards = [];
@@ -287,8 +318,21 @@
       const size = diag * k * (0.9 + blast * 0.35);
       el.style.width = el.style.height = size.toFixed(0) + 'px';
       el.style.opacity = (lightK * a).toFixed(3);
-      el.style.background = 'radial-gradient(circle,rgba(255,244,224,.95) 0%,rgba(255,206,140,.35) 45%,rgba(255,180,90,0) 70%)';
+      el.style.background = 'radial-gradient(circle,rgba(252,254,255,.95) 0%,rgba(214,228,248,.32) 45%,rgba(190,205,230,0) 70%)';
     });
+    // кристаллы: летят на камеру, растут, вращаются и вспыхивают
+    crystals.forEach(c => {
+      const k = (tt * c.speed * 0.55 + c.k) % 1;
+      const r = 0.45 * (1 - k * 0.85);
+      const s2 = c.size * (0.5 + k * 2.1);
+      c.el.style.left = (50 + Math.cos(c.a) * r * 100).toFixed(2) + '%';
+      c.el.style.top = (47 + Math.sin(c.a) * r * 90).toFixed(2) + '%';
+      c.el.style.transform = 'translate(-50%,-50%) rotate(' + (c.a * 57 + c.spin * tt).toFixed(1) + 'deg)';
+      c.el.style.width = s2.toFixed(1) + 'px';
+      c.el.style.height = (s2 * 1.7).toFixed(1) + 'px';
+      c.el.style.opacity = (Math.sin(k * Math.PI) * decay).toFixed(3);
+    });
+
     const coreK = clamp((tt - 0.25) / 0.85, 0, 1) * decay;
     const coreEl = document.getElementById('core');
     const cs = 18 + coreK * 120 + Math.sin(tt * 6.5) * 4;
@@ -404,6 +448,7 @@
   buildWord();
   buildShards();
   buildBeams();
+  buildCrystals();
   render(0);
   // шрифт может подъехать позже: пересчитываем геометрию, когда он загрузился
   if (document.fonts && document.fonts.ready) {

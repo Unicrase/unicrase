@@ -227,7 +227,14 @@ class AnimWiring(unittest.TestCase):
         self.assertNotIn("STS.GetTextSize, STS, INTRO_WORD", intro)
         self.assertIn("l.lbl.AbsoluteSize.X", intro)
         # серебро + свет из глубины + искры с блеском
-        self.assertIn("ColorSequenceKeypoint.new(0.00, SILVER_TOP)", intro)
+        # хром: металлическая голова + глянцевая грань + подложки-толщина
+        self.assertIn("ColorSequenceKeypoint.new(0.00, CHROME_HI)", intro)
+        self.assertIn("ColorSequenceKeypoint.new(0.34, FACE_FLASH)", intro)
+        self.assertIn("for d = 4, 1, -1 do", intro)
+        # холодный белый свет и кристаллы-осколки из глубины
+        self.assertIn("LIGHT_W, LIGHT_COLD", intro)
+        self.assertIn('Name = "Crystal"', intro)
+        self.assertIn('Name = "Dust"', intro)
         self.assertIn('Name = "Ray"', intro)
         self.assertIn('Name = "Haze"', intro)
         self.assertIn('Name = "SparkGlow"', SOURCE)  # искры в тексте папок
