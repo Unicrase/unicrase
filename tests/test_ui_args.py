@@ -249,3 +249,34 @@ class OtherHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class HelperVisibility(unittest.TestCase):
+    """Локальные хелперы видны только в своей области.
+
+    Классическая ошибка: внутри startMain вызвать connect(...) — он объявлен локально
+    в модуле наведения (выше по файлу), поэтому в рантайме падает с
+    "attempt to call a nil value". Тест проверяет, что в теле startMain нет таких вызовов.
+    """
+
+    def test_no_connect_calls_inside_start_main(self):
+        lines = SOURCE.split("\n")
+        start = next(i for i, l in enumerate(lines) if l.startswith("local function startMain"))
+        offenders = []
+        for i, line in enumerate(lines[start:], start + 1):
+            code = line.split("--", 1)[0]
+            # отсекаем :Disconnect( и прочие методы — важен именно вызов локальной функции connect(
+            if "connect(" in code and ":connect(" not in code and "Disconnect" not in code:
+                offenders.append((i, line.strip()))
+        self.assertEqual(offenders, [], "connect() объявлен внутри модуля наведения; в startMain нужен on()")
+
+    def test_on_helper_is_file_level(self):
+        # on объявлен на файловом уровне: им можно пользоваться в любом месте скрипта
+        self.assertIn("local function on(sig, fn)", SOURCE)
+        # и он не спрятан внутри startMain
+        head = SOURCE.split("local function startMain", 1)[0]
+        self.assertIn("local function on(sig, fn)", head)
+
+
+
+if __name__ == "__main__":
+    unittest.main()

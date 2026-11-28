@@ -6311,7 +6311,8 @@ local function startMain()
 				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
 				Active = false}, r)
 			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel"), orb = orb}
-			connect(r.Activated, function()
+			-- on (файловый уровень), а не connect: connect объявлен внутри модуля наведения и здесь не виден
+			on(r.Activated, function()
 				CFG.Chams = st.key
 				refreshHL()
 				updAll()
