@@ -38,11 +38,11 @@
 <body>
 <div class="wrap">
   <h1>Появление текста при клике на папку</h1>
-  <p class="hint">Сейчас в скрипте включён вариант <b>1 — печатная машинка</b>. Переключи и посмотри, какой ближе к видео.</p>
+  <p class="hint">В скрипте включён вариант <b>2 — буквы по одной</b>. Остальные оставлены для сравнения.</p>
 
   <div class="modes" id="modes">
-    <div class="mode on" data-mode="type">1 · печатная машинка</div>
-    <div class="mode" data-mode="letters">2 · буквы по одной (вверх)</div>
+    <div class="mode" data-mode="type">1 · печатная машинка</div>
+    <div class="mode on" data-mode="letters">2 · буквы по одной (вверх) — в скрипте</div>
     <div class="mode" data-mode="wipe">3 · раскрытие маской</div>
     <div class="mode" data-mode="glitch">4 · размытие + глитч</div>
     <div class="mode" data-mode="word">5 · по словам</div>
@@ -57,7 +57,7 @@
 </div>
 
 <div class="bar">
-  <span>эффект: <b id="name">печатная машинка</b></span>
+  <span>эффект: <b id="name">буквы по одной (вверх)</b></span>
   <span class="pill" id="replay">повторить</span>
   <span class="pill" id="slow">скорость 1×</span>
 </div>
@@ -68,7 +68,7 @@ const CARDS = ["Highlight", "Names", "ESP box"];
 const AXES = {title: document.getElementById('title'),
               cards: [document.getElementById('t1'), document.getElementById('t2'), document.getElementById('t3')]};
 const panel = document.getElementById('panel');
-let mode = 'type', speed = 1, timers = [];
+let mode = 'letters', speed = 1, timers = [];
 
 const SPEED_STEPS = [1, 0.6, 0.35];
 const SPEED_LABELS = ["1×", "медленнее", "ещё медленнее"];

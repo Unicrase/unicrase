@@ -214,23 +214,32 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("playIntro(function()", valid)
         self.assertEqual(SOURCE.count("playIntro("), 2)  # объявление + единственный вызов
 
-    def test_typewriter_opens_folder_text(self):
-        body = between("local typewriter = setmetatable", "-- Анимация цифры")
+    def test_letters_reveal_opens_folder_text(self):
+        body = SOURCE.split("local function revealText(label, text, opt)", 1)[1].split("-- Анимация цифры", 1)[0]
         self.assertIn("UICFG.AnimText", body)
-        self.assertIn("MaxVisibleGraphemes", body)
-        # новый текст отменяет старую печать, иначе буквы двух строк смешаются
-        self.assertIn("typewriter[label] ~= gen", body)
-        # выключено — текст ставится целиком
+        # каждая буква — отдельный TextLabel со своим UIScale, а не срез строки
+        self.assertIn('new("TextLabel"', body)
+        self.assertIn('new("UIScale"', body)
+        # буквы стартуют по очереди и «выпрыгивают» снизу
+        self.assertIn("task.wait(stepDelay)", body)
+        self.assertIn("Position = O(0, rise)", body)
+        self.assertIn("spring(it.sc, {Scale = 1}, TWEEN.pop)", body)
+        # выключено — текст ставится сразу, слой анимации снимается
         self.assertIn("label.Text, label.TextTransparency = text, 0", body)
+        # в конце обычный текст возвращается: цвета темы и обрезка работают как раньше
+        self.assertIn("label.Text, label.TextTransparency = text, 0\n", body + "\n")
+        self.assertIn("layer:Destroy()", body)
+        # поколение отменяет предыдущую анимацию (быстрые клики по папкам)
+        self.assertIn("revealers[label] ~= gen", body)
         # заголовок папки и названия карточек используют один хелпер
         show = between("local function show(n)", "for i, folder in folders do")
-        self.assertIn("typeText(pTitle, newTitle", show)
+        self.assertIn("revealText(pTitle, newTitle", show)
         cascade = between("local function cascade(f)", "local folders = {")
         self.assertIn('c:FindFirstChild("Title")', cascade)
-        self.assertIn("typeText(title, title.Text", cascade)
+        self.assertIn("revealText(title, title.Text", cascade)
         # переключатель и справка
-        self.assertIn('{"Typewriter text", "AnimText"', SOURCE)
-        self.assertIn('["Typewriter text"]', SOURCE)
+        self.assertIn('{"Letters reveal", "AnimText"', SOURCE)
+        self.assertIn('["Letters reveal"]', SOURCE)
 
     def test_intro_can_be_disabled_and_is_in_effects_list(self):
         self.assertIn('{"Intro after key", "AnimIntro"', SOURCE)

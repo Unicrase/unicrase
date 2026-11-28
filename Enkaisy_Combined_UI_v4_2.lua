@@ -44,7 +44,7 @@
 --       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
 --       После верного ключа — заставка «осколки → UNICRASE» (касание пропускает, AnimIntro).
---       Открытие папки: заголовок и названия карточек печатаются по буквам с мигающим курсором (AnimText).
+--       Открытие папки: заголовок и названия карточек собираются из букв — каждая выпрыгивает снизу (AnimText).
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
 --       ESP: линии и скелет появляются и гаснут фейдом (твин стартует только на смене состояния).
@@ -918,74 +918,73 @@ local function popIn(o, on)
 		tween(sc, TWEEN.snap, {Scale = 0})
 	end
 end
--- Появление текста по буквам (эффект «по одной букве» из CapCut-пресетов):
--- первая буква видна сразу, остальные открываются с шагом delay, курсор мигает и исчезает.
--- Каждый переход — один твин, а не кадровый цикл: 8 букв = 8 твинов по 80 мс.
-local typewriter = setmetatable({}, {__mode = "k"})
-local function typeText(label, text, opt)
+-- Появление текста по буквам — «буквы по одной» из CapCut-пресетов.
+-- Каждая буква — отдельный TextLabel: она выпрыгивает снизу с масштабом и пружиной (Back),
+-- следующая стартует через stepDelay. Раскладка не прыгает: невидимые буквы уже занимают место,
+-- поэтому ширина строки известна заранее и обрезка по краям (TextTruncate) продолжает работать.
+-- Один твин на букву, никаких кадровых циклов; при выключенных анимациях текст ставится сразу.
+local revealers = setmetatable({}, {__mode = "k"})
+local function revealText(label, text, opt)
 	opt = opt or {}
-	local gen = (typewriter[label] or 0) + 1
-	typewriter[label] = gen
+	local gen = (revealers[label] or 0) + 1
+	revealers[label] = gen
+	local layer = label:FindFirstChild("Reveal")
 	if not (CFG.Anim and UICFG.AnimText) or text == "" then
 		label.Text, label.TextTransparency = text, 0
+		if layer then layer:Destroy() end
 		return
 	end
-	local step = opt.step or 0.045 -- шаг между буквами: 45 мс ≈ 22 буквы в секунду
-	local len = utf8.len(text) or #text
-	local done = 0
-	label.Text, label.TextTransparency = "", 0
-	label.MaxVisibleGraphemes = 0
-	-- MaxVisibleGraphemes отсекает всё после N-й буквы: раскладка не «прыгает», курсор уходит по строке
-	-- курсор: тонкая полоска вровень с базовой линией, мигает, пока идёт печать
-	local caret
-	if opt.caret ~= false then
-		caret = new("Frame", {Name = "TypeCaret", Size = O(2, 14), AnchorPoint = V2(0, 0.5),
-			Position = U(0, 0, 0.5, 0), BackgroundColor3 = C.AccTx, BackgroundTransparency = 0.15,
-			Active = false, ZIndex = 5}, label)
-		rr(caret, 1)
-		local base = caret.Position
-		task.spawn(function()
-			local on_ = true
-			while typewriter[label] == gen do
-				caret.BackgroundTransparency = on_ and 0.15 or 1
-				on_ = not on_
-				task.wait(0.22)
-			end
-			-- после печати курсор коротко гаснет и убирается
-			if caret.Parent then
-				tween(caret, TWEEN.snap, {BackgroundTransparency = 1})
-				task.delay(0.2, function() if caret.Parent then caret:Destroy() end end)
-			end
-		end)
-		-- курсор следует за видимой частью текста: MeasureText даёт точную ширину
-		local function placeCaret()
-			if not caret.Parent then return end
-			local shown = label.MaxVisibleGraphemes
-			local size = 0
-			if shown and shown > 0 then
-				-- ширина ровно той части, что видна: курсор идёт по строке за последней буквой
-				local ok, bounds = pcall(STS.GetTextSize, STS, string.sub(text, 1, shown), label.TextSize, label.Font, V2(10000, 100))
-				if ok and bounds then size = bounds.X end
-			end
-			caret.Position = U(0, math.min(size + 2, 4000), 0.5, 1)
-		end
-		placeCaret()
-		opt._caret = placeCaret
+	-- слой поверх строки: он перекрывает обычный текст, пока идёт анимация
+	if layer then layer:Destroy() end
+	label.Text = "" -- исходная строка пуста: видно только анимированные буквы
+	layer = new("Frame", {Name = "Reveal", Size = S(1, 1), BackgroundTransparency = 1, Active = false,
+		ZIndex = (label.ZIndex or 1) + 1, ClipsDescendants = false}, label)
+
+	-- ширина каждой буквы нужна, чтобы расставить их без межбуквенных провалов
+	local function widthOf(str)
+		local ok, size = pcall(STS.GetTextSize, STS, str, label.TextSize, label.Font, V2(4000, label.AbsoluteSize.Y + 20))
+		return (ok and size and size.X) or (label.TextSize * 0.58 * #str)
 	end
+	local glyphs, total = {}, 0
+	for _, ch in utf8.graphemes(text) do
+		local w = math.max(1, widthOf(ch))
+		table.insert(glyphs, {ch = ch, w = w, x = total})
+		total += w
+	end
+
+	local stepDelay = opt.step or 0.035 -- шаг старта букв
+	local rise = opt.rise or 10           -- на сколько пикселей поднимается буква
+	local dur = opt.dur or 0.3
+	local items = {}
+	for i, g in ipairs(glyphs) do
+		local box = new("Frame", {Size = O(g.w + 1, label.AbsoluteSize.Y), Position = O(math.floor(g.x), 0),
+			BackgroundTransparency = 1, Active = false, ZIndex = label.ZIndex + 1, ClipsDescendants = false}, layer)
+		local lbl = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = g.ch, TextColor3 = label.TextColor3,
+			FontFace = label.FontFace, TextSize = label.TextSize, TextXAlignment = XL, TextYAlignment = label.TextYAlignment,
+			TextTransparency = 1, TextScaled = false, ZIndex = label.ZIndex + 2, Active = false}, box)
+		-- «выпрыгивание»: снизу + чуть меньше размером, затем пружина на место
+		lbl.Position = O(0, rise)
+		local sc = new("UIScale", {Scale = 0.82}, lbl)
+		table.insert(items, {box = box, lbl = lbl, sc = sc, i = i})
+	end
+	-- слой больше не нужен: буквы держим прямо в нём до конца анимации
 	task.spawn(function()
-		for i = 1, len do
-			if typewriter[label] ~= gen then return end -- начали новый текст: старый выходит
-			label.MaxVisibleGraphemes = i
-			if opt._caret then opt._caret() end
-			if opt.onTick then opt.onTick(i, len) end
-			task.wait(step)
+		for _, it in items do
+			if revealers[label] ~= gen then return end
+			task.wait(stepDelay)
+			if revealers[label] ~= gen then return end
+			tween(it.lbl, TweenInfo.new(dur, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = O(0, 0), TextTransparency = 0})
+			spring(it.sc, {Scale = 1}, TWEEN.pop)
 		end
-		if typewriter[label] ~= gen then return end
-		label.MaxVisibleGraphemes = -1
-		done = 1
+		if revealers[label] ~= gen then return end
+		task.wait(dur + 0.1)
+		if revealers[label] ~= gen then return end
+		-- финал: возвращаем обычный текст (он уже с правильными цветами темы и обрезкой)
+		label.Text, label.TextTransparency = text, 0
+		if layer.Parent then layer:Destroy() end
 		if opt.onDone then opt.onDone() end
 	end)
-	return function() return typewriter[label] == gen and done == 1 end
+	return function() return revealers[label] == gen end
 end
 -- Анимация цифры: значение «доезжает» до нового числа, а не прыгает
 local counters = setmetatable({}, {__mode = "k"})
@@ -2563,7 +2562,7 @@ helpUI.info = {
  ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
  ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
  ["Intro after key"] = {"Показывает заставку «осколки → UNICRASE» после верного ключа; касание пропускает её.", "Plays a shards-to-UNICRASE intro after a valid key; tap to skip."},
- ["Typewriter text"] = {"Печатает название папки и названия карточек по буквам с мигающим курсором; выключение — текст появляется целиком.", "Types the folder title and card names letter by letter with a blinking caret; off means text appears at once."},
+ ["Letters reveal"] = {"Собирает название папки и названия карточек из букв: каждая выпрыгивает снизу с пружиной; выключение — текст появляется целиком.", "Builds the folder title and card names from letters that pop up one by one with a spring; off means text appears at once."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
@@ -5495,11 +5494,7 @@ local function startMain()
 					-- название карточки печатается одновременно с её появлением: текст «собирается» на глазах
 					local title = c:FindFirstChild("Title")
 					if title and title:IsA("TextLabel") and title.Text ~= "" then
-						if CFG.Anim and UICFG.AnimText then
-							-- сначала прячем готовый текст, иначе он мигнёт целиком до начала печати
-							title.MaxVisibleGraphemes = 0
-						end
-						typeText(title, title.Text, {step = 0.02})
+						revealText(title, title.Text, {step = 0.012, rise = 8, dur = 0.24})
 					end
 				end)
 			end
@@ -5817,7 +5812,7 @@ local function startMain()
 			pTitle:SetAttribute("Shown", newTitle)
 			-- Название папки печатается по буквам: короткое, поэтому успевает за 0.2–0.4 с.
 			-- Если анимации выключены, typeText просто ставит текст.
-			typeText(pTitle, newTitle, {step = 0.035})
+			revealText(pTitle, newTitle, {step = 0.03, rise = 12, dur = 0.3})
 			if CFG.Anim and UICFG.AnimText then
 				-- вместе с текстом мягко проявляется сама строка, чтобы смена папки читалась
 				pTitle.Position = U(RAIL - 4, Skin.RailBase + 42, 0, HDR + 9)
@@ -6432,7 +6427,7 @@ local function startMain()
 		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
 		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
 		{"Intro after key", "AnimIntro", "Заставка UNICRASE после верного ключа."},
-		{"Typewriter text", "AnimText", "Текст в папке появляется по буквам."},
+		{"Letters reveal", "AnimText", "Буквы текста в папке выпрыгивают по одной."},
 	} do
 		local key = d[2]
 		local card, paint = toggleCard(pv2, d[1], 3 + i * 0.1, function() return UICFG[key] end,
