@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enkaisy — заставка после ключа</title>
+<style>
+  :root { --ink:#fff; --bg:#000; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#08080a; overflow:hidden;
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  /* рамка-телефон, чтобы масштаб читался как в игре */
+  .frame { position:fixed; inset:0; display:grid; place-items:center; padding:24px; }
+  .phone { position:relative; width:min(820px, 92vw); aspect-ratio:16/9; background:var(--bg);
+    border-radius:18px; overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08); }
+  .stage { position:absolute; inset:0; background:#000; }
+  .halo { position:absolute; left:50%; top:50%; width:130%; aspect-ratio:1; transform:translate(-50%,-50%);
+    border-radius:50%; opacity:0; pointer-events:none;
+    background:radial-gradient(circle, rgba(255,255,255,.9) 0%, rgba(200,210,255,.35) 35%, transparent 62%);
+    filter:blur(6px); }
+  .word { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:flex; gap:2px; white-space:nowrap; }
+  .letter { display:grid; place-items:center; font-weight:800; letter-spacing:.02em;
+    color:#fff; opacity:0; transform:scale(.6);
+    text-shadow:0 0 18px rgba(255,255,255,.25); }
+  .shard { position:absolute; left:50%; top:50%; background:#fff; border-radius:2px;
+    box-shadow:0 0 10px rgba(255,255,255,.5); }
+  .hud { position:fixed; left:0; right:0; bottom:14px; display:flex; gap:10px; justify-content:center;
+    align-items:center; color:#9aa0aa; font-size:12px; letter-spacing:.04em; }
+  .hud b { color:#e8eaf0; font-weight:600; }
+  .keycap { border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05);
+    padding:5px 10px; border-radius:8px; color:#dfe3ea; font-size:11px; cursor:pointer; }
+  .keycap:hover { background:rgba(255,255,255,.12); }
+  .caption { position:fixed; top:16px; left:0; right:0; text-align:center; color:#7d838d; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="phone" id="phone">
+    <div class="stage" id="stage">
+      <div class="halo" id="halo"></div>
+      <div class="word" id="word"></div>
+    </div>
+  </div>
+</div>
+<div class="caption">заставка после верного ключа · касание по экрану пропускает</div>
+<div class="hud">
+  <span>длительность <b>2.1 с</b></span>
+  <span class="keycap" id="replay">повторить</span>
+  <span class="keycap" id="toggle">анимации: вкл</span>
+</div>
+
+<script>
+const WORD = "UNICRASE";
+const LEN = 2.1;               // столько же, сколько INTRO_LEN в скрипте
+const SHARDS = 22;
+const stage = document.getElementById('stage');
+const wordEl = document.getElementById('word');
+const halo = document.getElementById('halo');
+const phone = document.getElementById('phone');
+
+let letters = [], shards = [], raf = null, t0 = 0, running = false, enabled = true;
+
+function build() {
+  wordEl.innerHTML = '';
+  letters = [];
+  for (let i = 0; i < WORD.length; i++) {
+    const d = document.createElement('div');
+    d.className = 'letter';
+    d.textContent = WORD[i];
+    wordEl.appendChild(d);
+    letters.push(d);
+  }
+  shards.forEach(s => s.remove());
+  shards = [];
+  for (let i = 0; i < SHARDS; i++) {
+    const d = document.createElement('div');
+    d.className = 'shard';
+    const w = 3 + Math.random() * 4, h = 10 + Math.random() * 12;
+    d.style.width = w + 'px';
+    d.style.height = h + 'px';
+    stage.appendChild(d);
+    shards.push({
+      el: d,
+      a: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 220,
+      delay: Math.random() * 0.45,
+      rot: Math.random() * 360
+    });
+  }
+  layout();
+}
+
+function layout() {
+  // то же соотношение, что в скрипте: слово ≈ 86% ширины, буквы квадратные по высоте
+  const w = phone.clientWidth;
+  const wordW = Math.min(Math.max(w * 0.86, 160), 900);
+  const h = wordW * 0.19;
+  wordEl.style.width = wordW + 'px';
+  const cw = Math.max(6, wordW / WORD.length - 2);
+  letters.forEach(l => {
+    l.style.width = cw + 'px';
+    l.style.height = h + 'px';
+    l.style.fontSize = (h * 0.86) + 'px';
+  });
+}
+
+function frame(now) {
+  const t = (now - t0) / 1000;
+  // осколки сходятся к центру
+  for (const s of shards) {
+    const k = Math.min(Math.max((t - s.delay) / 1.0, 0), 1);
+    const ease = 1 - Math.pow(1 - k, 3);
+    const d = 0.4 * (1 - ease * 0.9);
+    const x = Math.cos(s.a) * d * phone.clientWidth;
+    const y = Math.sin(s.a) * d * 0.9 * phone.clientHeight;
+    s.rot += s.spin * (1 - k) * 0.016;
+    s.el.style.transform = `translate(-50%,-50%) translate(${x}px, ${y}px) rotate(${s.rot}deg)`;
+    s.el.style.width = Math.max(1, 6 * (1 - ease)) + 'px';
+    s.el.style.height = Math.max(2, 18 * (1 - ease)) + 'px';
+    s.el.style.opacity = String(1 - ease * 0.95);
+  }
+  // буквы прилетают слева направо
+  letters.forEach((l, i) => {
+    const k = Math.min(Math.max((t - 0.30 - i * 0.055) / 0.42, 0), 1);
+    const ease = 1 - Math.pow(1 - k, 4);
+    const breathe = k >= 1 ? Math.sin(t * 2.4 + i * 0.43) * 0.006 : 0;
+    l.style.opacity = String(ease);
+    l.style.transform = `scale(${0.6 + ease * 0.4 + breathe})`;
+  });
+  // вспышка на сборке
+  const flash = 1 - Math.min(Math.abs(t - 1.05) / 0.3, 1);
+  halo.style.opacity = String(flash * 0.7);
+  // общий уход
+  const out = Math.min(Math.max((t - 1.5) / 0.45, 0), 1);
+  stage.style.opacity = String(1 - out);
+
+  if (t < LEN && running) raf = requestAnimationFrame(frame);
+  else finish();
+}
+
+function finish() {
+  if (!running) return;
+  running = false;
+  cancelAnimationFrame(raf);
+  stage.style.opacity = '0';
+  setTimeout(() => { if (!running) play(); }, 900); // пауза и повтор, как в превью
+}
+
+function play() {
+  if (!enabled) return;
+  build();
+  stage.style.opacity = '1';
+  running = true;
+  t0 = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+
+function skip() {
+  if (!running) { play(); return; }
+  running = false;
+  cancelAnimationFrame(raf);
+}
+
+document.getElementById('replay').addEventListener('click', play);
+phone.addEventListener('pointerdown', skip);
+document.getElementById('toggle').addEventListener('click', e => {
+  enabled = !enabled;
+  e.currentTarget.textContent = 'анимации: ' + (enabled ? 'вкл' : 'выкл');
+  if (!enabled) { running = false; cancelAnimationFrame(raf); stage.style.opacity = '0'; }
+  else play();
+});
+window.addEventListener('resize', layout);
+
+play();
+</script>
+</body>
+</html>
