@@ -352,3 +352,40 @@ class AnimWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ChamsAndFov(unittest.TestCase):
+    def test_chams_look_list(self):
+        # полный набор стилей, как в референсе
+        for name in ["Outline", "Soft", "Solid", "Glow", "Shaded", "Metallic", "Metal", "Chrome",
+                     "Glossy", "Glass", "Crystal", "Ice", "Lava", "Neon", "Neon Rim",
+                     "Iridescent", "Water Flow", "ForceField", "Gradient", "Ghost", "Wireframe"]:
+            self.assertIn('name = "%s"' % name, SOURCE)
+        self.assertIn("Chams = \"Outline\"", SOURCE)
+        # выбор стиля перекрашивает хайлайты
+        self.assertIn("CFG.Chams = st.key", SOURCE)
+        self.assertIn("refreshHL()", SOURCE)
+        # список в своей прокрутке, иначе 21 строка не влезет в папку
+        self.assertIn("ScrollingFrame", SOURCE)
+        self.assertIn("AutomaticCanvasSize = Enum.AutomaticSize.Y", SOURCE)
+
+    def test_fov_style_cards(self):
+        for key in ["Glow", "Gradient", "Dashed", "Classic"]:
+            self.assertIn('key = "%s"' % key, SOURCE)
+        self.assertIn("A.FovStyle = st.key", SOURCE)
+        # пунктир рисуется сегментами по кругу и вращается
+        self.assertIn("local DASH_N = 24", SOURCE)
+        self.assertIn("seg.Rotation = math.deg(ang) + 90", SOURCE)
+
+    def test_fov_size_in_pixels(self):
+        self.assertIn("FovPx = 240", SOURCE)
+        self.assertIn("FOV Size (diameter, px)", SOURCE)
+        # радиус на экране берётся из пикселей, а не из процента короткой стороны
+        self.assertIn("local rPx = (A.DynFov or NX.dynBack) and (NX.dynR * 0.01 * short) or math.max(2, A.FovPx * 0.5)", SOURCE)
+        # согласование со старым полем, которым живёт Dynamic FOV
+        self.assertIn("A.FovR = math.clamp(A.FovPx * 0.5 / short * 100, 2, 60)", SOURCE)
+        # подпись текущего радиуса — в пикселях
+        self.assertIn("%d px (diameter %d px)", SOURCE)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -466,6 +466,10 @@ StickTime = 0.25, Shake = 0, LeadMul = 100,
 	TargetPart = "Head", Priority = "Crosshair", VisFromHead = true,
 TargetLock = false, SilentAim = false,
 FovR = 18, SilentR = 14, LockR = 28, -- радиусы областей в % короткой стороны экрана (не зависят от разрешения)
+FovPx = 240, -- диаметр круга FOV в пикселях (FovR остаётся радиусом в % — им пользуется Dynamic FOV)
+FovStyle = "Gradient", -- вид круга: Glow / Gradient / Dashed / Classic
+Chams = "Outline", -- вид подсветки ESP (Chams Look): Outline / Soft / Solid / Glow / Shaded / Metallic ...
+FovAnim = true, -- круг «дышит» и подсвечивается, когда цель захвачена
 	Trigger = false, TriggerDelay = 0.05, Multipoint = false, AdvPredict = false,
 	TriggerR = 3, LeadBias = 40, -- TriggerR: допуск триггера при включённой наводке (% короткой стороны); LeadBias: запас авто-предикта, мс
 	Hitbox = false, HitboxSize = 1.5, HeadHitbox = false, HeadHitboxSize = 1.5, HitboxShow = false, -- расширение хитбоксов, студы
@@ -740,6 +744,7 @@ AIMCFG.AimY = math.clamp(AIMCFG.AimY, 0.02, 0.98)
 AIMCFG.CircleX = math.clamp(AIMCFG.CircleX, 0.02, 0.98)
 AIMCFG.CircleY = math.clamp(AIMCFG.CircleY, 0.02, 0.98)
 AIMCFG.FovR = math.clamp(AIMCFG.FovR, 2, 60)
+AIMCFG.FovPx = math.clamp(tonumber(AIMCFG.FovPx) or 240, 40, 1400)
 AIMCFG.Smoothness = math.clamp(AIMCFG.Smoothness, 0.01, 1)
 AIMCFG.Prediction = math.clamp(AIMCFG.Prediction, 0, 0.6)
 AIMCFG.TriggerR = math.clamp(AIMCFG.TriggerR, 0.5, 15)
@@ -2040,6 +2045,49 @@ local function allowed(plr, char)
 end
 
 -- приоритет цвета: персональный > отметка > друг > цвет команды > обычный
+-- CHAMS LOOK: один стиль на все хайлайты. Highlight умеет только заливку и обводку, поэтому
+-- «металл», «стекло», «лава» и прочее собраны из цвета и прозрачности: у каждого стиля свой
+-- характер — плотный контур, мягкая заливка, свечение, тёмный низ под светлый верх.
+CHAMS = {
+	{key = "Outline", name = "Outline", fill = 0.90, outline = 0.05, thick = 1.0, col = nil},
+	{key = "Soft", name = "Soft", fill = 0.80, outline = 0.45, thick = 0.8, col = nil},
+	{key = "Solid", name = "Solid", fill = 0.25, outline = 0.10, thick = 0.9, col = nil},
+	{key = "Glow", name = "Glow", fill = 0.65, outline = 0.20, thick = 1.6, col = Color3.fromRGB(120, 200, 255)},
+	{key = "Shaded", name = "Shaded", fill = 0.55, outline = 0.30, thick = 1.1, col = Color3.fromRGB(150, 158, 175)},
+	{key = "Metallic", name = "Metallic", fill = 0.35, outline = 0.05, thick = 1.4, col = Color3.fromRGB(205, 214, 230)},
+	{key = "Metal", name = "Metal", fill = 0.55, outline = 0.10, thick = 1.2, col = Color3.fromRGB(150, 158, 172)},
+	{key = "Chrome", name = "Chrome", fill = 0.20, outline = 0.02, thick = 1.6, col = Color3.fromRGB(255, 255, 255)},
+	{key = "Glossy", name = "Glossy", fill = 0.30, outline = 0.08, thick = 1.3, col = Color3.fromRGB(235, 245, 255)},
+	{key = "Glass", name = "Glass", fill = 0.80, outline = 0.35, thick = 1.0, col = Color3.fromRGB(190, 225, 245)},
+	{key = "Crystal", name = "Crystal", fill = 0.62, outline = 0.15, thick = 1.2, col = Color3.fromRGB(170, 215, 255)},
+	{key = "Ice", name = "Ice", fill = 0.72, outline = 0.20, thick = 1.0, col = Color3.fromRGB(185, 230, 255)},
+	{key = "Lava", name = "Lava", fill = 0.45, outline = 0.05, thick = 1.3, col = Color3.fromRGB(255, 140, 60)},
+	{key = "Neon", name = "Neon", fill = 0.70, outline = 0.00, thick = 1.8, col = Color3.fromRGB(60, 220, 255)},
+	{key = "Neon Rim", name = "Neon Rim", fill = 0.94, outline = 0.00, thick = 2.0, col = Color3.fromRGB(90, 255, 200)},
+	{key = "Iridescent", name = "Iridescent", fill = 0.55, outline = 0.12, thick = 1.3, col = Color3.fromRGB(225, 190, 255)},
+	{key = "Water Flow", name = "Water Flow", fill = 0.62, outline = 0.18, thick = 1.1, col = Color3.fromRGB(70, 160, 255)},
+	{key = "ForceField", name = "ForceField", fill = 0.72, outline = 0.10, thick = 1.2, col = Color3.fromRGB(150, 150, 255)},
+	{key = "Gradient", name = "Gradient", fill = 0.50, outline = 0.10, thick = 1.3, col = nil},
+	{key = "Ghost", name = "Ghost", fill = 0.86, outline = 0.50, thick = 0.9, col = Color3.fromRGB(220, 225, 235)},
+	{key = "Wireframe", name = "Wireframe", fill = 0.97, outline = 0.00, thick = 1.0, col = Color3.fromRGB(90, 220, 140)},
+}
+CHAMS_BY_KEY = {}
+for i, c in CHAMS do c.idx, CHAMS_BY_KEY[c.key] = i, c end
+
+-- применяет стиль к одному хайлайту. tint — оттенок «поверхности» (металл, лёд, лава):
+-- он подмешивается к цвету темы, а прозрачности берутся из настроек ESP с поправкой стиля.
+local function chamsApply(o, tint)
+	local st = CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
+	local fill = o.h.FillColor
+	if tint then fill = fill:Lerp(tint, 0.55) end
+	o.h.FillColor = fill
+	if tint then o.h.OutlineColor = tint:Lerp(Color3.new(1, 1, 1), 0.4) end
+	-- CFG.Fill / CFG.Outline — базовая непрозрачность; стиль сдвигает её в свою сторону
+	o.h.FillTransparency = math.clamp(1 - alphaFor(o.plr, "Fill", CFG.Fill, 0.45) * (1.05 - st.fill), 0, 1)
+	o.h.OutlineTransparency = math.clamp(1 - alphaFor(o.plr, "Outline", CFG.Outline, 0.8) * (1.05 - st.outline), 0, 1)
+	return st
+end
+
 local function refreshHL()
 	for _, o in esp do
 		local h = o.h
@@ -2111,7 +2159,12 @@ local function dohl(char, plr)
 		FillTransparency = 1, OutlineTransparency = 1,
 	}, char)
 	refreshHL()
-	local ft, ot = 1 - alphaFor(plr, "Fill", CFG.Fill, 0.45), 1 - alphaFor(plr, "Outline", CFG.Outline, 0.8)
+	-- стиль Chams применяется сразу: появление идёт фейдом к его прозрачностям
+	local st = CHAMS_BY_KEY[CFG.Chams or "Outline"] or CHAMS[1]
+	o.h.FillColor = hsv(col.Fill)
+	if st.col then o.h.FillColor = o.h.FillColor:Lerp(st.col, 0.55) end
+	local ft = math.clamp(1 - alphaFor(plr, "Fill", CFG.Fill, 0.45) * (1.05 - st.fill), 0, 1)
+	local ot = math.clamp(1 - alphaFor(plr, "Outline", CFG.Outline, 0.8) * (1.05 - st.outline), 0, 1)
 	o.h.FillTransparency, o.h.OutlineTransparency = 1, 1
 	tween(o.h, TweenInfo.new(0.25), {FillTransparency = ft, OutlineTransparency = ot})
 	local function setup()
@@ -2506,6 +2559,8 @@ helpUI.info = {
  ["Target lock"] = {"Удерживает выбранную цель.", "Keeps the selected target locked."},
  ["Silent aim"] = {"Направляет выстрел в цель без движения камеры; сервер ограничивает угол.", "Directs shots toward the target without moving the camera; the server limits the angle."},
  ["Highlight"] = {"Подсвечивает цели.", "Highlights targets."},
+ ["CHAMS LOOK"] = {"Стиль подсветки целей: Outline, Metal, Chrome, Neon, Lava, Ghost и другие. Цвет берётся из папки Color, стиль меняет характер — контур, заливку, свечение.", "Highlight style: Outline, Metal, Chrome, Neon, Lava, Ghost and more. The color comes from the Color folder; the style changes the character — outline, fill, glow."},
+ ["CIRCLE STYLE"] = {"Вид круга FOV: Glow (мягкое свечение), Gradient (градиентная обводка), Dashed (пунктир, вращается), Classic (ровная линия).", "FOV circle look: Glow (soft halo), Gradient (gradient outline), Dashed (rotating dashes), Classic (solid line)."},
  ["Names"] = {"Показывает имена целей.", "Shows target names."},
  ["HP bar"] = {"Показывает полосу здоровья.", "Shows the health bar."},
  ["HP %"] = {"Показывает здоровье в процентах.", "Shows health as a percentage."},
@@ -2598,7 +2653,7 @@ helpUI.info = {
  ["Select radius (silent), %"] = {"Радиус поиска Silent Aim в процентах короткой стороны экрана; сервер ограничивает угол.", "Silent Aim search radius as a percentage of the shorter screen side; the server limits the angle."},
  ["Lock release radius, %"] = {"Расстояние от центра наведения, после которого захват отпускается, в процентах короткой стороны экрана.", "Distance from the aim center at which a target lock is released, as a percentage of the shorter screen side."},
  ["Trigger tolerance (% of screen)"] = {"Допуск триггера вокруг прицела в процентах короткой стороны экрана.", "Trigger tolerance around the crosshair as a percentage of the shorter screen side."},
- ["FOV Size (diameter, % of screen)"] = {"Диаметр круга и области выбора цели в процентах короткой стороны экрана.", "Circle and target selection diameter as a percentage of the shorter screen side."},
+ ["FOV Size (diameter, px)"] = {"Диаметр круга и области выбора цели в пикселях: одинаковый на любом экране.", "Circle and target selection diameter in pixels: the same on any screen."},
  ["FOV Transparency"] = {"Прозрачность контура круга FOV.", "Transparency of the FOV circle outline."},
  ["FOV Thickness"] = {"Толщина контура круга FOV.", "Thickness of the FOV circle outline."},
  ["Fill Transparency"] = {"Прозрачность заливки круга FOV.", "Transparency of the FOV circle fill."},
@@ -2954,6 +3009,21 @@ local function buildAim(page, api)
 	}, og)
 	new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, fov)
 	local fovStroke = stroke(fov, C.W, 0.35, 1.5)
+	-- Стили круга: Glow — мягкий ореол, Dashed — пунктир из сегментов, Gradient — градиентная обводка.
+	-- Объекты создаются один раз и только показываются/прячутся, чтобы не плодить инстансы каждый кадр.
+	local fovGlow = new("Frame", {Name = "FovGlow", Size = S(1, 1), BackgroundTransparency = 1, Visible = false}, og)
+	new("UICorner", {CornerRadius = UDim.new(0.5, 0)}, fovGlow)
+	local fovGlowStroke = stroke(fovGlow, C.W, 0.8, 5)
+	pcall(function() fovGlowStroke.LineJoinMode = Enum.LineJoinMode.Round end)
+	local fovStrokeGrad -- градиентная обводка стиля Gradient (создаётся лениво, один раз)
+	local fovDash = {}
+	local DASH_N = 24
+	for i = 1, DASH_N do
+		local d = new("Frame", {Name = "FovDash" .. i, AnchorPoint = V2(0.5, 0.5), Size = O(7, 2.5),
+			BackgroundColor3 = C.W, BackgroundTransparency = 0.2, Visible = false}, og)
+		rr(d, 2)
+		table.insert(fovDash, d)
+	end
 	local fovSc -- масштаб круга при появлении (0.6 -> 1), совпадение с областью не страдает
 	local markHot = false
 	-- маркер ТОЧКИ НАВЕДЕНИЯ (зелёный крест): виден в редакторе и когда круг отвязан от области
@@ -3087,7 +3157,14 @@ local function buildAim(page, api)
 			NX.dynR = A.FovR -- обычный FOV: без сглаживания, как раньше
 		end
 		NX.dynR = math.clamp(NX.dynR, 2, 60)
-		if A.DynFov or NX.dynBack then SP.fov = NX.dynR * 0.01 * short end
+		-- при выключенном Dynamic FOV радиус в пикселях: обратный переход тоже считаем в пикселях
+		if A.DynFov then
+			SP.fov = NX.dynR * 0.01 * short
+		elseif NX.dynBack then
+			local target = math.max(2, A.FovPx * 0.5)
+			NX.dynPx = (NX.dynPx or SP.fov) + (target - (NX.dynPx or SP.fov)) * a
+			SP.fov = NX.dynPx
+		end
 		if NX.radLbl and previewFov and now - NX.radT > 0.1 then
 			NX.radT = now
 			local info = "normal FOV (Dynamic FOV is off)"
@@ -3096,8 +3173,11 @@ local function buildAim(page, api)
 					and string.format("dynamic: target %d st, goal %.1f%%", math.floor(NX.shownRef + 0.5), NX.wantR)
 					or string.format("dynamic: no target, goal %.1f%% (max)", NX.wantR)
 			end
-			local r = (A.DynFov or NX.dynBack) and NX.dynR or A.FovR
-			NX.radLbl.Text = string.format("Current radius: %.1f%% (diameter %.1f%%) = %d px\n%s", r, r * 2, math.floor(SP.fov + 0.5), info)
+			-- радиус всегда показываем в пикселях: это то, что видно на экране
+			local radiusPx = math.floor(SP.fov + 0.5)
+			local pctInfo = A.DynFov and string.format("%.1f%% of screen, ", NX.dynR) or ""
+			NX.radLbl.Text = string.format("Current radius: %s%d px (diameter %d px)\n%s",
+				pctInfo, radiusPx, radiusPx * 2, info)
 		end
 	end
 
@@ -3953,12 +4033,91 @@ local function buildAim(page, api)
 			{"Fill circle", "FovFill", nil, "Заливка внутри круга"},
 			{"Highlight on target", "FovTarget", nil, "Круг зеленеет, когда цель захвачена"},
 		})
+		-- Вид круга: карточки с живым превью, как в референсе (Glow / Gradient / Dashed / Classic).
+		-- Превью рисуется теми же приёмами, что и сам круг: градиент, пунктир, мягкое свечение.
+		section("CIRCLE STYLE")
+		do
+			local styles = {
+				{key = "Glow", label = "Glow"},
+				{key = "Gradient", label = "Gradient"},
+				{key = "Dashed", label = "Dashed"},
+				{key = "Classic", label = "Classic"},
+			}
+			local srow2 = row(tgt, 64, 6, nextOrder())
+			local paintStyle
+			local cards = {}
+			for i, st in ipairs(styles) do
+				local b = new("TextButton", {Size = U(0.25, -5, 1, 0), BackgroundColor3 = C.Card,
+					BackgroundTransparency = 0.15, AutoButtonColor = false, LayoutOrder = i, Text = ""}, srow2)
+				rr(b, 9)
+				local strokeObj = outline(b, OUT.Hover)
+				local dot = new("Frame", {Size = O(32, 32), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.38),
+					BackgroundColor3 = C.W, BackgroundTransparency = 1}, b)
+				rr(dot, 20)
+				local ring = new("Frame", {Size = O(26, 26), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.38),
+					BackgroundTransparency = 1}, b)
+				rr(ring, 14)
+				local ringStroke = new("UIStroke", {Color = C.W, Thickness = 2, Transparency = 0.35}, ring)
+				-- превью: у каждого стиля своя подача
+				if st.key == "Glow" then
+					dot.BackgroundTransparency, dot.Size = 0.82, O(34, 34)
+					ringStroke.Transparency = 0.1
+				elseif st.key == "Gradient" then
+					dot.BackgroundTransparency = 0.55
+					dot.Size = O(30, 30)
+					new("UIGradient", {Color = ColorSequence.new(C.Acc, C.W), Rotation = 45}, dot)
+					ringStroke.Transparency = 0
+					ringStroke.Thickness = 2.5
+				elseif st.key == "Dashed" then
+					dot.Visible = false
+					ringStroke.Transparency = 0
+					ringStroke.Thickness = 2
+					-- пунктир: четыре короткие дуги по кругу
+					for q = 0, 3 do
+						local seg = new("Frame", {Size = U(0.28, 0, 0, 2.5), AnchorPoint = V2(0.5, 0.5),
+							Position = U(0.5 + math.cos(math.rad(q * 90)) * 0.5, 0.5 + math.sin(math.rad(q * 90)) * 0.5, 0, 0),
+							BackgroundColor3 = C.W, BackgroundTransparency = 0.15, Rotation = q * 90}, ring)
+						rr(seg, 2)
+					end
+					ringStroke.Transparency = 1
+				else
+					dot.Visible = false
+					ringStroke.Transparency = 0.05
+					ringStroke.Thickness = 2
+				end
+				new("TextLabel", {Size = U(1, 0, 0, 16), Position = U(0, 0, 1, -18), BackgroundTransparency = 1,
+					Text = st.label, TextColor3 = C.Mut, FontFace = GM, TextSize = 11,
+					TextXAlignment = Enum.TextXAlignment.Center, Active = false}, b)
+				cards[st.key] = {btn = b, stroke = strokeObj, label = b:FindFirstChildOfClass("TextLabel")}
+				connect(b.Activated, function()
+					A.FovStyle = st.key
+					paintStyle()
+				end)
+			end
+			paintStyle = function()
+				for k, c in cards do
+					local on = (A.FovStyle == k)
+					c.stroke.Color = on and C.Acc or OUT.Hover.Color
+					c.stroke.Transparency = on and 0 or OUT.Hover.Transparency
+					c.stroke.Thickness = on and 2 or 1
+					c.label.TextColor3 = on and C.W or C.Mut
+				end
+			end
+			paintStyle()
+			table.insert(refreshers, paintStyle)
+		end
 		section("SIZE AND LOOK")
 		do
-			local _, paint = sliderCard(tgt, "FOV Size (diameter, % of screen)", nextOrder(), 4, 120,
-				function() return A.FovR * 2 end,
-				function(v) A.FovR = math.clamp(v / 2, 2, 60) end,
-				function(v) return string.format("%d%%", math.floor(v + 0.5)) end,
+			-- Размер задаётся в пикселях: одно и то же число даёт одинаковый круг на любом телефоне.
+			-- FovR (% от экрана) остаётся для Dynamic FOV и обновляется сам, чтобы оба режима были согласованы.
+			local _, paint = sliderCard(tgt, "FOV Size (diameter, px)", nextOrder(), 40, 1400,
+				function() return A.FovPx end,
+				function(v)
+					A.FovPx = math.floor(v + 0.5)
+					local short = math.min(SP.vp.X, SP.vp.Y)
+					if short and short > 2 then A.FovR = math.clamp(A.FovPx * 0.5 / short * 100, 2, 60) end
+				end,
+				function(v) return string.format("%d px", math.floor(v + 0.5)) end,
 				1)
 			table.insert(refreshers, paint)
 		end
@@ -3997,7 +4156,7 @@ local function buildAim(page, api)
 			unlinkCircle()
 			A.CircleX, A.CircleY = 0.5, 0.5
 		end)
-		note("Размер круга задаёт и область выбора цели. Позиция круга — только визуал, пока он не связан с точкой наведения.", 40)
+		note("Размер в пикселях: один и тот же круг на любом экране. Он же задаёт область выбора цели. Позиция круга — только визуал, пока он не связан с точкой наведения.", 40)
 
 		section("DYNAMIC FOV")
 		chips({
@@ -4005,6 +4164,7 @@ local function buildAim(page, api)
 			{"Invert (far = bigger)", "DynInvert", nil, "Выкл: ближе - больше радиус; вкл: дальше - больше"},
 		})
 		cycleKeep("Change mode", "DynMode", {"Smooth", "Linear"})
+		-- Dynamic FOV живёт в процентах: его шкала зависит от дистанции, а не от размера круга
 		slider("Min radius, % of screen", "DynMin", 2, 60, 1, 0)
 		slider("Max radius, % of screen", "DynMax", 2, 60, 1, 0)
 		slider("Start distance (studs)", "DynNear", 0, 1000, 5, 0)
@@ -4107,7 +4267,9 @@ local function buildAim(page, api)
 		if v.X < 2 or v.Y < 2 then return false end
 		local short = math.min(v.X, v.Y)
 		SP.vp = v
-		SP.fov, SP.silent, SP.lock = ((A.DynFov or NX.dynBack) and NX.dynR or A.FovR) * 0.01 * short, A.SilentR * 0.01 * short, A.LockR * 0.01 * short
+		-- без Dynamic FOV радиус берётся из пикселей (FovPx), с ним — из процентов, которые считает dynStep
+		local rPx = (A.DynFov or NX.dynBack) and (NX.dynR * 0.01 * short) or math.max(2, A.FovPx * 0.5)
+		SP.fov, SP.silent, SP.lock = rPx, A.SilentR * 0.01 * short, A.LockR * 0.01 * short
 		SP.aim = resolveAimPoint(v)
 		SP.circle = A.CircleFollow and SP.aim or V2(v.X * A.CircleX, v.Y * A.CircleY)
 		return true
@@ -4138,6 +4300,58 @@ local function buildAim(page, api)
 			setp(fov, "Size", O(d, d))
 			setp(fov, "Position", S(SP.circle.X / v.X, SP.circle.Y / v.Y))
 			if fovSc and fovSc.Scale > 1.001 then fovSc.Scale = 1 end
+			-- выбранный стиль: Glow / Gradient / Dashed / Classic
+			local style = A.FovStyle or "Gradient"
+			local accent = A.FovTarget and currentTarget and C.Acc or nil
+			local line = accent or A.FovCol and hsv(A.FovCol) or C.W
+			local thick = math.max(0.5, A.CircleThick or 1.5)
+			local alpha = math.clamp(1 - (A.FovAlpha or 0.35), 0, 1)
+			if style == "Glow" then
+				setp(fovStroke, "Transparency", 0.85)
+				setp(fov, "BackgroundTransparency", math.clamp(1 - alpha * 0.35, 0, 1))
+				fovGlow.Visible = true
+				fovGlow.Size, fovGlow.Position = O(d, d), fov.Position
+				fovGlowStroke.Color = line
+				fovGlowStroke.Thickness = thick * 4
+				fovGlowStroke.Transparency = math.clamp(1 - alpha * 1.2, 0.15, 1)
+			elseif style == "Dashed" then
+				fovGlow.Visible = false
+				setp(fovStroke, "Transparency", 1)
+				setp(fov, "BackgroundTransparency", 1)
+				local r = d * 0.5
+				local spin = (A.FovAnim and CFG.Anim) and (now * 0.6) or 0
+				for i, seg in fovDash do
+					local ang = (i / DASH_N) * math.pi * 2 + spin
+					seg.Visible = true
+					seg.Size = O(math.max(3, thick * 4), math.max(1.5, thick))
+					seg.Position = U(SP.circle.X / v.X, math.cos(ang) * r, SP.circle.Y / v.Y, math.sin(ang) * r)
+					seg.Rotation = math.deg(ang) + 90
+					seg.BackgroundColor3 = line
+					seg.BackgroundTransparency = math.clamp(1 - alpha, 0, 1)
+				end
+			else
+				fovGlow.Visible = false
+				for _, seg in fovDash do seg.Visible = false end
+				local showFill = A.FovFill
+				setp(fov, "BackgroundTransparency", showFill and math.clamp(1 - (A.FovFillAlpha or 0.9), 0, 1) or 1)
+				setp(fovStroke, "Transparency", math.clamp(1 - alpha, 0, 1))
+				fovStroke.Thickness = thick
+				fovStroke.Color = line
+				if style == "Gradient" then
+					if not fovStrokeGrad then
+						fovStrokeGrad = new("UIGradient", {Color = ColorSequence.new(C.Acc, C.W)}, fovStroke)
+					end
+					fovStrokeGrad.Enabled = true
+					fovStrokeGrad.Rotation = (A.FovAnim and CFG.Anim) and (now * 40) % 360 or 45
+					fovStroke.Color = Color3.new(1, 1, 1)
+				elseif fovStrokeGrad then
+					fovStrokeGrad.Enabled = false
+				end
+			end
+			if style ~= "Glow" then fovGlow.Visible = false end
+		else
+			fovGlow.Visible = false
+			for _, seg in fovDash do seg.Visible = false end
 		end
 		local showMark = editing or (A.Enabled and A.ShowFOV and not A.CircleFollow) or now < testUntil
 		aimMark.Visible = showMark
@@ -6063,9 +6277,73 @@ local function startMain()
 		{"Rainbow", "Rainbow", refreshHL}, {"Display name", "Disp"},
 	})
 
+	-- ===== CHAMS LOOK: список стилей подсветки, как в референсе =====
+	-- Каждая строка: кружок-образец (что именно даёт стиль) + название, выбранная строка
+	-- подсвечивается оранжевым контуром. Стилей много, поэтому список в своей прокрутке.
+	sectionLabel(pm, "CHAMS LOOK", 6.6)
+	do
+		local listCard = new("Frame", {Size = U(1, 0, 0, 236), BackgroundColor3 = C.Card,
+			BackgroundTransparency = 0.4, LayoutOrder = 6.7}, pm)
+		rr(listCard, Skin.Radius)
+		outline(listCard)
+		local inner = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
+			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
+			ScrollingDirection = Enum.ScrollingDirection.Y, AutomaticCanvasSize = Enum.AutomaticSize.Y}, listCard)
+		new("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, inner)
+		local rows = {}
+		for i, st in CHAMS do
+			local r = new("TextButton", {Size = U(1, -6, 0, 34), BackgroundColor3 = C.Side,
+				BackgroundTransparency = 0.55, AutoButtonColor = false, LayoutOrder = i, Text = ""}, inner)
+			rr(r, 9)
+			local edge = outline(r, OUT.Hover)
+			-- образец: шар со своим характером (металл, лёд, лава, неон)
+			local orb = new("Frame", {Size = O(18, 18), AnchorPoint = V2(0.5, 0.5), Position = U(0, 22, 0.5, 0),
+				BackgroundColor3 = st.col or C.W, BackgroundTransparency = 0.1}, r)
+			rr(orb, 9)
+			if st.col then
+				new("UIGradient", {Color = ColorSequence.new(st.col:Lerp(Color3.new(1, 1, 1), 0.7), st.col),
+					Rotation = 40}, orb)
+			else
+				new("UIGradient", {Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 158, 175)),
+					Rotation = 40}, orb)
+			end
+			new("TextLabel", {Size = U(1, -46, 1, 0), Position = O(40, 0), BackgroundTransparency = 1,
+				Text = st.name, TextColor3 = C.Mut, FontFace = GB, TextSize = 13, TextXAlignment = XL,
+				Active = false}, r)
+			rows[st.key] = {row = r, edge = edge, label = r:FindFirstChildOfClass("TextLabel"), orb = orb}
+			connect(r.Activated, function()
+				CFG.Chams = st.key
+				refreshHL()
+				updAll()
+				for k, rr2 in rows do
+					local on = (k == CFG.Chams)
+					rr2.edge.Color = on and C.Acc or OUT.Hover.Color
+					rr2.edge.Transparency = on and 0 or OUT.Hover.Transparency
+					rr2.edge.Thickness = on and 2 or 1
+					rr2.row.BackgroundColor3 = on and C.Acc or C.Side
+					rr2.row.BackgroundTransparency = on and 0.86 or 0.55
+					rr2.label.TextColor3 = on and C.W or C.Mut
+				end
+			end)
+		end
+		local function paintChams()
+			for k, r in rows do
+				local on = (k == (CFG.Chams or "Outline"))
+				r.edge.Color = on and C.Acc or OUT.Hover.Color
+				r.edge.Transparency = on and 0 or OUT.Hover.Transparency
+				r.edge.Thickness = on and 2 or 1
+				r.row.BackgroundColor3 = on and C.Acc or C.Side
+				r.row.BackgroundTransparency = on and 0.86 or 0.55
+				r.label.TextColor3 = on and C.W or C.Mut
+			end
+		end
+		paintChams()
+		table.insert(repaints, paintChams)
+	end
+
 	-- размеры и прозрачность подсветки: раньше жили в отдельной папке, теперь рядом с самим ESP
-	sectionLabel(pm, "РАЗМЕР И ПРОЗРАЧНОСТЬ", 6)
-	local sOrd = 6
+	sectionLabel(pm, "РАЗМЕР И ПРОЗРАЧНОСТЬ", 8)
+	local sOrd = 11 -- порядок после списка Chams Look (он занимает 6.7)
 	-- Ползунки панели ESP. Аргументы: pct = значение в долях (0..1) и проценты в подписи,
 	-- fmt = своя подпись значения, step = шаг, если подпись не процентная.
 	-- fmt приходит из длинного списка вызовов, поэтому неверный тип (число вместо функции)
