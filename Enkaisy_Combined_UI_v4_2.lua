@@ -28,6 +28,15 @@
 
 -- ВЕРСИЯ СБОРКИ: v4.4.0 (константа BUILD). Она видна в шапке меню и на экране ключа —
 -- по ней легко понять, какая версия скрипта запущена, и не путать сборки при обновлении.
+-- v4.5.1: ИСПРАВЛЕНО ГЛАВНОЕ — вкладка CHAMS снова заполняется. Панель звала sectionLabel,
+--         объявленную ниже по файлу: вызов падал на nil, а pcall молча превращал это
+--         в пустую страницу с одним заголовком. Теперь все внешние функции берутся через
+--         CHCTX (шина), ошибка сборки пишется в консоль предупреждением, и тест проверяет
+--         порядок объявлений. Второе: chFxLayer объявлен ДО chPattern (иначе узор не рисовался).
+--         Переключатель «Материалы и эффекты Chams» в ESP реально работает и сохраняется:
+--         при выключении тело возвращается к исходному виду, слои (свет, узор, обводка,
+--         частицы) снимаются, плотность заливки Chams не применяется. Пресеты больше
+--         не стирают эффекты, включённые вручную (слияние, а не замена).
 -- v4.5.0: CHAMS — полноценная система материалов, узоров и эффектов (как Pulse Hub):
 --         отдельная вкладка CHAMS (пресеты · материалы · текстуры · свой ID · эффекты · цвет).
 --         31 материал меняет настоящее свойство BasePart.Material (Foil — хром, CrackedLava —
@@ -110,7 +119,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.5.0" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.5.1" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -2399,6 +2408,63 @@ CH_PAT = {
 	DigitalRain = {wave = true, alpha = 0.5},
 }
 
+local function chFxLayer(char, layer)
+	if layer.fx and layer.fx.Parent then return layer.fx end
+	local head = char:FindFirstChild("Head") or char:FindFirstChildWhichIsA("BasePart")
+	if not head then return nil end
+	-- 4.2x5.6 студентов: контейнер закрывает тело целиком
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "EnkaisyChamsFX"
+	bb.Adornee = head
+	bb.Size = UDim2.fromScale(4.2, 5.6)
+	bb.AlwaysOnTop = true
+	bb.LightInfluence = 0
+	bb.MaxDistance = 400
+	bb.Parent = char
+	-- 1) «визор» – бегущая полоса и скан-линии (настоящий Frame + UIGradient)
+	local band = Instance.new("Frame")
+	band.Name = "Band"
+	band.Size = UDim2.fromScale(1, 0.16)
+	band.BackgroundColor3 = Color3.new(1, 1, 1)
+	band.BorderSizePixel = 0
+	band.Visible = false
+	band.Parent = bb
+	local bgrad = Instance.new("UIGradient")
+	bgrad.Name = "Tint"
+	bgrad.Transparency = NumberSequence.new(0.2)
+	bgrad.Parent = band
+	-- 2) сетка «сканирования»: линии, которые едут по телу
+	local scan = Instance.new("Frame")
+	scan.Name = "Scan"
+	scan.Size = UDim2.fromScale(1, 1)
+	scan.BackgroundColor3 = Color3.new(1, 1, 1)
+	scan.BorderSizePixel = 0
+	scan.Visible = false
+	scan.Parent = bb
+	local sgrad = Instance.new("UIGradient")
+	sgrad.Name = "Tint"
+	sgrad.Parent = scan
+	-- 3) ореол: мягкий овал вокруг тела (UICorner + градиент)
+	local aura = Instance.new("Frame")
+	aura.Name = "Aura"
+	aura.Size = UDim2.fromScale(1.3, 1.3)
+	aura.Position = UDim2.fromScale(-0.15, -0.15)
+	aura.BackgroundColor3 = Color3.new(1, 1, 1)
+	aura.BackgroundTransparency = 0.75
+	aura.BorderSizePixel = 0
+	aura.Visible = false
+	aura.Parent = bb
+	local acorner = Instance.new("UICorner")
+	acorner.CornerRadius = UDim.new(1, 0)
+	acorner.Parent = aura
+	local agrad = Instance.new("UIGradient")
+	agrad.Name = "Tint"
+	agrad.Parent = aura
+	layer.fx, layer.fxBand, layer.fxScan, layer.fxAura = bb, band, scan, aura
+	layer.fxBGrad, layer.fxSGrad, layer.fxAGrad = bgrad, sgrad, agrad
+	return bb
+end
+
 local function chPattern(char, layer, col, now)
 	local st = chState()
 	local key = (st.TexOn ~= false) and st.Tex or nil
@@ -2507,63 +2573,6 @@ local function chPattern(char, layer, col, now)
 	end
 end
 
-local function chFxLayer(char, layer)
-	if layer.fx and layer.fx.Parent then return layer.fx end
-	local head = char:FindFirstChild("Head") or char:FindFirstChildWhichIsA("BasePart")
-	if not head then return nil end
-	-- 4.2x5.6 студентов: контейнер закрывает тело целиком
-	local bb = Instance.new("BillboardGui")
-	bb.Name = "EnkaisyChamsFX"
-	bb.Adornee = head
-	bb.Size = UDim2.fromScale(4.2, 5.6)
-	bb.AlwaysOnTop = true
-	bb.LightInfluence = 0
-	bb.MaxDistance = 400
-	bb.Parent = char
-	-- 1) «визор» – бегущая полоса и скан-линии (настоящий Frame + UIGradient)
-	local band = Instance.new("Frame")
-	band.Name = "Band"
-	band.Size = UDim2.fromScale(1, 0.16)
-	band.BackgroundColor3 = Color3.new(1, 1, 1)
-	band.BorderSizePixel = 0
-	band.Visible = false
-	band.Parent = bb
-	local bgrad = Instance.new("UIGradient")
-	bgrad.Name = "Tint"
-	bgrad.Transparency = NumberSequence.new(0.2)
-	bgrad.Parent = band
-	-- 2) сетка «сканирования»: линии, которые едут по телу
-	local scan = Instance.new("Frame")
-	scan.Name = "Scan"
-	scan.Size = UDim2.fromScale(1, 1)
-	scan.BackgroundColor3 = Color3.new(1, 1, 1)
-	scan.BorderSizePixel = 0
-	scan.Visible = false
-	scan.Parent = bb
-	local sgrad = Instance.new("UIGradient")
-	sgrad.Name = "Tint"
-	sgrad.Parent = scan
-	-- 3) ореол: мягкий овал вокруг тела (UICorner + градиент)
-	local aura = Instance.new("Frame")
-	aura.Name = "Aura"
-	aura.Size = UDim2.fromScale(1.3, 1.3)
-	aura.Position = UDim2.fromScale(-0.15, -0.15)
-	aura.BackgroundColor3 = Color3.new(1, 1, 1)
-	aura.BackgroundTransparency = 0.75
-	aura.BorderSizePixel = 0
-	aura.Visible = false
-	aura.Parent = bb
-	local acorner = Instance.new("UICorner")
-	acorner.CornerRadius = UDim.new(1, 0)
-	acorner.Parent = aura
-	local agrad = Instance.new("UIGradient")
-	agrad.Name = "Tint"
-	agrad.Parent = aura
-	layer.fx, layer.fxBand, layer.fxScan, layer.fxAura = bb, band, scan, aura
-	layer.fxBGrad, layer.fxSGrad, layer.fxAGrad = bgrad, sgrad, agrad
-	return bb
-end
-
 -- Частицы: искры/плазма/электричество. Один эмиттер на модель, включается по эффекту.
 local function chEmit(char, layer)
 	if layer.emit and layer.emit.Parent then return layer.emit end
@@ -2586,6 +2595,13 @@ local function chEmit(char, layer)
 end
 
 -- Снимает всё, что навесил Chams: тела возвращаются к исходным материалам и текстурам.
+-- Снять все слои Chams со всех, кого подсветили (выключение материалов в ESP).
+local function chClearVisible()
+	for char in chLayer do
+		if char and char.Parent then pcall(chClear, char) end
+	end
+end
+
 local function chClear(char)
 	if not char then return end
 	for _, part in chParts(char) do
@@ -2874,11 +2890,13 @@ local function buildChamsPage(parent, api)
 	local order = 0
 	local function nx() order += 1 return order end
 	-- После любой правки: сохранить, перекрасить все цели, обновить превью.
+	-- Функция нужна и снаружи (переключатель материалов в ESP), поэтому живёт в шине.
 	local function applyAll()
 		saveNow()
 		CHCTX.refreshHL()
 		CHCTX.updAll()
 	end
+	CHCTX.chApplyAll = applyAll
 
 	-- ПРЕСЕТЫ: готовые комбинации под референс (Pulse / Chrome+Rainbow и т.д.)
 	local PRESETS = {
@@ -2899,7 +2917,7 @@ local function buildChamsPage(parent, api)
 		{name = "Gold Aura", Mat = "Gold", Tex = "Veins", Glow = 1,
 			Effects = {Glow = true, Particles = true, Rim = true, Shimmer = true}},
 	}
-	sectionLabel(parent, "CHAMS PRESETS", nx())
+	CHCTX.sectionLabel(parent, "CHAMS PRESETS", nx())
 	do
 		-- карточки пресетов: 2 в ряд, нажатие сразу применяет комбинацию
 		local grid = CHCTX.chipGrid(parent, nx())
@@ -2908,7 +2926,15 @@ local function buildChamsPage(parent, api)
 			if CHCTX.hoverable then CHCTX.hoverable(b) end
 			on(b.Activated, function()
 				for k, v in pr do
-					if k ~= "name" then st[k] = v end
+					if k == "Effects" then
+						-- слияние, а не замена: ручные эффекты не должны пропадать при пресете
+						local fx = {}
+						for ek in st.Effects do fx[ek] = true end
+						for ek in v do fx[ek] = true end
+						st.Effects = fx
+					elseif k ~= "name" then
+						st[k] = v
+					end
 				end
 				st.Preset = pr.name
 				applyAll()
@@ -2918,11 +2944,11 @@ local function buildChamsPage(parent, api)
 	end
 
 	-- МАТЕРИАЛЫ: список строк с образцом цвета и настоящим свойством материала
-	sectionLabel(parent, "MATERIALS", nx())
+	CHCTX.sectionLabel(parent, "MATERIALS", nx())
 	local matRows = {}
 	do
 		local card = new("Frame", {Size = U(1, 0, 0, 188), BackgroundColor3 = C.Card,
-			BackgroundTransparency = 0.4}, parent)
+			BackgroundTransparency = 0.4, LayoutOrder = nx()}, parent)
 		rr(card, CHCTX.Skin.Radius)
 		local scroll = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
 			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
@@ -2968,11 +2994,11 @@ local function buildChamsPage(parent, api)
 	end
 
 	-- ТЕКСТУРЫ: у каждой настоящий узор (соты, сетка, скан-линии, волны), рисуется на теле
-	sectionLabel(parent, "TEXTURES (patterns)", nx())
+	CHCTX.sectionLabel(parent, "TEXTURES (patterns)", nx())
 	local texRows = {}
 	do
 		local card = new("Frame", {Size = U(1, 0, 0, 150), BackgroundColor3 = C.Card,
-			BackgroundTransparency = 0.4}, parent)
+			BackgroundTransparency = 0.4, LayoutOrder = nx()}, parent)
 		rr(card, CHCTX.Skin.Radius)
 		local scroll = new("ScrollingFrame", {Size = U(1, -8, 1, -8), Position = O(4, 4),
 			BackgroundTransparency = 1, ScrollBarThickness = 3, CanvasSize = U(0, 0, 0, 0),
@@ -3014,10 +3040,10 @@ local function buildChamsPage(parent, api)
 
 	-- СВОЙ ID ТЕКСТУРЫ: настоящий ассет Roblox (число или rbxassetid://...).
 	-- ID не выдумываются: путь к картинке вводит пользователь, настройка сохраняется.
-	sectionLabel(parent, "CUSTOM TEXTURE ID", nx())
+	CHCTX.sectionLabel(parent, "CUSTOM TEXTURE ID", nx())
 	do
 		local card = new("Frame", {Size = U(1, 0, 0, 46), BackgroundColor3 = C.Card,
-			BackgroundTransparency = 0.4}, parent)
+			BackgroundTransparency = 0.4, LayoutOrder = nx()}, parent)
 		rr(card, CHCTX.Skin.Radius)
 		local box = new("TextBox", {Size = U(1, -12, 0, 28), Position = O(6, 6),
 			BackgroundColor3 = C.Side, Text = st.TexId or "", PlaceholderText = "rbxassetid://123456789",
@@ -3038,7 +3064,7 @@ local function buildChamsPage(parent, api)
 	end
 
 	-- ЭФФЕКТЫ: можно включить сколько угодно одновременно
-	sectionLabel(parent, "EFFECTS (можно несколько)", nx())
+	CHCTX.sectionLabel(parent, "EFFECTS (можно несколько)", nx())
 	do
 		local grid = CHCTX.chipGrid(parent, nx())
 		for i, f in CH_FX do
@@ -3050,7 +3076,7 @@ local function buildChamsPage(parent, api)
 	end
 
 	-- НАСТРОЙКИ: настоящие числа, каждое что-то меняет
-	sectionLabel(parent, "LOOK", nx())
+	CHCTX.sectionLabel(parent, "LOOK", nx())
 	local function slot(title, key, min, max, step, fmt)
 		local _, paint = CHCTX.sliderCard(parent, title, nx(), min, max,
 			function() return st[key] or 0 end,
@@ -3071,7 +3097,7 @@ local function buildChamsPage(parent, api)
 	-- ЦВЕТА: настоящие палитры (тот же makePicker, что в папке Color), а не подписи.
 	-- Color — цвет тела, Color2 — второй цвет для градиентных материалов, GlowColor — цвет света,
 	-- OutlineColor — цвет своей обводки (BoxHandleAdornment).
-	sectionLabel(parent, "COLORS", nx())
+	CHCTX.sectionLabel(parent, "COLORS", nx())
 	local function palette(title, key, onEdit)
 		local initial = st[key]
 		if typeof(initial) ~= "Color3" then initial = Color3.fromRGB(255, 255, 255) end
@@ -3250,9 +3276,14 @@ local function chamsTexture(char, st, tint, animate)
 	-- НОВЫЙ ДВИЖОК: материал/текстура/свет/эффекты из папки CHAMS.
 	-- Он рисует тело целиком, поэтому старые стили ниже уже не нужны —
 	-- если движок включён (CFG.Chams2.MatOn ~= false), дальше не идём.
-	if CFG.Chams2 and chApply then
-		local ok = pcall(chApply, char, tint, os.clock())
-		if ok then return end
+	local cs = chState()
+	if cs.MatOn ~= false then
+		-- движок включён: рисуем материал, узор, свет и эффекты
+		if pcall(chApply, char, tint, os.clock()) then return end
+	end
+	if cs.MatOn == false then
+		-- материалы выключены: тело должно вернуться к исходному виду
+		chamsClear(char)
 	end
 	if not st.mat then
 		-- стиль без материала (Outline/Solid/Gradient): только Highlight, тело не трогаем
@@ -3362,7 +3393,11 @@ local function refreshHL()
 		-- Панель Chams: плотность заливки. Раньше значение жило только в состоянии
 		-- и ни на что не влияло (запрет на «настройки ради настройки»).
 		local cs = chState()
-		if cs.MatOn ~= false then
+		if cs.MatOn == false then
+			-- «без материалов»: Highlights остаются цветной подсветкой по теме,
+			-- собственная плотность/обводка Chams не применяются
+			o.h.OutlineTransparency = math.clamp(o.h.OutlineTransparency, 0.15, 1)
+		else
 			local fs = math.clamp(cs.FillStrength or 0.5, 0, 1)
 			o.h.FillTransparency = math.clamp(o.h.FillTransparency + (1 - fs) * 0.55, 0, 1)
 		end
@@ -3819,7 +3854,7 @@ helpUI.info = {
  ["Float button"] = {"Показывает плавающую кнопку AIM.", "Shows the floating AIM button."},
 
  -- ===== Chams (вкладка CHAMS): объяснения к каждой настройке =====
- ["Классическая подсветка (без материалов)"] = {"Отключает материалы и эффекты, оставляя только подсветку Highlight.", "Turns materials and effects off, leaving only the Highlight glow."},
+ ["Материалы и эффекты Chams"] = {"Выключает материалы, узоры и эффекты — остаётся только подсветка Highlight.", "Turns materials, patterns and effects off, leaving only the Highlight glow."},
  ["Glow intensity"] = {"Яркость свечения вокруг тела: свет падает на пол и стены.", "Glow brightness around the body: the light falls on the floor and walls."},
  ["Fill strength"] = {"Плотность внутренней заливки Highlight. Ниже — лучше виден материал тела.", "Density of the Highlight fill. Lower values show the body material better."},
  ["Reflections"] = {"Сила отражений на теле. Работает только для материалов, которые отражают свет.", "Reflection strength on the body. Only affects materials that reflect light."},
@@ -6919,6 +6954,7 @@ CHCTX.OUT, CHCTX.PURE, CHCTX.TWEEN, CHCTX.Skin = OUT, PURE, TWEEN, Skin
 CHCTX.XL, CHCTX.GB, CHCTX.GM, CHCTX.GR = XL, GB, GM, GR
 CHCTX.updAll, CHCTX.esp = updAll, esp
 CHCTX.refreshHL, CHCTX.buildChamsPage = refreshHL, buildChamsPage
+CHCTX.sectionLabel, CHCTX.chState, CHCTX.chClearVisible = sectionLabel, chState, chClearVisible
 
 local function trimS(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function bgHttp(url)
@@ -7079,8 +7115,14 @@ end
 
 -- Вкладка CHAMS: вынесена из startMain, чтобы главная функция не упиралась в лимит локалей.
 local function CHAMS_PAGE(pages, api)
-	if CHCTX.buildChamsPage then
-		pcall(CHCTX.buildChamsPage, pages.Chams, api)
+	if not CHCTX.buildChamsPage then
+		warn("[Enkaisy] панель Chams не зарегистрирована")
+		return
+	end
+	local ok, err = pcall(CHCTX.buildChamsPage, pages.Chams, api)
+	if not ok then
+		-- пустая вкладка без причины — худший вариант: говорим, что именно упало
+		warn("[Enkaisy] панель Chams не собралась: " .. tostring(err))
 	end
 end
 
@@ -7663,13 +7705,23 @@ local function startMain()
 	-- переключателем ниже, чтобы можно было вернуть плоскую подсветку.
 	sectionLabel(pm, "CHAMS", 6.6)
 	do
-		local _, paintLegacy = toggleCard(pm, "Классическая подсветка (без материалов)", 6.7,
-			function() return CFG.Chams2 and CFG.Chams2.MatOn == false end,
-			function(v) CFG.Chams2.MatOn = not v applyAll() end)
+		-- Один переключатель «материалы вкл/выкл». Раньше значение записывалось в
+		-- CFG.Chams2.MatOn, но панель его не перечитывала и непрозрачность Highlight
+		-- продолжала считаться по новой системе — переключатель «не работал».
+		local _, paintLegacy = toggleCard(pm, "Материалы и эффекты Chams", 6.7,
+			function() return not (CFG.Chams2 and CFG.Chams2.MatOn == false) end,
+			function(on)
+				-- состояние приводим к таблице: старые сейвы могут не иметь CFG.Chams2
+				local cs = CHCTX.chState()
+				cs.MatOn = on
+				if not on then pcall(CHCTX.chClearVisible) end
+				pcall(CHCTX.refreshHL)
+				pcall(CHCTX.updAll)
+				saveNow()
+			end)
 		table.insert(repaints, function() paintLegacy(false) end)
 	end
 	-- панель Chams живёт в блоке движка (ей нужны таблицы материалов), зовём через шину.
-	-- Отдельная вкладка: материалам, текстурам, эффектам и цветам тесно в папке ESP.
 	CHAMS_PAGE(pages, api)
 
 	slider("Fill strength", "Fill", 0, 1, true)
