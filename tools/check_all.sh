@@ -9,7 +9,7 @@ fail=0
 
 step() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
-step "1/5 компиляция Luau (настоящий компилятор Roblox)"
+step "1/6 компиляция Luau (настоящий компилятор Roblox)"
 if python3 tools/luau_check.py "$SCRIPT" | grep -q "LUAU COMPILE OK"; then
 	echo "OK"
 else
@@ -17,10 +17,17 @@ else
 	fail=1
 fi
 
-step "2/5 таблицы объявлены до использования (падение при загрузке)"
+step "2/6 таблицы объявлены до использования (падение при загрузке)"
 python3 tools/declared_before_use.py "$SCRIPT" || fail=1
 
-step "3/5 лимит локалей (Lua: не больше 200 на функцию)"
+step "3/6 сверка с API Roblox (классы, свойства, перечисления)"
+if [ -f .cache/Mini-API-Dump.json ]; then
+	python3 tools/roblox_api_check.py "$SCRIPT" || fail=1
+else
+	echo "пропущено: нет .cache/Mini-API-Dump.json (обновить: python3 tools/roblox_api_check.py --fetch)"
+fi
+
+step "4/6 лимит локалей (Lua: не больше 200 на функцию)"
 python3 tools/limit_locals.py "$SCRIPT" > /tmp/locals.txt 2>&1 || true
 if grep -qi "превыш\|too many" /tmp/locals.txt; then
 	echo "ПРОВАЛ: превышен лимит локальных переменных"
@@ -30,7 +37,7 @@ else
 	echo "OK"
 fi
 
-step "4/5 тесты"
+step "5/6 тесты"
 if python3 -m unittest discover -s tests -p "test_*.py" 2>&1 | tail -n 3 | grep -qE "^OK"; then
 	echo "OK"
 else
@@ -39,7 +46,7 @@ else
 	fail=1
 fi
 
-step "5/5 версия в шапке и в файле совпадают"
+step "6/6 версия в шапке и в файле совпадают"
 build=$(sed -n 's/.*GLB\.BUILD = "\([0-9.]*\)".*/\1/p' "$SCRIPT" | head -n 1)
 head_ver=$(sed -n '1,40p' "$SCRIPT" | sed -n 's/.*\bv\([0-9][0-9.]*\):.*/\1/p' | head -n 1)
 if [ -n "$head_ver" ] && [ "$head_ver" != "$build" ]; then
