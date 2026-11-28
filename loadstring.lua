@@ -1,4 +1,5 @@
 -- Enkaisy: ESP + Aim Assist (всё в одном скрипте) — для собственной Roblox-игры
+-- v4.6.6: ИСПРАВЛЕНО падение самопроверки: base был деталью, а не позицией (attempt to perform arithmetic on a Instance value). Ошибки внутренних шагов теперь попадают в отчёт строкой [!!]; уведомления об ошибках показываются всегда, текст переносится и не обрезается, держатся 8 секунд; тест на арифметику с объектами
 -- v4.6.5: САМОПРОВЕРКА В ИГРЕ: кнопка «Самопроверка подсветки» в ESP — создаёт настоящую цель, прогоняет рабочий цикл подсветки и печатает отчёт [OK]/[!!] на экране (консоль не нужна); тесты test_selftest.py; документация
 -- v4.6.4: СВЕРКА С API ROBLOX: tools/roblox_api_check.py (классы, свойства, перечисления по официальному дампу клиента) + тест; обновлена документация про границы автоматизации
 -- v4.6.3: АВТОМАТИЗАЦИЯ: tools/check_all.sh (5 проверок одной командой), tools/release.sh (выпуск одной командой), CI на GitHub, pre-commit хук, docs/AUTOMATION.md
@@ -145,7 +146,7 @@ local GLB = {} -- общие константы и ссылки: вынесен�
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 GLB.ReplicatedStorage = game:GetService("ReplicatedStorage")
-GLB.BUILD = "4.6.5" -- версия сборки: показывается в меню и на экране ключа
+GLB.BUILD = "4.6.6" -- версия сборки: показывается в меню и на экране ключа
 GLB.REMOTE_NAME = "EnkaisyAimFire"
 GLB.CLIENT_NAME = "EnkaisyAimClient"
 
@@ -1151,7 +1152,11 @@ end
 -- Всплывающее уведомление в углу экрана (вместо системных Roblox-плашек): появление с пружиной
 local toastLayer
 function notify(title, text, danger)
-	if not (UICFG.AnimToasts and CFG.Anim) then return end
+	-- Ошибку показываем ВСЕГДА, даже при выключенных анимациях: иначе причина
+	-- сбоя видна только в консоли, которой на телефоне нет.
+	if not danger and not (UICFG.AnimToasts and CFG.Anim) then
+		return
+	end
 	local host = gui
 	if not host then return end
 	if not (toastLayer and toastLayer.Parent) then
@@ -1159,7 +1164,11 @@ function notify(title, text, danger)
 			BackgroundTransparency = 1, ZIndex = 60}, host)
 		new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Right}, toastLayer)
 	end
-	local card = new("Frame", {Size = U(1, 0, 0, 46), BackgroundColor3 = danger and C.DangerBg or C.Card, BackgroundTransparency = 1, ZIndex = 60}, toastLayer)
+	-- высота зависит от текста: сообщение об ошибке должно читаться целиком
+	local msg = tostring(text or "")
+	local lines = math.clamp(math.ceil(#msg / 42), 1, 4)
+	local card = new("Frame", {Size = U(1, 0, 0, 40 + lines * 14), BackgroundColor3 = danger and C.DangerBg or C.Card,
+		BackgroundTransparency = 1, ZIndex = 60}, toastLayer)
 	-- новая карточка «подъезжает» снизу и мягко толкает старые вверх
 	card.Position = O(0, 10)
 	tween(card, TWEEN.ui, {Position = O(0, 0)})
@@ -1168,8 +1177,9 @@ function notify(title, text, danger)
 	new("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 6)}, card)
 	new("TextLabel", {Size = U(1, 0, 0, 14), BackgroundTransparency = 1, Text = title, TextColor3 = danger and C.Danger or C.W,
 		FontFace = GB, TextSize = 12, TextXAlignment = XL, TextTransparency = 1, ZIndex = 61}, card)
-	local body = new("TextLabel", {Size = U(1, 0, 0, 16), Position = O(0, 20), BackgroundTransparency = 1, Text = text or "",
-		TextColor3 = C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = XL, TextTruncate = Enum.TextTruncate.AtEnd,
+	local body = new("TextLabel", {Size = U(1, 0, 0, lines * 14), Position = O(0, 20), BackgroundTransparency = 1, Text = msg,
+		TextColor3 = danger and C.W or C.Mut, FontFace = GM, TextSize = 11, TextXAlignment = XL,
+		TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.None,
 		TextTransparency = 1, ZIndex = 61}, card)
 	local sc = new("UIScale", {Scale = 0.9}, card)
 	-- появление: прозрачность + лёгкий масштаб, затем уход
@@ -1177,7 +1187,7 @@ function notify(title, text, danger)
 	tween(sc, TWEEN.pop, {Scale = 1})
 	local kids = card:GetDescendants()
 	for _, d in kids do if d:IsA("TextLabel") then tween(d, TWEEN.ui, {TextTransparency = 0}) end end
-	task.delay(2.6, function()
+	task.delay(danger and 8 or 2.6, function()
 		if not card.Parent then return end
 		tween(card, TWEEN.ui, {BackgroundTransparency = 1, Position = O(0, -6)})
 		for _, d in card:GetDescendants() do if d:IsA("TextLabel") then tween(d, TWEEN.ui, {TextTransparency = 1}) end end
@@ -5712,10 +5722,12 @@ function GLB.selfTest()
 	-- 2) настоящая цель: человечек в 10 шагах от игрока, проходит обычные фильтры
 	local probe = Instance.new("Model")
 	probe.Name = "EnkaisySelfTest"
-	do
+	local okBuild, errBuild = pcall(function()
 		local cam = Workspace.CurrentCamera
-		local base = (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart"))
-			or (cam and cam.CFrame.Position) or Vector3.new(0, 0, 0)
+		-- ВАЖНО: FindFirstChild возвращает деталь, а не её позицию. Раньше здесь
+		-- было `base + Vector3` → "attempt to perform arithmetic on a Instance value".
+		local myRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+		local base = (myRoot and myRoot.Position) or (cam and cam.CFrame.Position) or Vector3.new(0, 0, 0)
 		local torso = Instance.new("Part")
 		torso.Name = "HumanoidRootPart"
 		torso.Size, torso.Anchored, torso.CanCollide = Vector3.new(2, 2, 1), true, false
@@ -5724,6 +5736,14 @@ function GLB.selfTest()
 		local hum = Instance.new("Humanoid")
 		hum.Parent = probe
 		probe.PrimaryPart = torso
+	end)
+	log(okBuild, okBuild and "тестовая цель создана" or ("не удалось создать цель: " .. tostring(errBuild)))
+	if not okBuild then
+		probe:Destroy()
+		-- отчёт всё равно нужен: ошибка должна быть видна на экране
+		local title0 = "САМОПРОВЕРКА · v" .. tostring(GLB.BUILD)
+		warn("[Enkaisy] " .. title0 .. "\n" .. table.concat(out, "\n"))
+		return "цель не создалась"
 	end
 
 	-- 3) провод через настоящий путь подсветки. Если цель не проходит фильтры (режим,

@@ -39,6 +39,38 @@ class SelfTestExists(unittest.TestCase):
         self.assertIn('["Самопроверка подсветки"]', SOURCE)
 
 
+class SelfTestNoObjectArithmetic(unittest.TestCase):
+    """Реальный баг 4.6.5: `base + Vector3`, где base — деталь, а не её позиция.
+
+    FindFirstChild возвращает Instance, поэтому любая арифметика с ним падает
+    в рантайме: "attempt to perform arithmetic on a Instance value". Компилятор
+    такое не ловит — проверяем статически, внутри самой самопроверки.
+    """
+
+    def test_no_arithmetic_on_instances(self):
+        start = SOURCE.index("function GLB.selfTest()")
+        end = SOURCE.index("\nend\n", SOURCE.index("return body", start))
+        block = SOURCE[start:end]
+        # объявления, где справа заведомо Instance
+        objects = {}
+        for line in block.split("\n"):
+            m = re.match(r"\s*local\s+([\w, ]+?)\s*=\s*(.+)$", line)
+            if m and re.search(r"FindFirstChild\(|Instance\.new\(|CurrentCamera", m.group(2)):
+                for name in m.group(1).split(","):
+                    objects[name.strip()] = line.strip()
+        self.assertTrue(objects, "не нашёл ни одного объекта — тест бесполезен")
+        for line in block.split("\n"):
+            if line.lstrip().startswith("--"):
+                continue
+            for name in objects:
+                pattern = r"(?<![\w.])" + re.escape(name) + r"\s*[+\-*/]"
+                self.assertIsNone(re.search(pattern, line),
+                                  "арифметика с объектом `%s` — падение в рантайме: %s" % (name, line.strip()))
+
+    def test_position_is_taken_explicitly(self):
+        self.assertIn("myRoot.Position", SOURCE, "позиция детали берётся явно, а не через сам объект")
+
+
 class SelfTestIsReal(unittest.TestCase):
     def test_goes_through_real_highlight_path(self):
         body = body_of("selfTest")
