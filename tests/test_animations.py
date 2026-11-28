@@ -169,6 +169,19 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("pulse(btn", screen)
         self.assertNotIn('for _, dx in {-12, 12', screen)  # старый ручной цикл тряски убран
 
+    def test_players_list_to_detail_slide(self):
+        self.assertIn("local function slideIn(o)", SOURCE)
+        block = SOURCE.split("closeDetail = function()", 1)[1].split("-- --- список игроков ---", 1)[0]
+        self.assertIn("slideOut(detail", block)
+        self.assertIn("slideOut(listView", block)
+        self.assertIn("UICFG.AnimPages", SOURCE.split("local function slideIn(o)", 1)[1].split("local function slideOut", 1)[0])
+
+    def test_unload_fades_before_destroy(self):
+        body = SOURCE.split("stop = function()", 1)[1].split("Brand.release()", 1)[0]
+        self.assertIn("BackgroundTransparency = 0.5", body)
+        self.assertIn("gui:Destroy()", body)
+        self.assertLess(body.index("FadeOut"), body.index("gui:Destroy()"))
+
     def test_dialog_opens_and_closes_with_animation(self):
         dialog = between("function helpUI.mount", "local function startMain")
         self.assertIn("dialogIn", dialog)

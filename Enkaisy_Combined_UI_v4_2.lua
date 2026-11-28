@@ -6191,17 +6191,36 @@ local function startMain()
 		end
 		pickRefresh()
 	end
+	-- Переход между списком игроков и карточкой игрока: новый экран «въезжает» справа,
+	-- старый коротко уходит влево. Видно, что мы внутри одной папки, а не в другом разделе.
+	local function slideIn(o)
+		if not (CFG.Anim and UICFG.AnimPages) then return end
+		o.Position, o.Visible = U(0.06, 0, 0, 0), true -- сдвиг только по X: AbsoluteSize не меняется
+		tween(o, TWEEN.ui, {Position = U(0, 0, 0, 0)})
+	end
+	local function slideOut(o, after)
+		if not (CFG.Anim and UICFG.AnimPages) or not o.Visible then
+			o.Visible = false
+			o.Position = U(0, 0, 0, 0)
+			if after then after() end
+			return
+		end
+		local t = TS:Create(o, TWEEN.snap, {Position = U(-0.06, 0, 0, 0)})
+		t:Play()
+		t.Completed:Once(function()
+			o.Visible, o.Position = false, U(0, 0, 0, 0)
+			if after then after() end
+		end)
+	end
 	closeDetail = function()
 		selP = nil
-		detail.Visible = false
-		listView.Visible = true
+		slideOut(detail, function() slideIn(listView) end)
 	end
 	local function openDetail(p)
 		selP, pcur = p, "Fill"
-		listView.Visible = false
-		detail.Visible = true
 		detail.CanvasPosition = V2(0, 0)
 		paintDetail()
+		slideOut(listView, function() slideIn(detail) end)
 	end
 	on(backBtn.Activated, closeDetail)
 
