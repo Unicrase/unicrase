@@ -205,9 +205,25 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("INTRO_WORD:sub(i, i)", intro)
         # два выключателя: общий и отдельный
         self.assertIn("CFG.Anim and UICFG.AnimIntro", intro)
-        # пропуск касанием и страховка по времени
-        self.assertIn("UT.Touch", intro)
+        # заставку НЕЛЬЗЯ пропустить: нет обработчика касаний, фон держит ввод до конца сцены
+        self.assertNotIn("UT.Touch", intro)
+        self.assertNotIn("InputBegan", intro)
+        self.assertIn('Name = "IntroBg", Size = S(1, 1)', intro)
+        self.assertIn("Active = true, ZIndex = 1", intro)
+        # страховка по времени — единственный ранний выход
         self.assertIn("task.delay(INTRO_LEN + 0.5, stop)", intro)
+        # шрифт логотипа и сцена: Michroma с фолбэком, осколки с градиентом, кольца, блик, подпись
+        self.assertIn('Font.new("rbxasset://fonts/families/Michroma.json"', SOURCE)
+        self.assertIn("INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)", SOURCE)
+        self.assertIn("NumberSequenceKeypoint", intro)
+        self.assertIn('Name = "Ring"', intro)
+        self.assertIn('Name = "Shine"', intro)
+        self.assertIn("INTRO_SUB", intro)
+        # трекинг букв считается по замеру ширины, а не делением на всех
+        self.assertIn("STS.GetTextSize, STS, INTRO_WORD, 100, INTRO_FONT", intro)
+        # кадровые эффекты не накапливают размеры
+        self.assertIn("baseHal", intro)
+        self.assertIn("baseWordW", intro)
         # вызов ровно один и только в ветке верного ключа
         screen = between("local function keyScreen(done)", "stop = function()")
         valid = screen.split('== KEY_HASH then', 1)[1].split("tries += 1", 1)[0]

@@ -43,7 +43,8 @@
 --       Анимации интерфейса: пружины на переключателях/кнопках/иконках, «доезжающие» цифры ползунков,
 --       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
---       После верного ключа — заставка «осколки → UNICRASE» (касание пропускает, AnimIntro).
+--       После верного ключа — заставка «осколки → UNICRASE» на 3.1 с: Michroma, градиентные осколки,
+--       кольца, блик по слову и подпись. Не пропускается — это часть открытия (AnimIntro).
 --       Открытие папки: заголовок и названия карточек собираются из букв — каждая выпрыгивает снизу (AnimText).
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
@@ -2571,7 +2572,7 @@ helpUI.info = {
  ["Toasts"] = {"Показывает результаты и ошибки всплывающей карточкой в углу вместо системных плашек.", "Shows results and errors in a corner card instead of system notifications."},
  ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
  ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
- ["Intro after key"] = {"Показывает заставку «осколки → UNICRASE» после верного ключа; касание пропускает её.", "Plays a shards-to-UNICRASE intro after a valid key; tap to skip."},
+ ["Intro after key"] = {"Заставка после верного ключа: осколки слетаются, собирается UNICRASE (шрифт Michroma), кольца и блик. Идёт 3 секунды и не пропускается; выключение — ключ сразу открывает меню.", "Intro after a valid key: shards converge, UNICRASE assembles in Michroma with rings and a shine sweep. Lasts 3 seconds and cannot be skipped; off means the key opens the menu at once."},
  ["Letters reveal"] = {"Собирает название папки и названия карточек из букв: каждая выпрыгивает снизу с пружиной; выключение — текст появляется целиком.", "Builds the folder title and card names from letters that pop up one by one with a spring; off means text appears at once."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
@@ -6436,7 +6437,7 @@ local function startMain()
 		{"Toasts", "AnimToasts", "Результаты и ошибки — карточкой в углу."},
 		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
 		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
-		{"Intro after key", "AnimIntro", "Заставка UNICRASE после верного ключа."},
+		{"Intro after key", "AnimIntro", "Заставка UNICRASE после ключа (3 с)."},
 		{"Letters reveal", "AnimText", "Буквы текста в папке выпрыгивают по одной."},
 	} do
 		local key = d[2]
@@ -7086,12 +7087,22 @@ local function startMain()
 	end)
 end
 
--- ===== Заставка после ключа: «осколки» слетаются в логотип =====
+-- ===== Заставка после ключа: осколки слетаются в логотип =====
 -- Чистый UI: без картинок и звука, всё внутри своего ScreenGui и удаляется целиком.
--- Сцена ~2.1 с: осколки летят к центру → буквы собираются слева направо → вспышка → уход.
--- Любое касание пропускает; при выключенных анимациях (CFG.Anim / AnimIntro) заставки нет.
+-- Сцена ~3.1 с и её НЕЛЬЗЯ пропустить: нет обработчика касаний, фон активен и до конца
+-- держит ввод (чтобы случайное нажатие не попало в меню под заставкой).
+-- При выключенных анимациях (CFG.Anim / AnimIntro) заставки нет — экран открывается сразу.
 local INTRO_WORD = "UNICRASE"
-local INTRO_LEN = 2.1
+local INTRO_SUB = "MOBILE AIM ASSIST"
+local INTRO_LEN = 3.1
+-- Шрифт логотипа: широкий техно-гротеск Michroma; если клиент его не знает — тяжёлый Gotham.
+local INTRO_FONT = Font.fromEnum(Enum.Font.GothamBlack)
+do
+	local ok, f = pcall(function()
+		return Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+	end)
+	if ok and f then INTRO_FONT = f end
+end
 local function playIntro(after)
 	local done = false
 	local function finish()
@@ -7103,84 +7114,219 @@ local function playIntro(after)
 	local stage = new("ScreenGui", {Name = "EnkaisyIntro", ResetOnSpawn = false, DisplayOrder = 120,
 		IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LP:WaitForChild("PlayerGui"))
 	pcall(function() stage.ScreenInsets = Enum.ScreenInsets.None end)
+	-- фон: чёрный, активный — держит ввод до конца сцены (пропустить нельзя)
 	local bg = new("Frame", {Name = "IntroBg", Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 0,
 		Active = true, ZIndex = 1}, stage)
-	-- свечение позади слова: разгорается к моменту сборки и гаснет на уходе
-	local halo = new("Frame", {Name = "Halo", Size = S(1.3, 1.3), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
-		BackgroundColor3 = C.W, BackgroundTransparency = 1, Active = false, ZIndex = 2}, stage)
-	rr(halo, 24)
-	-- слово: каждая буква — отдельная ячейка, прилетающая из глубины
-	local word = new("Frame", {Name = "Word", Size = S(0.8, 0.18), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+	-- виньетка: сверху и снизу мягкая тень, чтобы сцена читалась как кадр, а не как пустой экран
+	local function vignette(anchorY, alignY)
+		local v = new("Frame", {Size = U(1, 0, 0.34, 0), AnchorPoint = V2(0.5, anchorY), Position = S(0.5, alignY),
+			BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.35, Active = false, ZIndex = 2}, stage)
+		new("UIGradient", {Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, anchorY == 0 and 0.05 or 1),
+			NumberSequenceKeypoint.new(1, anchorY == 0 and 1 or 0.05),
+		})}, v)
+		return v
+	end
+	vignette(0, 0)
+	vignette(1, 1)
+	-- свечение позади слова: акцентный круг, разгорается к сборке букв и гаснет на уходе
+	local halo = new("Frame", {Name = "Halo", Size = S(1, 1), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+		BackgroundColor3 = C.Acc, BackgroundTransparency = 1, Active = false, ZIndex = 3}, stage)
+	rr(halo, 400)
+	local haloGrad = new("UIGradient", {Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.15), NumberSequenceKeypoint.new(1, 1),
+	})}, halo)
+	-- ударные кольца: две тонкие окружности, расходящиеся в момент сборки
+	local rings = {}
+	for i = 1, 2 do
+		local r = new("Frame", {Name = "Ring" .. i, Size = O(10, 10), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+			BackgroundTransparency = 1, Active = false, ZIndex = 4}, stage)
+		rr(r, 300)
+		local st = new("UIStroke", {Color = i == 1 and C.W or C.Acc, Thickness = i == 1 and 3 or 2,
+			Transparency = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, r)
+		table.insert(rings, {f = r, st = st})
+	end
+	-- осколки: вытянутые «стёкла» с градиентом, летят к центру, вращаясь и истончаясь
+	local shards = {}
+	for i = 1, 30 do
+		local a = (i / 30) * math.pi * 2 + (math.random() - 0.5) * 0.22
+		local tall = i % 3 ~= 0
+		local w = tall and math.random(2, 4) or math.random(5, 8)
+		local h = tall and math.random(16, 42) or math.random(6, 10)
+		local f = new("Frame", {Name = "Shard", Size = O(w, h), AnchorPoint = V2(0.5, 0.5),
+			Position = S(0.5 + math.cos(a) * 0.62, 0.5 + math.sin(a) * 0.58), BackgroundColor3 = C.W,
+			BackgroundTransparency = 1, Rotation = math.deg(a), Active = false, ZIndex = 6}, stage)
+		rr(f, 3)
+		new("UIGradient", {Color = ColorSequence.new(C.Acc, C.W),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.05), NumberSequenceKeypoint.new(1, 0.9),
+			}), Rotation = 90}, f)
+		local st = outline(f, 1)
+		table.insert(shards, {f = f, st = st, a = a, spin = (math.random() - 0.5) * 180,
+			delay = math.random() * 0.3, dur = 0.55 + math.random() * 0.3, w = w, h = h})
+	end
+	-- слово: каждая буква в своей ячейке, при ширине ячейки по замеру — трекинг ровный
+	local word = new("Frame", {Name = "Word", Size = S(0.8, 0.18), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.47),
 		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
 	new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder}, word)
+		SortOrder = Enum.SortOrder.LayoutOrder}, word)
 	local letters = {}
 	for i = 1, #INTRO_WORD do
 		local cell = new("Frame", {Name = "L" .. i, Size = O(1, 1), BackgroundTransparency = 1, LayoutOrder = i,
 			Active = false, ZIndex = 10}, word)
+		-- тень: чёрная копия со смещением, придаёт буквам объём
+		local shadow = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
+			TextColor3 = C.B, TextSize = 40, TextTransparency = 1, ZIndex = 10,
+			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
+		shadow.Position = O(0, 3)
+		-- свечение: акцентная размытая копия позади
+		local glow = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
+			TextColor3 = C.Acc, TextSize = 40, TextTransparency = 1, ZIndex = 10,
+			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
 		local lbl = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
-			TextColor3 = C.W, FontFace = GB, TextScaled = true, TextTransparency = 1, ZIndex = 11,
-			TextStrokeColor3 = C.B, TextStrokeTransparency = 1}, cell)
+			TextColor3 = C.W, TextSize = 40, TextTransparency = 1, ZIndex = 11,
+			TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Center}, cell)
 		local sc = new("UIScale", {Scale = 1}, cell)
-		table.insert(letters, {cell = cell, lbl = lbl, sc = sc, jitter = i * 0.43})
+		table.insert(letters, {cell = cell, lbl = lbl, shadow = shadow, glow = glow, sc = sc, i = i})
 	end
-	-- размер слова считается от экрана: на телефоне буквы не превращаются в точки
+	-- блик: белая полоса проезжает по слову на «выдержке», обрезается своим контейнером
+	local shineClip = new("Frame", {Name = "ShineClip", Size = S(1, 1), BackgroundTransparency = 1,
+		Active = false, ClipsDescendants = true, ZIndex = 12}, word)
+	local shine = new("Frame", {Name = "Shine", Size = U(0.18, 0, 1.6, 0), AnchorPoint = V2(0.5, 0.5),
+		Position = U(-0.3, 0, 0.5, 0), BackgroundColor3 = C.W, BackgroundTransparency = 1, Rotation = 18,
+		Active = false, ZIndex = 12}, shineClip)
+	new("UIGradient", {Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.55), NumberSequenceKeypoint.new(1, 1),
+	})}, shine)
+	-- подпись под словом + акцентная линия под ней
+	local sub = new("TextLabel", {Name = "Sub", Size = U(1, 0, 0.05, 0), Position = S(0.5, 0.60), AnchorPoint = V2(0.5, 0),
+		BackgroundTransparency = 1, Text = INTRO_SUB, TextColor3 = C.Mut, TextTransparency = 1,
+		TextSize = 12, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 12}, stage)
+	local rule = new("Frame", {Name = "Rule", Size = O(0, 2), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.675),
+		BackgroundColor3 = C.Acc, BackgroundTransparency = 1, Active = false, ZIndex = 12}, stage)
+	rr(rule, 1)
+	-- базовые размеры для кадровых эффектов (иначе умножение в кадре накапливается)
+	local baseHal, baseWordW = 0, 0
+	-- размеры считаются от экрана: на телефоне слово не превращается в точки и не вылезает за края
 	local function fitWord()
 		local a = stage.AbsoluteSize
 		if a.X < 50 then return end
-		local w = math.clamp(a.X * 0.86, 160, 900)
-		local h = w * 0.19
-		word.Size = O(w, h)
-		local cw = math.max(6, w / #INTRO_WORD - 2)
-		for _, l in letters do l.cell.Size = O(cw, h) end
+		local target = math.clamp(a.X * 0.84, 170, 780)
+		local ok, size = pcall(STS.GetTextSize, STS, INTRO_WORD, 100, INTRO_FONT, V2(4000, 300))
+		local natural = (ok and size and size.X) or (#INTRO_WORD * 66)
+		local k = target / math.max(1, natural)
+		local h = math.clamp(math.floor(100 * k * 1.05), 18, 190)
+		local pad = math.max(1, math.floor(h * 0.03))
+		local total = 0
+		for _, l in letters do
+			local okw, w = pcall(STS.GetTextSize, STS, INTRO_WORD:sub(l.i, l.i), h, INTRO_FONT, V2(2000, 300))
+			local cw = (okw and w and w.X) or (h * 0.68)
+			cw = math.ceil(cw + 0.5)
+			l.cell.Size = O(cw, math.ceil(h * 1.3))
+			for _, o in {l.lbl, l.shadow, l.glow} do
+				o.TextSize = h
+			end
+			total += cw + pad
+		end
+		word.Size = O(total, math.ceil(h * 1.3))
+		local layout = word:FindFirstChildOfClass("UIListLayout")
+		if layout then layout.Padding = UDim.new(0, pad) end
+		sub.TextSize = math.clamp(math.floor(h * 0.2), 9, 20)
+		sub.Size = O(total, math.ceil(h * 0.4))
+		rule.Position = S(0.5, 0.675)
+		baseHal, baseWordW = total * 1.5, total
+		halo.Size = O(baseHal, baseHal)
+		word.Size = O(total, math.ceil(h * 1.3))
 	end
 	on(stage:GetPropertyChangedSignal("AbsoluteSize"), fitWord)
 	fitWord()
 
-	-- осколки: тонкие вытянутые четырёхугольники, летящие к центру
-	local shards = {}
-	for i = 1, 22 do
-		local a = math.random() * math.pi * 2
-		local f = new("Frame", {Name = "Shard", Size = O(math.random(3, 7), math.random(10, 22)), AnchorPoint = V2(0.5, 0.5),
-			Position = S(0.5 + math.cos(a) * 0.4, 0.5 + math.sin(a) * 0.36), BackgroundColor3 = C.W,
-			BackgroundTransparency = 0.15, Rotation = math.random(0, 359), Active = false, ZIndex = 5}, stage)
-		rr(f, 2)
-		local st = outline(f, 0.35)
-		table.insert(shards, {f = f, st = st, a = a, spin = (math.random() - 0.5) * 220, delay = math.random() * 0.45})
+	-- буквы ставим на стартовое состояние: ниже, мельче, прозрачные
+	for _, l in letters do
+		l.sc.Scale = 0.7
+		l.cell.Position = O(0, 0)
+		l.lbl.Rotation = -6
 	end
+	-- появление букв: пружина с перелётом + проявление; вызывается из таймлайна, не из кадра
+	local function revealLetter(l, delay)
+		task.delay(delay, function()
+			if not stage.Parent then return end
+			spring(l.sc, {Scale = 1}, TWEEN.pop)
+			tween(l.lbl, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0, Rotation = 0})
+			tween(l.shadow, TweenInfo.new(0.6), {TextTransparency = 0.55})
+			tween(l.glow, TweenInfo.new(0.6), {TextTransparency = 0.72})
+		end)
+	end
+	for _, l in letters do
+		revealLetter(l, 1.02 + l.i * 0.055)
+	end
+	-- подпись и линия появляются после сборки слова
+	task.delay(2.02, function()
+		if not stage.Parent then return end
+		tween(sub, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0})
+		tween(rule, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 0.1, Size = O(word.Size.X.Offset * 0.5, 2)})
+	end)
+	-- блик по слову на выдержке
+	task.delay(2.25, function()
+		if not stage.Parent then return end
+		tween(shine, TweenInfo.new(0.55, Enum.EasingStyle.Sine), {Position = U(1.3, 0, 0.5, 0), BackgroundTransparency = 0.45})
+	end)
 
 	local t0 = os.clock()
 	local rb
 	local function step(dt)
 		local t = os.clock() - t0
-		-- осколки: сходятся к центру, уменьшаются и тают
+		-- осколки: летят к центру с ускорением, вращаются, истончаются и гаснут на сборке
 		for _, sh in shards do
-			local k = math.clamp((t - sh.delay) / 1.0, 0, 1)
-			local ease = 1 - (1 - k) ^ 3
-			local d = 0.4 * (1 - ease * 0.9)
-			sh.f.Position = S(0.5 + math.cos(sh.a) * d, 0.5 + math.sin(sh.a) * d * 0.9)
-			sh.f.Rotation = sh.f.Rotation + dt * sh.spin * (1 - k)
-			sh.f.Size = O(math.max(1, 6 * (1 - ease)), math.max(2, 18 * (1 - ease)))
-			sh.f.BackgroundTransparency = 0.15 + ease * 0.85
-			sh.st.Transparency = 0.35 + ease * 0.65
+			local k = math.clamp((t - sh.delay) / sh.dur, 0, 1)
+			local ease = k * k -- влёт медленно, к центру быстро
+			local d = 0.62 * (1 - ease)
+			sh.f.Position = S(0.5 + math.cos(sh.a) * d, 0.5 + math.sin(sh.a) * d * 0.94)
+			sh.f.Rotation = math.deg(sh.a) + sh.spin * ease
+			local thin = 1 - ease * 0.85
+			sh.f.Size = O(math.max(1, sh.w * thin), math.max(2, sh.h * (1 - ease * 0.5)))
+			-- проявление в начале, растворение к центру
+			local vis = math.clamp(k * 3, 0, 1)
+			sh.f.BackgroundTransparency = math.clamp(1 - vis * 0.9 + ease * 0.9, 0, 1)
+			sh.st.Transparency = math.clamp(1 - vis + ease, 0, 1)
 		end
-		-- буквы: прилетают с масштабом, слева направо; после сборки еле заметно «дышат»
-		for i, l in letters do
-			local k = math.clamp((t - 0.3 - (i - 1) * 0.055) / 0.42, 0, 1)
-			local ease = 1 - (1 - k) ^ 4
-			l.sc.Scale = 0.6 + ease * 0.4 + (k >= 1 and math.sin(t * 2.4 + l.jitter) * 0.006 or 0)
-			l.lbl.TextTransparency = 1 - ease
-			l.lbl.TextStrokeTransparency = 1 - ease * 0.85
+		-- свечение: нарастает к моменту сборки, потом мягко дышит
+		local pulse = math.clamp((t - 0.55) / 0.6, 0, 1)
+		local breathe = 1 + math.sin((t - 1.1) * 3) * 0.02
+		haloGrad.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, math.clamp(0.92 - pulse * 0.75, 0, 1)),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		halo.Rotation = t * 22
+		if baseHal > 0 then halo.Size = O(baseHal * breathe, baseHal * breathe) end
+		-- кольца: расходятся от сборки
+		for i, r in rings do
+			local kr = math.clamp((t - (1.02 + i * 0.09)) / 0.75, 0, 1)
+			if kr > 0 and kr < 1 then
+				local size = 40 + kr * 620
+				r.f.Size = O(size, size)
+				r.st.Transparency = 1 - (1 - kr) * 0.85
+			elseif kr >= 1 then
+				r.st.Transparency = 1
+			end
 		end
-		-- вспышка на моменте сборки
-		local flash = 1 - math.clamp(math.abs(t - 1.05) / 0.3, 0, 1)
-		halo.BackgroundTransparency = 1 - flash * 0.7
-		if t > 1.5 then
-			local out = math.clamp((t - 1.5) / 0.45, 0, 1)
+		-- выдержка и уход: слово чуть подрастает и всё гаснет вместе с фоном
+		if t > 2.62 then
+			local out = math.clamp((t - 2.62) / 0.45, 0, 1)
+			for _, l in letters do
+				l.lbl.TextTransparency = out
+				l.shadow.TextTransparency = math.max(0.55, out)
+				l.glow.TextTransparency = math.max(0.72, out)
+			end
+			sub.TextTransparency = out
+			rule.BackgroundTransparency = math.max(0.1, out)
 			bg.BackgroundTransparency = out
-			for _, l in letters do l.lbl.TextTransparency = math.max(l.lbl.TextTransparency, out) end
-			for _, sh in shards do sh.f.BackgroundTransparency = math.max(sh.f.BackgroundTransparency, out) end
+			-- слово чуть отъезжает на камеру при уходе (базовая ширина, без накопления)
+			if baseWordW > 0 then
+				word.Size = O(baseWordW * (1 + out * 0.02), word.Size.Y.Offset)
+			end
 		end
 	end
 	local function stop()
@@ -7190,16 +7336,13 @@ local function playIntro(after)
 	end
 	rb = RS.RenderStepped:Connect(function(dt)
 		if not stage.Parent then stop() return end
+		-- сцену нельзя сократить касанием: единственный выход — конец таймлайна или страховка
 		if not pcall(step, dt) then stop() end
 		if os.clock() - t0 > INTRO_LEN then stop() end
 	end)
 	pcall(step, 0)
-	-- страховка: что бы ни случилось, сцена не держит экран дольше 2.6 с
+	-- страховка: что бы ни случилось, сцена не держит экран дольше 3.6 с
 	task.delay(INTRO_LEN + 0.5, stop)
-	-- касание пропускает заставку (её не нужно смотреть дважды)
-	on(bg.InputBegan, function(i)
-		if i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 then stop() end
-	end)
 end
 
 -- ===== Экран ключа =====
