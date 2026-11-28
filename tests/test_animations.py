@@ -110,6 +110,7 @@ class AnimHelpers(unittest.TestCase):
         body = func_body("pulse")
         self.assertIn('o:FindFirstChild("PulseScale")', body)
         self.assertIn("pulseState[o] == amp", body)  # остановка без «двойного» запуска
+        self.assertNotIn("sc:Destroy()", body)  # UIScale может делить кнопка: только возврат к 1
         self.assertIn("UICFG.AnimPulse", body)
 
     def test_pop_in_removes_scale_when_off(self):

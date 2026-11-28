@@ -875,10 +875,9 @@ local function pulse(o, amp)
 	pulseState[o] = amp or nil
 	local sc = o:FindFirstChild("PulseScale")
 	if not amp or not (UICFG.AnimPulse and CFG.Anim) then
-		if sc then
-			tween(sc, TWEEN.ui, {Scale = 1})
-			task.delay(0.3, function() if sc.Parent and not pulseState[o] then sc:Destroy() end end)
-		end
+		-- Не удаляем UIScale: он принадлежит элементу и может использоваться другими эффектами
+		-- (у кнопок это масштаб нажатия/наведения). Просто возвращаем его к обычному размеру.
+		if sc then tween(sc, TWEEN.ui, {Scale = 1}) end
 		return
 	end
 	sc = sc or new("UIScale", {Name = "PulseScale", Scale = 1}, o)
