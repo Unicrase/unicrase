@@ -30,7 +30,7 @@
 -- Правило раскладки: одна папка = одна задача, похожие настройки стоят рядом (Smoothness + Sticky, Triggerbot + delay/tolerance,
 -- Hitbox + размеры и Hitbox ESP, Dynamic FOV + размер круга). Пояснения — серым текстом прямо под разделом.
 
--- Target Lock: раздел TARGET LOCK в Aim, кнопка Switch locked target = сменить цель.LENT AIM (лимит угла — на сервере, SILENT_MAX_ANGLE).
+-- Target Lock: раздел TARGET LOCK в Aim, кнопка Switch locked target = сменить цель.
 -- Aim-координаты: ТОЧКА НАВЕДЕНИЯ (логика, раздел AIM POINT) и КРУГ FOV (визуал, папка FOV) — независимые значения в долях экрана; радиусы — % короткой стороны экрана.
 -- Aim: "Edit aim point" (точка наведения), FOV: "Edit circle position" (круг), "Check coordinates" (проверка на устройстве, раздел DIAGNOSTICS).
 
@@ -876,7 +876,6 @@ AIMCFG.RcsStrength = math.clamp(tonumber(AIMCFG.RcsStrength) or 1, 0, 1)
 AIMCFG.RcsSmooth = math.clamp(tonumber(AIMCFG.RcsSmooth) or 0.35, 0, 1)
 AIMCFG.StickTime = math.clamp(tonumber(AIMCFG.StickTime) or 0.25, 0, 2)
 AIMCFG.LeadMul = math.clamp(tonumber(AIMCFG.LeadMul) or 100, 0, 200)
-AIMCFG.SilentR = math.clamp(AIMCFG.SilentR, 2, 60)
 AIMCFG.LockR = math.clamp(AIMCFG.LockR, 5, 90)
 AIMCFG.TriggerDelay = math.clamp(AIMCFG.TriggerDelay, 0, 0.5)
 if not table.find({"Auto", "Single"}, AIMCFG.TrigMode) then AIMCFG.TrigMode = "Auto" end
@@ -4951,7 +4950,7 @@ local function buildAim(page, api)
 	--   1) луч из точки наведения попал прямо в тело цели;
 	--   2) луч проходит через расширенный хитбокс (Hitbox / Head hitbox) и стена не мешает;
 	--   3) упреждённая точка цели лежит в пределах допуска TriggerR от точки наведения и до неё есть прямая видимость.
-	-- В случаях 2 и 3 пуля отправляется точно в точку цели (как Silent Aim; сервер ограничивает угол, SILENT_MAX_ANGLE).
+	-- В случаях 2 и 3 пуля отправляется точно в точку цели; сервер ограничивает угол (SILENT_MAX_ANGLE).
 	local pickMs, pickWarned = 0, false
 	local lastTrigger, seenSince, seenModel, lastWarm = setmetatable({}, {__mode = "k"}), nil, nil, 0
 	local firedFor -- цель, по которой в режиме Single уже был выстрел
@@ -6995,7 +6994,7 @@ local function startMain()
 	on(fullBtn.Activated, function()
 		if not dialog then return end
 		dialog.confirm("Сбросить все настройки?",
-			"Абсолютно все функции будут выключены: ESP, Aim, Target Lock, Silent Aim, Triggerbot, Multipoint, Hitbox и Hitbox ESP, "
+			"Абсолютно все функции будут выключены: ESP, Aim, Target Lock, Triggerbot, Multipoint, Hitbox и Hitbox ESP, "
 				.. "Dynamic FOV, Target Animation, HUD, трассы, скелет, Team Colors, FPS unlock — всё станет OFF. "
 				.. "Цвета, тема, акцент, фон-картинка, размер окна и метки игроков вернутся к заводским. Отменить это нельзя.",
 			"Да, сбросить всё", true, fullReset)
