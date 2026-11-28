@@ -190,7 +190,7 @@ class AnimWiring(unittest.TestCase):
         body = between("local function appear(o, delay)", "local folders = {")
         self.assertIn("UIScale", body)  # GroupTransparency есть только у CanvasGroup
         self.assertIn("UICFG.AnimPages", body)
-        self.assertIn("cascadeGen[f] == my", body)  # старый каскад уступает новому
+        self.assertIn("cascadeGen[f] ~= my then return end", body)  # старый каскад уступает новому
         show = between("local function show(n)", "for i, folder in folders do")
         self.assertIn("cascade(f)", show)
         self.assertIn("pTitle", show)  # заголовок меняется с фейдом
@@ -214,9 +214,27 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("playIntro(function()", valid)
         self.assertEqual(SOURCE.count("playIntro("), 2)  # объявление + единственный вызов
 
+    def test_typewriter_opens_folder_text(self):
+        body = between("local typewriter = setmetatable", "-- Анимация цифры")
+        self.assertIn("UICFG.AnimText", body)
+        self.assertIn("MaxVisibleGraphemes", body)
+        # новый текст отменяет старую печать, иначе буквы двух строк смешаются
+        self.assertIn("typewriter[label] ~= gen", body)
+        # выключено — текст ставится целиком
+        self.assertIn("label.Text, label.TextTransparency = text, 0", body)
+        # заголовок папки и названия карточек используют один хелпер
+        show = between("local function show(n)", "for i, folder in folders do")
+        self.assertIn("typeText(pTitle, newTitle", show)
+        cascade = between("local function cascade(f)", "local folders = {")
+        self.assertIn('c:FindFirstChild("Title")', cascade)
+        self.assertIn("typeText(title, title.Text", cascade)
+        # переключатель и справка
+        self.assertIn('{"Typewriter text", "AnimText"', SOURCE)
+        self.assertIn('["Typewriter text"]', SOURCE)
+
     def test_intro_can_be_disabled_and_is_in_effects_list(self):
         self.assertIn('{"Intro after key", "AnimIntro"', SOURCE)
-        self.assertIn("UICFG.AnimIntro = false", SOURCE)  # low-end preset
+        self.assertIn("UICFG.AnimIntro, UICFG.AnimText = false, false", SOURCE)  # low-end preset
         self.assertIn('["Intro after key"]', SOURCE)  # двуязычная справка
     def test_key_screen_uses_helpers(self):
         screen = between("local function keyScreen(done)", "stop = function()")

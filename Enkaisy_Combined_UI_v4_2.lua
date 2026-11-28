@@ -44,6 +44,7 @@
 --       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
 --       После верного ключа — заставка «осколки → UNICRASE» (касание пропускает, AnimIntro).
+--       Открытие папки: заголовок и названия карточек печатаются по буквам с мигающим курсором (AnimText).
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
 --       ESP: линии и скелет появляются и гаснут фейдом (твин стартует только на смене состояния).
@@ -384,6 +385,7 @@ end
 if _G.TH_Stop then pcall(_G.TH_Stop) end
 local UIS = game:GetService("UserInputService")
 local TS = game:GetService("TweenService")
+local STS = game:GetService("TextService") -- ширина напечатанной части текста: позиция курсора
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
@@ -589,6 +591,7 @@ local UICFG = {
 	-- Анимации: общий выключатель (CFG.Anim) + эффекты, которые можно гасить по отдельности
 	AnimCounters = true, AnimToasts = true, AnimPages = true, AnimPulse = true,
 	AnimIntro = true, -- заставка «UNICRASE» после верного ключа (можно пропустить касанием)
+	AnimText = true, -- появление текста по буквам при открытии папки (заголовок и названия карточек)
 }
 local WIN_MIN_W, WIN_MIN_H, WIN_MAX_W, WIN_MAX_H = 440, 320, 900, 700
 
@@ -914,6 +917,75 @@ local function popIn(o, on)
 	else
 		tween(sc, TWEEN.snap, {Scale = 0})
 	end
+end
+-- Появление текста по буквам (эффект «по одной букве» из CapCut-пресетов):
+-- первая буква видна сразу, остальные открываются с шагом delay, курсор мигает и исчезает.
+-- Каждый переход — один твин, а не кадровый цикл: 8 букв = 8 твинов по 80 мс.
+local typewriter = setmetatable({}, {__mode = "k"})
+local function typeText(label, text, opt)
+	opt = opt or {}
+	local gen = (typewriter[label] or 0) + 1
+	typewriter[label] = gen
+	if not (CFG.Anim and UICFG.AnimText) or text == "" then
+		label.Text, label.TextTransparency = text, 0
+		return
+	end
+	local step = opt.step or 0.045 -- шаг между буквами: 45 мс ≈ 22 буквы в секунду
+	local len = utf8.len(text) or #text
+	local done = 0
+	label.Text, label.TextTransparency = "", 0
+	label.MaxVisibleGraphemes = 0
+	-- MaxVisibleGraphemes отсекает всё после N-й буквы: раскладка не «прыгает», курсор уходит по строке
+	-- курсор: тонкая полоска вровень с базовой линией, мигает, пока идёт печать
+	local caret
+	if opt.caret ~= false then
+		caret = new("Frame", {Name = "TypeCaret", Size = O(2, 14), AnchorPoint = V2(0, 0.5),
+			Position = U(0, 0, 0.5, 0), BackgroundColor3 = C.AccTx, BackgroundTransparency = 0.15,
+			Active = false, ZIndex = 5}, label)
+		rr(caret, 1)
+		local base = caret.Position
+		task.spawn(function()
+			local on_ = true
+			while typewriter[label] == gen do
+				caret.BackgroundTransparency = on_ and 0.15 or 1
+				on_ = not on_
+				task.wait(0.22)
+			end
+			-- после печати курсор коротко гаснет и убирается
+			if caret.Parent then
+				tween(caret, TWEEN.snap, {BackgroundTransparency = 1})
+				task.delay(0.2, function() if caret.Parent then caret:Destroy() end end)
+			end
+		end)
+		-- курсор следует за видимой частью текста: MeasureText даёт точную ширину
+		local function placeCaret()
+			if not caret.Parent then return end
+			local shown = label.MaxVisibleGraphemes
+			local size = 0
+			if shown and shown > 0 then
+				-- ширина ровно той части, что видна: курсор идёт по строке за последней буквой
+				local ok, bounds = pcall(STS.GetTextSize, STS, string.sub(text, 1, shown), label.TextSize, label.Font, V2(10000, 100))
+				if ok and bounds then size = bounds.X end
+			end
+			caret.Position = U(0, math.min(size + 2, 4000), 0.5, 1)
+		end
+		placeCaret()
+		opt._caret = placeCaret
+	end
+	task.spawn(function()
+		for i = 1, len do
+			if typewriter[label] ~= gen then return end -- начали новый текст: старый выходит
+			label.MaxVisibleGraphemes = i
+			if opt._caret then opt._caret() end
+			if opt.onTick then opt.onTick(i, len) end
+			task.wait(step)
+		end
+		if typewriter[label] ~= gen then return end
+		label.MaxVisibleGraphemes = -1
+		done = 1
+		if opt.onDone then opt.onDone() end
+	end)
+	return function() return typewriter[label] == gen and done == 1 end
 end
 -- Анимация цифры: значение «доезжает» до нового числа, а не прыгает
 local counters = setmetatable({}, {__mode = "k"})
@@ -2491,6 +2563,7 @@ helpUI.info = {
  ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
  ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
  ["Intro after key"] = {"Показывает заставку «осколки → UNICRASE» после верного ключа; касание пропускает её.", "Plays a shards-to-UNICRASE intro after a valid key; tap to skip."},
+ ["Typewriter text"] = {"Печатает название папки и названия карточек по буквам с мигающим курсором; выключение — текст появляется целиком.", "Types the folder title and card names letter by letter with a blinking caret; off means text appears at once."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
@@ -5415,8 +5488,19 @@ local function startMain()
 				i += 1
 				if i > 20 then break end
 				local my = gen
-				task.delay(math.min(0.22, (i - 1) * 0.018), function()
-					if cascadeGen[f] == my then appear(c) end
+				local delay = math.min(0.22, (i - 1) * 0.018)
+				task.delay(delay, function()
+					if cascadeGen[f] ~= my then return end
+					appear(c)
+					-- название карточки печатается одновременно с её появлением: текст «собирается» на глазах
+					local title = c:FindFirstChild("Title")
+					if title and title:IsA("TextLabel") and title.Text ~= "" then
+						if CFG.Anim and UICFG.AnimText then
+							-- сначала прячем готовый текст, иначе он мигнёт целиком до начала печати
+							title.MaxVisibleGraphemes = 0
+						end
+						typeText(title, title.Text, {step = 0.02})
+					end
 				end)
 			end
 		end
@@ -5728,19 +5812,16 @@ local function startMain()
 		if not ptabs[n] then n = "Main" end
 		curTab, UICFG.Tab = n, n
 		local newTitle = ptabs[n].label.Text
-		if pTitle.Text ~= newTitle then
-			if CFG.Anim then
-				-- старый заголовок уезжает влево и тает, новый приходит справа
-				local gi = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
-				local go = TweenInfo.new(0.22, Enum.EasingStyle.Quint)
-				local ti = TS:Create(pTitle, gi, {TextTransparency = 1, Position = U(RAIL - 6, Skin.RailBase + 42, 0, HDR + 9)})
-				ti:Play()
-				ti.Completed:Once(function()
-					pTitle.Text, pTitle.Position = newTitle, U(RAIL + 8, Skin.RailBase + 42, 0, HDR + 9)
-					TS:Create(pTitle, go, {TextTransparency = 0, Position = U(RAIL, Skin.RailBase + 42, 0, HDR + 9)}):Play()
-				end)
-			else
-				pTitle.Text = newTitle
+		local shown = pTitle:GetAttribute("Shown")
+		if shown ~= newTitle then
+			pTitle:SetAttribute("Shown", newTitle)
+			-- Название папки печатается по буквам: короткое, поэтому успевает за 0.2–0.4 с.
+			-- Если анимации выключены, typeText просто ставит текст.
+			typeText(pTitle, newTitle, {step = 0.035})
+			if CFG.Anim and UICFG.AnimText then
+				-- вместе с текстом мягко проявляется сама строка, чтобы смена папки читалась
+				pTitle.Position = U(RAIL - 4, Skin.RailBase + 42, 0, HDR + 9)
+				tween(pTitle, TWEEN.ui, {Position = U(RAIL, Skin.RailBase + 42, 0, HDR + 9)})
 			end
 		end
 		if aim then aim.preview(isOpen and n == "FOV") end
@@ -6351,6 +6432,7 @@ local function startMain()
 		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
 		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
 		{"Intro after key", "AnimIntro", "Заставка UNICRASE после верного ключа."},
+		{"Typewriter text", "AnimText", "Текст в папке появляется по буквам."},
 	} do
 		local key = d[2]
 		local card, paint = toggleCard(pv2, d[1], 3 + i * 0.1, function() return UICFG[key] end,
@@ -6369,7 +6451,7 @@ local function startMain()
 	on(lowBtn.Activated, function()
 		CFG.Anim, CFG.DistScale, CFG.Limit, CFG.LimitN, CFG.EspHz = false, false, true, 12, 20
 		UICFG.AnimCounters, UICFG.AnimToasts, UICFG.AnimPages, UICFG.AnimPulse = false, false, false, false
-		UICFG.AnimIntro = false
+		UICFG.AnimIntro, UICFG.AnimText = false, false
 		for _, fn in repaints do fn() end
 		notify("Low-end preset", "Анимации выключены, 12 целей, ESP 20 Гц", false)
 	end)
