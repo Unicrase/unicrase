@@ -43,6 +43,7 @@
 --       Анимации интерфейса: пружины на переключателях/кнопках/иконках, «доезжающие» цифры ползунков,
 --       HUD и FPS/пинга, каскад карточек новой страницы, всплывающие карточки вместо системных плашек,
 --       пульсация активной вкладки и точек включённых функций, появление круга FOV и «дыхание» маркера цели.
+--       После верного ключа — заставка «осколки → UNICRASE» (касание пропускает, AnimIntro).
 --       Всё гасится общим переключателем Animations и по отдельности — раздел ANIMATION EFFECTS (Performance).
 --       Поиск: крестик очистки в поле и бейдж «сколько совпадений» на каждой папке.
 --       ESP: линии и скелет появляются и гаснут фейдом (твин стартует только на смене состояния).
@@ -587,6 +588,7 @@ local UICFG = {
 	BgImage = "", BgImgAlpha = 0.25, BgImgFit = "Crop", CardAlpha = 0.5, -- фон окна: ссылка / ID картинки, прозрачность, режим
 	-- Анимации: общий выключатель (CFG.Anim) + эффекты, которые можно гасить по отдельности
 	AnimCounters = true, AnimToasts = true, AnimPages = true, AnimPulse = true,
+	AnimIntro = true, -- заставка «UNICRASE» после верного ключа (можно пропустить касанием)
 }
 local WIN_MIN_W, WIN_MIN_H, WIN_MAX_W, WIN_MAX_H = 440, 320, 900, 700
 
@@ -2488,6 +2490,7 @@ helpUI.info = {
  ["Toasts"] = {"Показывает результаты и ошибки всплывающей карточкой в углу вместо системных плашек.", "Shows results and errors in a corner card instead of system notifications."},
  ["Page cascade"] = {"Карточки только что открытой страницы проявляются сверху вниз.", "Cards of a freshly opened page fade in from top to bottom."},
  ["Accent pulse"] = {"Активная вкладка и точки включённых функций мягко пульсируют.", "The active tab and enabled-feature dots pulse softly."},
+ ["Intro after key"] = {"Показывает заставку «осколки → UNICRASE» после верного ключа; касание пропускает её.", "Plays a shards-to-UNICRASE intro after a valid key; tap to skip."},
  ["FPS / ping"] = {"Показывает частоту кадров и задержку в боковой панели.", "Shows frame rate and ping in the sidebar."},
  ["FPS unlock"] = {"Использует setfpscap, если функция доступна в окружении.", "Uses setfpscap when the environment provides it."},
  ["Menu Scale (zoom)"] = {"Масштабирует главное окно с учётом размера экрана.", "Scales the main window while fitting it to the screen."},
@@ -6347,6 +6350,7 @@ local function startMain()
 		{"Toasts", "AnimToasts", "Результаты и ошибки — карточкой в углу."},
 		{"Page cascade", "AnimPages", "Карточки страницы проявляются сверху вниз."},
 		{"Accent pulse", "AnimPulse", "Активная вкладка и точки мягко дышат."},
+		{"Intro after key", "AnimIntro", "Заставка UNICRASE после верного ключа."},
 	} do
 		local key = d[2]
 		local card, paint = toggleCard(pv2, d[1], 3 + i * 0.1, function() return UICFG[key] end,
@@ -6365,6 +6369,7 @@ local function startMain()
 	on(lowBtn.Activated, function()
 		CFG.Anim, CFG.DistScale, CFG.Limit, CFG.LimitN, CFG.EspHz = false, false, true, 12, 20
 		UICFG.AnimCounters, UICFG.AnimToasts, UICFG.AnimPages, UICFG.AnimPulse = false, false, false, false
+		UICFG.AnimIntro = false
 		for _, fn in repaints do fn() end
 		notify("Low-end preset", "Анимации выключены, 12 целей, ESP 20 Гц", false)
 	end)
@@ -6994,6 +6999,122 @@ local function startMain()
 	end)
 end
 
+-- ===== Заставка после ключа: «осколки» слетаются в логотип =====
+-- Чистый UI: без картинок и звука, всё внутри своего ScreenGui и удаляется целиком.
+-- Сцена ~2.1 с: осколки летят к центру → буквы собираются слева направо → вспышка → уход.
+-- Любое касание пропускает; при выключенных анимациях (CFG.Anim / AnimIntro) заставки нет.
+local INTRO_WORD = "UNICRASE"
+local INTRO_LEN = 2.1
+local function playIntro(after)
+	local done = false
+	local function finish()
+		if done then return end
+		done = true
+		if after then after() end
+	end
+	if not (CFG.Anim and UICFG.AnimIntro) then finish() return end
+	local stage = new("ScreenGui", {Name = "EnkaisyIntro", ResetOnSpawn = false, DisplayOrder = 120,
+		IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LP:WaitForChild("PlayerGui"))
+	pcall(function() stage.ScreenInsets = Enum.ScreenInsets.None end)
+	local bg = new("Frame", {Name = "IntroBg", Size = S(1, 1), BackgroundColor3 = C.B, BackgroundTransparency = 0,
+		Active = true, ZIndex = 1}, stage)
+	-- свечение позади слова: разгорается к моменту сборки и гаснет на уходе
+	local halo = new("Frame", {Name = "Halo", Size = S(1.3, 1.3), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+		BackgroundColor3 = C.W, BackgroundTransparency = 1, Active = false, ZIndex = 2}, stage)
+	rr(halo, 24)
+	-- слово: каждая буква — отдельная ячейка, прилетающая из глубины
+	local word = new("Frame", {Name = "Word", Size = S(0.8, 0.18), AnchorPoint = V2(0.5, 0.5), Position = S(0.5, 0.5),
+		BackgroundTransparency = 1, Active = false, ZIndex = 10}, stage)
+	new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder}, word)
+	local letters = {}
+	for i = 1, #INTRO_WORD do
+		local cell = new("Frame", {Name = "L" .. i, Size = O(1, 1), BackgroundTransparency = 1, LayoutOrder = i,
+			Active = false, ZIndex = 10}, word)
+		local lbl = new("TextLabel", {Size = S(1, 1), BackgroundTransparency = 1, Text = INTRO_WORD:sub(i, i),
+			TextColor3 = C.W, FontFace = GB, TextScaled = true, TextTransparency = 1, ZIndex = 11,
+			TextStrokeColor3 = C.B, TextStrokeTransparency = 1}, cell)
+		local sc = new("UIScale", {Scale = 1}, cell)
+		table.insert(letters, {cell = cell, lbl = lbl, sc = sc, jitter = i * 0.43})
+	end
+	-- размер слова считается от экрана: на телефоне буквы не превращаются в точки
+	local function fitWord()
+		local a = stage.AbsoluteSize
+		if a.X < 50 then return end
+		local w = math.clamp(a.X * 0.86, 160, 900)
+		local h = w * 0.19
+		word.Size = O(w, h)
+		local cw = math.max(6, w / #INTRO_WORD - 2)
+		for _, l in letters do l.cell.Size = O(cw, h) end
+	end
+	on(stage:GetPropertyChangedSignal("AbsoluteSize"), fitWord)
+	fitWord()
+
+	-- осколки: тонкие вытянутые четырёхугольники, летящие к центру
+	local shards = {}
+	for i = 1, 22 do
+		local a = math.random() * math.pi * 2
+		local f = new("Frame", {Name = "Shard", Size = O(math.random(3, 7), math.random(10, 22)), AnchorPoint = V2(0.5, 0.5),
+			Position = S(0.5 + math.cos(a) * 0.4, 0.5 + math.sin(a) * 0.36), BackgroundColor3 = C.W,
+			BackgroundTransparency = 0.15, Rotation = math.random(0, 359), Active = false, ZIndex = 5}, stage)
+		rr(f, 2)
+		local st = outline(f, 0.35)
+		table.insert(shards, {f = f, st = st, a = a, spin = (math.random() - 0.5) * 220, delay = math.random() * 0.45})
+	end
+
+	local t0 = os.clock()
+	local rb
+	local function step(dt)
+		local t = os.clock() - t0
+		-- осколки: сходятся к центру, уменьшаются и тают
+		for _, sh in shards do
+			local k = math.clamp((t - sh.delay) / 1.0, 0, 1)
+			local ease = 1 - (1 - k) ^ 3
+			local d = 0.4 * (1 - ease * 0.9)
+			sh.f.Position = S(0.5 + math.cos(sh.a) * d, 0.5 + math.sin(sh.a) * d * 0.9)
+			sh.f.Rotation = sh.f.Rotation + dt * sh.spin * (1 - k)
+			sh.f.Size = O(math.max(1, 6 * (1 - ease)), math.max(2, 18 * (1 - ease)))
+			sh.f.BackgroundTransparency = 0.15 + ease * 0.85
+			sh.st.Transparency = 0.35 + ease * 0.65
+		end
+		-- буквы: прилетают с масштабом, слева направо; после сборки еле заметно «дышат»
+		for i, l in letters do
+			local k = math.clamp((t - 0.3 - (i - 1) * 0.055) / 0.42, 0, 1)
+			local ease = 1 - (1 - k) ^ 4
+			l.sc.Scale = 0.6 + ease * 0.4 + (k >= 1 and math.sin(t * 2.4 + l.jitter) * 0.006 or 0)
+			l.lbl.TextTransparency = 1 - ease
+			l.lbl.TextStrokeTransparency = 1 - ease * 0.85
+		end
+		-- вспышка на моменте сборки
+		local flash = 1 - math.clamp(math.abs(t - 1.05) / 0.3, 0, 1)
+		halo.BackgroundTransparency = 1 - flash * 0.7
+		if t > 1.5 then
+			local out = math.clamp((t - 1.5) / 0.45, 0, 1)
+			bg.BackgroundTransparency = out
+			for _, l in letters do l.lbl.TextTransparency = math.max(l.lbl.TextTransparency, out) end
+			for _, sh in shards do sh.f.BackgroundTransparency = math.max(sh.f.BackgroundTransparency, out) end
+		end
+	end
+	local function stop()
+		if rb then rb:Disconnect() rb = nil end
+		if stage.Parent then stage:Destroy() end
+		finish()
+	end
+	rb = RS.RenderStepped:Connect(function(dt)
+		if not stage.Parent then stop() return end
+		if not pcall(step, dt) then stop() end
+		if os.clock() - t0 > INTRO_LEN then stop() end
+	end)
+	pcall(step, 0)
+	-- страховка: что бы ни случилось, сцена не держит экран дольше 2.6 с
+	task.delay(INTRO_LEN + 0.5, stop)
+	-- касание пропускает заставку (её не нужно смотреть дважды)
+	on(bg.InputBegan, function(i)
+		if i.UserInputType == UT.Touch or i.UserInputType == UT.MouseButton1 then stop() end
+	end)
+end
+
 -- ===== Экран ключа =====
 -- Та же шапка и материалы, что у основного окна. Масштаб и сдвиг под клавиатуру
 -- считаются от размеров карточки; логика проверки ключа от оформления не зависит.
@@ -7101,16 +7222,20 @@ local function keyScreen(done)
 		busy = true
 		if hashKey((box.Text:gsub("%s", ""))) == KEY_HASH then
 			status.TextColor3, status.Text = C.W, "Ключ принят"
-			task.wait(0.4)
-			if closed then return end
-			tween(card, slow, {GroupTransparency = 1})
-			tween(dim, slow, {BackgroundTransparency = 1}) tween(blur, slow, {Size = 0})
-			task.wait(0.4)
+			-- карточка ключа уходит, а поверх играет заставка «осколки → UNICRASE»
+			-- (имя видно уже на входе, поэтому меню открывается как продолжение сцены)
+			pcall(function() pulse(btn, nil) end)
+			tween(card, fast, {GroupTransparency = 1})
+			tween(card, fast, {Position = U(0.5, 0, 0.5, -shiftY - 24)}) -- карточка «всплывает» и тает
+			task.wait(0.22)
 			if closed then return end
 			rc:Disconnect()
-			dim:Destroy() blur:Destroy() blur = nil
-			pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
-			done()
+			playIntro(function()
+				if closed then return end
+				dim:Destroy() blur:Destroy() blur = nil
+				pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
+				done()
+			end)
 			return
 		end
 		tries += 1

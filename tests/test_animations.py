@@ -51,21 +51,41 @@ class ForwardLocals(unittest.TestCase):
             self.assertNotIn("local " + decl, SOURCE, "повторный local перекрывает опережающую локаль")
         self.assertIn("\ngui = new(\"ScreenGui\"", SOURCE, "gui объявлен как опережающая локаль")
 
-    def test_no_group_transparency_on_plain_frames(self):
-        """GroupTransparency существует только у CanvasGroup: запись в Frame — ошибка рантайма."""
-        self.assertTrue(re.search(r'new\("CanvasGroup"', SOURCE))
-        # в каскаде карточек и вкладок используется безопасный масштаб, а не GroupTransparency
-        cascade = between("local function appear(o, delay)", "local folders = {")
-        self.assertNotIn("GroupTransparency", cascade)
-        self.assertIn("UIScale", cascade)
-        # единственные GroupTransparency в UI-коде — окно меню и окно ключа (оба CanvasGroup)
-        for line in SOURCE.splitlines():
-            if "GroupTransparency" in line and not line.lstrip().startswith("--"):
-                self.assertTrue("CanvasGroup" in line or "panel" in line or "card.GroupTransparency" in line
-                                or "card, slow" in line or "scale.Scale, panel" in line
-                                or "panel.GroupTransparency" in line or "tween(panel" in line
-                                or "GroupTransparency = 1," in line or "GroupTransparency = 0}" in line,
-                                "GroupTransparency на обычном объекте: " + line.strip())
+    def test_group_transparency_only_on_canvas_groups(self):
+        """GroupTransparency существует только у CanvasGroup: запись в Frame — ошибка рантайма.
+
+        Для каждого упоминания свойства находим объект, к которому его применяют
+        (tween(o, ...), TS:Create(o, ...) или props у new("CanvasGroup", ...)),
+        и требуем, чтобы это был CanvasGroup.
+        """
+        canvas_vars = set(re.findall(r'(\w+)\s*=\s*new\("CanvasGroup"', SOURCE))
+        self.assertTrue(canvas_vars, "в файле есть CanvasGroup")
+        checked = 0
+        for m in re.finditer(r"GroupTransparency", SOURCE):
+            line_start = SOURCE.rfind("\n", 0, m.start()) + 1
+            line = SOURCE[line_start:SOURCE.find("\n", m.start())]
+            if line.lstrip().startswith("--"):
+                continue
+            before = SOURCE[max(0, m.start() - 400):m.start()]
+            # сначала props (new("CanvasGroup", {...})): внутри таблицы объект ещё не назван
+            if 'new("CanvasGroup"' in before[before.rfind("new(") if "new(" in before else 0:]:
+                checked += 1
+                continue
+            obj = re.findall(r"(?:tween|Create)\(\s*(\w+)\s*,", before)
+            if obj:
+                checked += 1
+                self.assertIn(obj[-1], canvas_vars,
+                              "GroupTransparency применён к не-CanvasGroup: " + line.strip())
+                continue
+            # прямое присваивание: panel.GroupTransparency = ... / o.GroupTransparency = ...
+            direct = re.findall(r"(\w+)\.GroupTransparency", line)
+            if direct:
+                checked += 1
+                self.assertIn(direct[0], canvas_vars,
+                              "GroupTransparency на не-CanvasGroup: " + line.strip())
+                continue
+            self.fail("GroupTransparency вне CanvasGroup: " + line.strip())
+        self.assertGreaterEqual(checked, 5, "проверка должна находить применения свойства")
 
     def test_no_state_written_into_instances(self):
         """Roblox бросает ошибку при записи неизвестного поля в Instance — состояние только в таблицах."""
@@ -175,6 +195,29 @@ class AnimWiring(unittest.TestCase):
         self.assertIn("cascade(f)", show)
         self.assertIn("pTitle", show)  # заголовок меняется с фейдом
 
+    def test_intro_plays_after_valid_key(self):
+        intro = between("local function playIntro(after)", "-- ===== Экран ключа =====")
+        # сцена живёт в своём ScreenGui и удаляется целиком
+        self.assertIn('Name = "EnkaisyIntro"', intro)
+        self.assertIn("stage:Destroy()", intro)
+        # слово собирается по буквам из строки UNICRASE
+        self.assertIn('local INTRO_WORD = "UNICRASE"', SOURCE)
+        self.assertIn("INTRO_WORD:sub(i, i)", intro)
+        # два выключателя: общий и отдельный
+        self.assertIn("CFG.Anim and UICFG.AnimIntro", intro)
+        # пропуск касанием и страховка по времени
+        self.assertIn("UT.Touch", intro)
+        self.assertIn("task.delay(INTRO_LEN + 0.5, stop)", intro)
+        # вызов ровно один и только в ветке верного ключа
+        screen = between("local function keyScreen(done)", "stop = function()")
+        valid = screen.split('== KEY_HASH then', 1)[1].split("tries += 1", 1)[0]
+        self.assertIn("playIntro(function()", valid)
+        self.assertEqual(SOURCE.count("playIntro("), 2)  # объявление + единственный вызов
+
+    def test_intro_can_be_disabled_and_is_in_effects_list(self):
+        self.assertIn('{"Intro after key", "AnimIntro"', SOURCE)
+        self.assertIn("UICFG.AnimIntro = false", SOURCE)  # low-end preset
+        self.assertIn('["Intro after key"]', SOURCE)  # двуязычная справка
     def test_key_screen_uses_helpers(self):
         screen = between("local function keyScreen(done)", "stop = function()")
         self.assertIn("shake(form", screen)  # неверный ключ
